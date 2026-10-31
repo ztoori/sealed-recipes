@@ -1,0 +1,18 @@
+# Deployment manifest for a TDX confidential VM running the dstack guest agent
+# (Phala Cloud / NEAR Shade Agent stack). In dstack, sha256 of this file is measured
+# into the quote (mr_config / compose_hash), so verifiers can pin exactly what runs.
+services:
+  frs-runner:
+    image: ghcr.io/REPLACE_WITH_YOUR_ORG/frs-runner@sha256:REPLACE_WITH_IMAGE_DIGEST
+    environment:
+      TEE_MODE: dstack
+      RUNNER_ID: tee-runner-1.testnet
+      CONTRACT_ID: fungible-recipes.testnet
+      CHAIN_URL: https://YOUR-RELAYER/api/chain
+      NEAR_AI_API_KEY: ${NEAR_AI_API_KEY}
+      ONECLICK_JWT: ${ONECLICK_JWT}
+    volumes:
+      - /var/run/dstack.sock:/var/run/dstack.sock
+    ports:
+      - "8787:8787"
+    restart: always

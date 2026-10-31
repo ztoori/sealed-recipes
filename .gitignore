@@ -1,0 +1,8 @@
+node_modules/
+web/dist/
+.data/
+.env
+contracts/fungible-recipes/target/
+docs/media/.video/
+*.log
+.DS_Store

@@ -1,0 +1,36 @@
+import type { BlockManifest } from '../../core/src/frs.js';
+
+export interface Holding {
+  owner: string;
+  assetId: string;
+  contract: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  amount: string; // smallest units
+  usd: number;
+  listed: boolean; // quoted by 1Click solvers
+}
+export interface Flag { assetId: string; symbol: string; verdict: 'SCAM' | 'OK'; reason: string; source: 'nearai-tee' | 'allowlist' }
+
+export interface NearTx { receiverId: string; actions: { type: 'FunctionCall'; params: { methodName: string; args: Record<string, unknown>; gas: string; deposit: string } }[] }
+export interface ApprovalRequest { title: string; signer: string; transactions: NearTx[]; summary: { symbol: string; amount: string; usd: number; to: string }[] }
+export interface ApprovalResult { approved: boolean; txHashes: string[] }
+
+export type Emit = (type: string, data: Record<string, unknown>) => void;
+
+export interface BlockCtx {
+  nodeId: string;
+  manifest: BlockManifest;
+  params: Record<string, unknown>;
+  /** fetch restricted to the block's declared `net:` capabilities */
+  http: (url: string, init?: RequestInit) => Promise<Response>;
+  log: (msg: string, data?: Record<string, unknown>) => void;
+  requestApproval: (req: ApprovalRequest) => Promise<ApprovalResult>;
+  endpoints: Endpoints;
+  secrets: { nearAiKey?: string; oneClickJwt?: string };
+}
+
+export interface Endpoints { fastnear: string; rpc: string; oneclick: string; nearai: string; nras: string }
+
+export type BlockHandler = (inputs: Record<string, unknown>, ctx: BlockCtx) => Promise<Record<string, unknown>>;

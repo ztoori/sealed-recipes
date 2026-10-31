@@ -1,0 +1,106 @@
+{
+  "frs": "1.0",
+  "kind": "recipe",
+  "meta": {
+    "ticker": "SWPR",
+    "name": "Dust sweeper (public)",
+    "creator": "broom.testnet",
+    "description": "Sweeps dust into one asset with an allowlist and a public 1Click route. Cheaper, no privacy."
+  },
+  "form": [
+    {
+      "id": "wallet",
+      "label": "Wallet to clean",
+      "type": "near.account",
+      "required": true,
+      "placeholder": "bob.testnet"
+    },
+    {
+      "id": "threshold_usd",
+      "label": "Dust threshold (USD)",
+      "type": "usd",
+      "default": 10
+    },
+    {
+      "id": "target",
+      "label": "Consolidate into",
+      "type": "asset.id",
+      "default": "nep141:wrap.near",
+      "options": [
+        "nep141:wrap.near",
+        "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"
+      ]
+    },
+    {
+      "id": "recipient",
+      "label": "Send to",
+      "type": "address.near",
+      "required": true,
+      "placeholder": "bob.testnet"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "scan",
+      "block": "near.wallet-scanner@1.0.0",
+      "inputs": {
+        "account": "form.wallet"
+      },
+      "params": {},
+      "ui": {
+        "x": 0,
+        "y": 130
+      }
+    },
+    {
+      "id": "shield",
+      "block": "rules.spam-shield@1.0.0",
+      "inputs": {
+        "holdings": "scan.holdings"
+      },
+      "params": {},
+      "ui": {
+        "x": 245,
+        "y": 130
+      }
+    },
+    {
+      "id": "dust",
+      "block": "filter.dust@1.0.0",
+      "inputs": {
+        "holdings": "shield.clean",
+        "threshold_usd": "form.threshold_usd"
+      },
+      "params": {
+        "min_swap_usd": 0.25,
+        "keep_symbols": []
+      },
+      "ui": {
+        "x": 490,
+        "y": 130
+      }
+    },
+    {
+      "id": "swap",
+      "block": "intents.public-swap@1.0.0",
+      "inputs": {
+        "tokens": "dust.dust",
+        "to": "form.recipient",
+        "target": "form.target"
+      },
+      "params": {
+        "slippage_bps": 150
+      },
+      "ui": {
+        "x": 745,
+        "y": 130
+      }
+    }
+  ],
+  "output": "swap.receipts",
+  "listing": {
+    "price_per_run": "200000",
+    "royalty_bps": 500,
+    "total_shares": "1000000"
+  }
+}

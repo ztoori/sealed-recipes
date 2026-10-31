@@ -1,0 +1,124 @@
+{
+  "frs": "1.0",
+  "kind": "recipe",
+  "meta": {
+    "ticker": "CLNP",
+    "name": "Clean up and protect",
+    "creator": "chef.testnet",
+    "description": "Finds dust across your NEAR wallet, quarantines scam airdrops with a private AI check, and confidentially swaps what's left into one asset at a brand-new address."
+  },
+  "form": [
+    {
+      "id": "wallet",
+      "label": "Wallet to clean",
+      "type": "near.account",
+      "required": true,
+      "placeholder": "bob.testnet"
+    },
+    {
+      "id": "threshold_usd",
+      "label": "Treat balances under this as dust (USD)",
+      "type": "usd",
+      "default": 25
+    },
+    {
+      "id": "target",
+      "label": "Consolidate into",
+      "type": "asset.id",
+      "default": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "options": [
+        "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "nep141:wrap.near"
+      ]
+    },
+    {
+      "id": "recipient",
+      "label": "Fresh address (generated in your browser)",
+      "type": "address.near",
+      "required": true,
+      "generator": "fresh-implicit"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "scan",
+      "block": "near.wallet-scanner@1.0.0",
+      "inputs": {
+        "account": "form.wallet"
+      },
+      "params": {},
+      "ui": {
+        "x": 0,
+        "y": 130
+      }
+    },
+    {
+      "id": "shield",
+      "block": "ai.spam-shield@1.1.0",
+      "inputs": {
+        "holdings": "scan.holdings"
+      },
+      "params": {
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "policy": "You are a token-safety classifier for a NEAR wallet. Flag a token as SCAM if its symbol or name contains a URL, a claim/reward call-to-action, impersonates a major asset with a different contract, or has no liquidity. Otherwise OK. Answer JSON only."
+      },
+      "ui": {
+        "x": 245,
+        "y": 130
+      }
+    },
+    {
+      "id": "dust",
+      "block": "filter.dust@1.0.0",
+      "inputs": {
+        "holdings": "shield.clean",
+        "threshold_usd": "form.threshold_usd"
+      },
+      "params": {
+        "min_swap_usd": 0.5,
+        "keep_symbols": [
+          "wNEAR"
+        ]
+      },
+      "ui": {
+        "x": 490,
+        "y": 30
+      }
+    },
+    {
+      "id": "fresh",
+      "block": "addr.fresh-check@1.0.0",
+      "inputs": {
+        "recipient": "form.recipient"
+      },
+      "params": {},
+      "ui": {
+        "x": 490,
+        "y": 250
+      }
+    },
+    {
+      "id": "swap",
+      "block": "intents.confidential-swap@1.0.0",
+      "inputs": {
+        "tokens": "dust.dust",
+        "to": "fresh.fresh",
+        "target": "form.target"
+      },
+      "params": {
+        "slippage_bps": 75,
+        "batch_order": "largest-first"
+      },
+      "ui": {
+        "x": 745,
+        "y": 140
+      }
+    }
+  ],
+  "output": "swap.receipts",
+  "listing": {
+    "price_per_run": "750000",
+    "royalty_bps": 1000,
+    "total_shares": "1000000"
+  }
+}

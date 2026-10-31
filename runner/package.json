@@ -1,0 +1,15 @@
+{
+  "name": "frs-runner",
+  "private": true,
+  "type": "module",
+  "description": "Container dependencies for the sealed runner (TEE image). The repo root package.json is used for local dev.",
+  "dependencies": {
+    "@noble/hashes": "^2.4.0",
+    "@noble/curves": "^2.4.0",
+    "@phala/dstack-sdk": "0.5.8",
+    "bs58": "^6.0.0",
+    "express": "^5.3.0",
+    "tsx": "^4.23.0",
+    "tweetnacl": "^1.0.3"
+  }
+}

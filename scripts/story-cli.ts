@@ -1,0 +1,83 @@
+/**
+ * The 4-step demo story, headless. Requires `npm run demo` running (or use `npm run demo -- --story --exit`).
+ *   1. creator composes "Clean up and protect", seals it to the attested runner, publishes it
+ *   2. buyer pays per run through NEAR Intents (1Click EXACT_OUTPUT → ft_transfer_call to the contract) and fills one short form
+ *   3. the sealed workflow sweeps dust and swaps it confidentially to a fresh address
+ *   4. creator, every block author, runner, protocol and shareholders are paid in one settlement
+ * Exits non-zero if any step fails.
+ */
+import { readFileSync } from 'node:fs';
+import { api, BASE, freshImplicitAccount, publish, verifiedRunner } from './lib/client.js';
+import { seal, validateRecipe, USDC_NEAR, type Catalog, type Recipe } from '../core/src/index.js';
+
+const root = new URL('..', import.meta.url);
+const catalog = JSON.parse(readFileSync(new URL('standard/blocks.json', root), 'utf8')) as Catalog;
+const recipe = JSON.parse(readFileSync(new URL('seed/recipes/CLNP.json', root), 'utf8')) as Recipe;
+const usd = (u: string | number) => '$' + (Number(u) / 1e6).toFixed(4);
+const h = (s: string) => console.log(`\n\x1b[1m\x1b[38;5;48m${s}\x1b[0m`);
+
+h('STEP 1 · creator chains blocks into "Clean up and protect" and publishes it privately');
+const v = validateRecipe(recipe, catalog);
+console.log(`  FRS-1 validation: ${v.ok ? 'OK' : 'FAILED'} · ${v.order.length} blocks · block fees ${usd(v.blockFees.toString())}/run · capabilities: ${v.capabilities.join(', ')}`);
+const runner = await verifiedRunner();
+for (const c of runner.checks) console.log(`  ${c.status === 'pass' ? '✔' : c.status === 'skip' ? '○' : '✘'} ${c.label}${c.status === 'skip' ? ' — ' + c.detail : ''}`);
+const listings = await api<{ ticker: string }[]>('/api/listings');
+if (listings.some((l) => l.ticker === 'CLNP')) console.log('  CLNP already published — reusing it');
+else {
+  const p = await publish(recipe, catalog, runner.onchain.enc_pk_hex, { price: 0.085, float_pct: 20 });
+  console.log(`  sealed in the client to runner key ${runner.onchain.enc_pk_hex.slice(0, 12)}…; server received ciphertext only`);
+  console.log(`  publish_recipe → tx ${p.tx} (block ${p.block}) · on-chain sealed_hash ${p.sealed_hash.slice(0, 20)}…`);
+}
+
+h('STEP 2 · buyer pays per run through NEAR Intents and fills one short form (no chat)');
+const fresh = freshImplicitAccount();
+const inputs = { wallet: 'bob.testnet', threshold_usd: 25, target: USDC_NEAR, recipient: fresh.account };
+console.log('  form:', JSON.stringify({ ...inputs, recipient: fresh.account.slice(0, 12) + '… (fresh, generated client-side)' }));
+const before = await api<{ wallet: { symbol: string; balance: string; decimals: number }[] }>('/api/portfolio/bob.testnet');
+const sealedInputs = seal(inputs, runner.onchain.enc_pk_hex, 'inputs');
+const q = await api<{ run_id: string; msg: string; quote: { quote: { amountInFormatted: string; depositAddress: string; amountOut: string } } }>('/api/runs/quote', {
+  recipe_id: 'CLNP', buyer: 'bob.testnet', pay_asset: 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near', refund_to: '0xB0b0000000000000000000000000000000000001', sealed_inputs: sealedInputs,
+});
+console.log(`  1Click EXACT_OUTPUT quote: pay ${q.quote.quote.amountInFormatted} USDC (Arbitrum) → ${usd(q.quote.quote.amountOut)} USDC delivered to the contract`);
+console.log(`  customRecipientMsg: ${q.msg}`);
+await api(`/api/runs/${q.run_id}/pay`, {});
+
+h('STEP 3 · the sealed workflow sweeps dust and swaps privately to a fresh address');
+const res = await fetch(`${BASE}/api/runs/${q.run_id}/events`);
+const reader = res.body!.getReader(); const dec = new TextDecoder(); let buf = ''; let done = false; let final: any;
+const t0 = Date.now();
+while (!done) {
+  const { value, done: end } = await reader.read(); if (end) break;
+  buf += dec.decode(value, { stream: true });
+  let i;
+  while ((i = buf.indexOf('\n\n')) >= 0) {
+    const e = JSON.parse(buf.slice(6, i)); buf = buf.slice(i + 2);
+    const tag = `  [${((Date.now() - t0) / 1000).toFixed(1)}s ${e.source}]`;
+    if (e.type === 'status') console.log(`${tag} 1Click payment ${e.data.status}`);
+    else if (e.type === 'run_requested') console.log(`${tag} ft_on_transfer → run escrowed on-chain (tx ${e.data.tx})`);
+    else if (e.type === 'verified') for (const c of e.data.checks) console.log(`${tag} ${c.ok ? '✔' : '✘'} ${c.label}`);
+    else if (e.type === 'decrypted') console.log(`${tag} ${e.data.note}`);
+    else if (e.type === 'block_start') console.log(`${tag} ▶ ${e.data.name} (by ${e.data.author}, fee ${usd(e.data.fee)})`);
+    else if (e.type === 'block_log') console.log(`${tag}     ${e.data.msg}`);
+    else if (e.type === 'approval_required') { console.log(`${tag} 🔐 wallet: "${e.data.title}" — ${e.data.transactions.length} ft_transfer(s); approving`); await api(`/api/runs/${q.run_id}/approve`, { approved: true }); }
+    else if (e.type === 'signed') console.log(`${tag} runner signed report: ${e.data.message.slice(0, 90)}…`);
+    else if (e.type === 'frs_settlement') console.log(`${tag} report_run verified on-chain (tx ${e.data.tx})`);
+    else if (e.type === 'completed' || e.type === 'failed') { final = e; done = true; break; }
+  }
+}
+await reader.cancel();
+if (final?.type !== 'completed' || !final.data.ok) { console.error('\n✘ run failed:', JSON.stringify(final?.data)); process.exit(1); }
+const receipts = final.data.output as { symbol: string; amountIn: string; amountOut: string; status: string }[];
+for (const r of receipts) console.log(`  ✔ ${r.symbol.padEnd(12)} ${r.amountIn.padStart(14)} → ${Number(r.amountOut).toFixed(4)} USDC  ${r.status} (confidential)`);
+const after = await api<{ wallet: { symbol: string; balance: string; contract_id: string }[] }>(`/api/portfolio/${fresh.account}`);
+console.log(`  fresh address ${fresh.account.slice(0, 12)}… now holds: ${after.wallet.map((w) => `${(Number(w.balance) / 1e6).toFixed(4)} ${w.symbol}`).join(', ')}`);
+const bob = await api<{ wallet: { symbol: string; balance: string }[] }>('/api/portfolio/bob.testnet');
+console.log(`  bob.testnet tokens: ${before.wallet.length} → ${bob.wallet.filter((w) => w.balance !== '0').length} (scam airdrops untouched, USDC + wNEAR kept)`);
+
+h('STEP 4 · creator and each block author are paid in the same settlement');
+const s = final.data.settlement as { payouts: { account_id: string; role: string; amount: string }[]; tx: string; block: number };
+for (const p of s.payouts) console.log(`  ${usd(p.amount).padStart(10)}  ${p.account_id.padEnd(24)} ${p.role}`);
+const m = await api<{ settlements: { shareholder_pool: string }[] }>('/api/market/CLNP');
+console.log(`  ${usd(m.settlements[0].shareholder_pool).padStart(10)}  CLNP shareholders         pro-rata dividend (claimable)`);
+console.log(`  one receipt: tx ${s.tx} at block ${s.block}`);
+console.log('\n✔ story complete');

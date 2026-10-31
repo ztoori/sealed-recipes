@@ -1,0 +1,96 @@
+{
+  "frs": "1.0",
+  "kind": "recipe",
+  "meta": {
+    "ticker": "EXIT",
+    "name": "Panic button: everything to stables",
+    "creator": "calm.testnet",
+    "description": "One click: every non-scam token in the wallet goes to USDC at a fresh address through confidential intents."
+  },
+  "form": [
+    {
+      "id": "wallet",
+      "label": "Wallet to evacuate",
+      "type": "near.account",
+      "required": true,
+      "placeholder": "bob.testnet"
+    },
+    {
+      "id": "recipient",
+      "label": "Fresh address (generated in your browser)",
+      "type": "address.near",
+      "required": true,
+      "generator": "fresh-implicit"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "scan",
+      "block": "near.wallet-scanner@1.0.0",
+      "inputs": {
+        "account": "form.wallet"
+      },
+      "params": {},
+      "ui": {
+        "x": 0,
+        "y": 120
+      }
+    },
+    {
+      "id": "shield",
+      "block": "ai.spam-shield@1.1.0",
+      "inputs": {
+        "holdings": "scan.holdings"
+      },
+      "params": {
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "policy": "Flag SCAM tokens (URLs in symbol, reward bait, impersonation). Answer JSON only."
+      },
+      "ui": {
+        "x": 280,
+        "y": 120
+      }
+    },
+    {
+      "id": "fresh",
+      "block": "addr.fresh-check@1.0.0",
+      "inputs": {
+        "recipient": "form.recipient"
+      },
+      "params": {},
+      "ui": {
+        "x": 560,
+        "y": 260
+      }
+    },
+    {
+      "id": "swap",
+      "block": "intents.confidential-swap@1.0.0",
+      "inputs": {
+        "tokens": "shield.clean",
+        "to": "fresh.fresh",
+        "target": "const.usdc"
+      },
+      "params": {
+        "slippage_bps": 120,
+        "batch_order": "largest-first"
+      },
+      "ui": {
+        "x": 840,
+        "y": 120
+      }
+    }
+  ],
+  "consts": {
+    "usdc": {
+      "type": "asset.id",
+      "value": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"
+    }
+  },
+  "output": "swap.receipts",
+  "listing": {
+    "price_per_run": "1500000",
+    "royalty_bps": 1500,
+    "total_shares": "500000"
+  }
+}

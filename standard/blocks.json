@@ -1,0 +1,297 @@
+{
+  "frs": "1.0",
+  "kind": "block-catalog",
+  "types": {
+    "near.account": {
+      "description": "NEAR account id (named or implicit)",
+      "extends": null
+    },
+    "address.near": {
+      "description": "Any NEAR recipient address",
+      "extends": null
+    },
+    "address.near.fresh": {
+      "description": "NEAR address proven to have no on-chain history",
+      "extends": "address.near"
+    },
+    "asset.id": {
+      "description": "NEAR Intents asset id from 1Click /v0/tokens (e.g. nep141:wrap.near)",
+      "extends": null
+    },
+    "usd": {
+      "description": "USD amount (decimal number)",
+      "extends": null
+    },
+    "token.holdings": {
+      "description": "List of {assetId, symbol, contract, amount, decimals, usd}",
+      "extends": null
+    },
+    "token.flags": {
+      "description": "List of {assetId, verdict, reason} produced by a guard",
+      "extends": null
+    },
+    "swap.plan": {
+      "description": "Ordered 1Click quotes with deposit addresses",
+      "extends": null
+    },
+    "swap.receipts": {
+      "description": "Final 1Click statuses with tx hashes",
+      "extends": null
+    },
+    "report": {
+      "description": "Human-readable summary object",
+      "extends": null
+    }
+  },
+  "blocks": [
+    {
+      "id": "near.wallet-scanner@1.0.0",
+      "name": "Wallet Scanner",
+      "category": "source",
+      "author": "scanlabs.testnet",
+      "summary": "Lists every fungible token an account holds (FastNEAR), reads metadata over RPC, prices with 1Click token prices.",
+      "inputs": {
+        "account": {
+          "type": "near.account"
+        }
+      },
+      "outputs": {
+        "holdings": {
+          "type": "token.holdings"
+        }
+      },
+      "params": {},
+      "capabilities": [
+        "net:api.fastnear.com",
+        "net:rpc.mainnet.fastnear.com",
+        "net:1click.chaindefuser.com"
+      ],
+      "fee_per_call": "20000",
+      "implementation": "runner/src/blocks/wallet-scanner.ts"
+    },
+    {
+      "id": "ai.spam-shield@1.1.0",
+      "name": "AI Spam Shield",
+      "category": "guard",
+      "author": "sentinel.testnet",
+      "summary": "Private LLM on NEAR AI Cloud flags scam / phishing airdrop tokens so the workflow never touches them. Every verdict is signed inside the model TEE.",
+      "inputs": {
+        "holdings": {
+          "type": "token.holdings"
+        }
+      },
+      "outputs": {
+        "clean": {
+          "type": "token.holdings"
+        },
+        "flags": {
+          "type": "token.flags"
+        }
+      },
+      "params": {
+        "model": {
+          "type": "string",
+          "default": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+          "secret": false
+        },
+        "policy": {
+          "type": "string",
+          "secret": true,
+          "description": "Classifier instructions (part of the creator's edge)"
+        }
+      },
+      "capabilities": [
+        "net:cloud-api.near.ai",
+        "net:nras.attestation.nvidia.com",
+        "net:1click.chaindefuser.com"
+      ],
+      "fee_per_call": "50000",
+      "implementation": "runner/src/blocks/spam-shield.ts"
+    },
+    {
+      "id": "rules.spam-shield@1.0.0",
+      "name": "Allowlist Shield",
+      "category": "guard",
+      "author": "openlist.testnet",
+      "summary": "Deterministic rule: a token is flagged unless 1Click lists it (i.e. solvers will actually quote it).",
+      "inputs": {
+        "holdings": {
+          "type": "token.holdings"
+        }
+      },
+      "outputs": {
+        "clean": {
+          "type": "token.holdings"
+        },
+        "flags": {
+          "type": "token.flags"
+        }
+      },
+      "params": {},
+      "capabilities": [
+        "net:1click.chaindefuser.com"
+      ],
+      "fee_per_call": "10000",
+      "implementation": "runner/src/blocks/allowlist-shield.ts"
+    },
+    {
+      "id": "filter.dust@1.0.0",
+      "name": "Dust Filter",
+      "category": "transform",
+      "author": "tidy.testnet",
+      "summary": "Keeps balances worth less than the threshold but more than the minimum a solver will quote.",
+      "inputs": {
+        "holdings": {
+          "type": "token.holdings"
+        },
+        "threshold_usd": {
+          "type": "usd"
+        }
+      },
+      "outputs": {
+        "dust": {
+          "type": "token.holdings"
+        }
+      },
+      "params": {
+        "min_swap_usd": {
+          "type": "number",
+          "default": 0.1,
+          "secret": true
+        },
+        "keep_symbols": {
+          "type": "string[]",
+          "default": [],
+          "secret": true
+        }
+      },
+      "capabilities": [],
+      "fee_per_call": "10000",
+      "implementation": "runner/src/blocks/dust-filter.ts"
+    },
+    {
+      "id": "addr.fresh-check@1.0.0",
+      "name": "Fresh Address Check",
+      "category": "guard",
+      "author": "ghost.testnet",
+      "summary": "Proves the recipient has never been used on-chain (RPC view_account returns UNKNOWN_ACCOUNT).",
+      "inputs": {
+        "recipient": {
+          "type": "address.near"
+        }
+      },
+      "outputs": {
+        "fresh": {
+          "type": "address.near.fresh"
+        }
+      },
+      "params": {},
+      "capabilities": [
+        "net:rpc.mainnet.fastnear.com"
+      ],
+      "fee_per_call": "10000",
+      "implementation": "runner/src/blocks/fresh-check.ts"
+    },
+    {
+      "id": "intents.confidential-swap@1.0.0",
+      "name": "Confidential Swap (Intents)",
+      "category": "action",
+      "author": "veil.testnet",
+      "summary": "Quotes every token into the target asset via 1Click with confidentiality=basic, so deposits and withdrawals cannot be linked on-chain. Buyer approves the deposits once.",
+      "inputs": {
+        "tokens": {
+          "type": "token.holdings"
+        },
+        "to": {
+          "type": "address.near.fresh"
+        },
+        "target": {
+          "type": "asset.id"
+        }
+      },
+      "outputs": {
+        "receipts": {
+          "type": "swap.receipts"
+        }
+      },
+      "params": {
+        "slippage_bps": {
+          "type": "number",
+          "default": 100,
+          "secret": true
+        },
+        "batch_order": {
+          "type": "string",
+          "default": "largest-first",
+          "secret": true
+        }
+      },
+      "capabilities": [
+        "net:1click.chaindefuser.com",
+        "wallet:approve"
+      ],
+      "fee_per_call": "50000",
+      "implementation": "runner/src/blocks/intents-swap.ts"
+    },
+    {
+      "id": "intents.public-swap@1.0.0",
+      "name": "Public Swap (Intents)",
+      "category": "action",
+      "author": "defuse-tools.testnet",
+      "summary": "Same 1Click routing without confidentiality. Cheaper, but deposits and withdrawals are linkable.",
+      "inputs": {
+        "tokens": {
+          "type": "token.holdings"
+        },
+        "to": {
+          "type": "address.near"
+        },
+        "target": {
+          "type": "asset.id"
+        }
+      },
+      "outputs": {
+        "receipts": {
+          "type": "swap.receipts"
+        }
+      },
+      "params": {
+        "slippage_bps": {
+          "type": "number",
+          "default": 100,
+          "secret": true
+        }
+      },
+      "capabilities": [
+        "net:1click.chaindefuser.com",
+        "wallet:approve"
+      ],
+      "fee_per_call": "20000",
+      "implementation": "runner/src/blocks/intents-swap.ts"
+    },
+    {
+      "id": "report.summary@1.0.0",
+      "name": "Summary Report",
+      "category": "sink",
+      "author": "tidy.testnet",
+      "summary": "Turns guard flags into a readable report for the buyer.",
+      "inputs": {
+        "flags": {
+          "type": "token.flags"
+        },
+        "holdings": {
+          "type": "token.holdings"
+        }
+      },
+      "outputs": {
+        "report": {
+          "type": "report"
+        }
+      },
+      "params": {},
+      "capabilities": [],
+      "fee_per_call": "10000",
+      "implementation": "runner/src/blocks/summary-report.ts"
+    }
+  ]
+}

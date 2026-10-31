@@ -1,0 +1,50 @@
+{
+  "name": "fungible-recipes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fungible Recipes: sealed, composable workflows traded like stocks and paid per run through NEAR Intents.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "demo": "node scripts/demo.mjs",
+    "dev:runner": "tsx runner/src/main.ts",
+    "dev:server": "tsx server/src/main.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "build": "vite build --config web/vite.config.ts",
+    "test": "node --import tsx --test tests/core.test.ts tests/runner.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "story": "tsx scripts/story-cli.ts",
+    "live-check": "tsx scripts/live-check.ts",
+    "test:rust": "cargo test --manifest-path contracts/fungible-recipes/Cargo.toml",
+    "test:e2e": "node scripts/demo.mjs --no-open --story --exit",
+    "record": "node scripts/record-demo.mjs",
+    "seed": "tsx scripts/seed.ts"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "@phala/dcap-qvl": "^0.7.0",
+    "bs58": "^6.0.0",
+    "express": "^5.3.0",
+    "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {
+    "@fontsource-variable/archivo": "^5.3.0",
+    "@fontsource-variable/newsreader": "^5.3.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "@xyflow/react": "^12.12.0",
+    "lightweight-charts": "^5.2.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5"
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "_note": "FROZEN SAMPLE for offline demo. Shapes match GET https://1click.chaindefuser.com/v0/tokens; prices are illustrative, not live. Set ONECLICK_LIVE=1 to use the real endpoint.",
+  "tokens": [
+    {
+      "assetId": "nep141:wrap.near",
+      "decimals": 24,
+      "blockchain": "near",
+      "symbol": "wNEAR",
+      "price": "2.41",
+      "priceUpdatedAt": "2026-10-30T12:00:00.000Z",
+      "contractAddress": "wrap.near"
+    },
+    {
+      "assetId": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "decimals": 6,
+      "blockchain": "near",
+      "symbol": "USDC",
+      "price": "0.9999",
+      "priceUpdatedAt": "2026-10-30T12:00:00.000Z",
+      "contractAddress": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"
+    },
+    {
+      "assetId": "nep141:usdt.tether-token.near",
+      "decimals": 6,
+      "blockchain": "near",
+      "symbol": "USDT",
+      "price": "1.0001",
+      "priceUpdatedAt": "2026-10-30T12:00:00.000Z",
+      "contractAddress": "usdt.tether-token.near"
+    },
+    {
+      "assetId": "nep141:token.v2.ref-finance.near",
+      "decimals": 18,
+      "blockchain": "near",
+      "symbol": "REF",
+      "price": "0.0921",
+      "priceUpdatedAt": "2026-10-30T12:00:00.000Z",
+      "contractAddress": "token.v2.ref-finance.near"
+    },
+    {
+      "assetId": "nep141:aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near",
+      "decimals": 18,
+      "blockchain": "near",
+      "symbol": "AURORA",
+      "price": "0.1134",
+      "priceUpdatedAt": "2026-10-30T12:00:00.000Z",
+      "contractAddress": "aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near"
+    },
+    {
+      "assetId": "nep141:blackdragon.tkn.near",
+      "decimals": 24,
+      "blockchain": "near",
+      "symbol": "BLACKDRAGON",
+      "price": "0.0000000214",
+      "priceUpdatedAt": "2026-10-30T12:00:00.000Z",
+      "contractAddress": "blackdragon.tkn.near"
+    },
+    {
+      "assetId": "nep141:token.0xshitzu.near",
+      "decimals": 18,
+      "blockchain": "near",
+      "symbol": "SHITZU",
+      "price": "0.00092",
+      "priceUpdatedAt": "2026-10-30T12:00:00.000Z",
+      "contractAddress": "token.0xshitzu.near"
+    },
+    {
+      "assetId": "nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near",
+      "decimals": 6,
+      "blockchain": "eth",
+      "symbol": "USDC",
+      "price": "0.9999",
+      "priceUpdatedAt": "2026-10-30T12:00:00.000Z",
+      "contractAddress": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+    },
+    {
+      "assetId": "nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near",
+      "decimals": 6,
+      "blockchain": "arb",
+      "symbol": "USDC",
+      "price": "0.9999",
+      "priceUpdatedAt": "2026-10-30T12:00:00.000Z",
+      "contractAddress": "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
+    },
+    {
+      "assetId": "nep141:sol-5ce3bf3a31af18be40ba30f721101b4341690186.omft.near",
+      "decimals": 6,
+      "blockchain": "sol",
+      "symbol": "USDC",
+      "price": "0.9999",
+      "priceUpdatedAt": "2026-10-30T12:00:00.000Z",
+      "contractAddress": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+    }
+  ]
+}
