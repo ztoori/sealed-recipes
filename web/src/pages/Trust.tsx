@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { verifyRunnerAttestation } from '../../../core/src/attestation';
 import type { Check } from '../../../core/src/nearai';
-import { api, short, usePoll } from '../api';
+import { api, runnerAttestation, short, usePoll } from '../api';
 import { useApp } from '../App';
 
 const rand = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -17,7 +17,7 @@ export function Trust() {
   const [ilog] = usePoll<any[]>('/api/intents/log', 3000);
   const verify = async () => {
     const nonce = rand();
-    const { attestation, onchain } = await api(`/api/runner/attestation?nonce=${nonce}`);
+    const { attestation, onchain } = await runnerAttestation(nonce);
     setAtt({ checks: verifyRunnerAttestation(attestation, { nonce, signing_pk: onchain.signing_pk, enc_pk_hex: onchain.enc_pk_hex, codehash: onchain.codehash }).checks, a: attestation, onchain });
   };
   useEffect(() => { verify(); }, []);
@@ -35,7 +35,7 @@ export function Trust() {
             <pre className="codebox">{chainRecipe ? JSON.stringify({ id: chainRecipe.id, sealed_hash: chainRecipe.sealed_hash, runner_id: chainRecipe.runner_id, blocks: chainRecipe.blocks, price_per_run: chainRecipe.price_per_run, royalty_bps: chainRecipe.royalty_bps, total_shares: chainRecipe.total_shares }, null, 1) : '—'}</pre></div>
           <div><h3 className="serif" style={{ fontWeight: 500, fontSize: 19 }}>Only the runner sees</h3>
             <p className="small muted">The wiring, parameters and prompts, plus the buyer's inputs, for the duration of one run.</p>
-            <div className="sealed-box">Decrypted in memory inside runner/src/main.ts, never logged or stored. The demo's plaintext seeds are in seed/recipes/ so you can read what was sealed.</div></div>
+            <div className="sealed-box">Decrypted in memory inside runner/src/main.ts, never logged or stored. Everything derived from it (block logs, wallet requests, the result) is sealed to the buyer's one-time browser key before it leaves the runner. The demo's plaintext seeds are in seed/recipes/ so you can read what was sealed.</div></div>
         </div>
       </div>
 
@@ -51,7 +51,7 @@ export function Trust() {
               <dt>Code hash</dt><dd className="hash">{short(att.a.codehash, 10, 6)}</dd>
               <dt>Compose hash</dt><dd className="hash">{short(att.a.compose_hash, 10, 6)}</dd>
             </dl>}
-            <p className="small muted">Edit any file under runner/src or core/src and restart: the code hash check turns red, because the contract pins the audited release.</p>
+            <p className="small muted">The owner pins the audited release in AUDITED_CODEHASH and registers it on-chain. Edit a file under runner/src or core/src and restart without re-pinning: this check turns red. In local-dev the code hash is self-reported; inside a TDX CVM it is only meaningful together with a DCAP-verified quote.</p>
           </div>
         </div>
         <div className="panel">
@@ -65,8 +65,8 @@ export function Trust() {
           </div>
         </div>
         <div className="panel">
-          <header><h2>Requests sent to 1Click</h2><span className="small muted">exact bodies</span></header>
-          <div className="body"><pre className="codebox">{JSON.stringify((ilog ?? []).filter((l) => l.path === '/v0/quote').slice(-3).map((l) => l.body), null, 1)}</pre></div>
+          <header><h2>What the 1Click service sees</h2><span className="small muted">exact request bodies</span></header>
+          <div className="body"><p className="small muted" style={{ marginTop: 0 }}>Confidential intents hide the deposit-to-payout link from chain observers. The 1Click service itself still sees each request, including the fresh recipient.</p><pre className="codebox">{JSON.stringify((ilog ?? []).filter((l) => l.path === '/v0/quote').slice(-3).map((l) => l.body), null, 1)}</pre></div>
         </div>
         <div className="panel">
           <header><h2>Contract events</h2><span className="small muted">NEP-297 · block {events?.height}</span></header>

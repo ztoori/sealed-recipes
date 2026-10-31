@@ -13,7 +13,7 @@ use near_sdk::json_types::{Base64VecU8, U128, U64};
 use near_sdk::store::{IterableMap, LookupMap};
 use near_sdk::{
     env, near, require, AccountId, BorshStorageKey, CurveType, Gas, NearToken, PanicOnDefault,
-    Promise, PromiseError, PromiseOrValue, PublicKey,
+    Promise, PromiseOrValue, PublicKey,
 };
 use serde_json::json;
 
@@ -105,6 +105,9 @@ pub struct Run {
     pub buyer: AccountId,
     pub amount: U128,
     pub inputs_hash: String,
+    /// The recipe's `sealed_hash` at payment time: the exact sealed version this run paid for.
+    /// `update_sealed` only affects runs created afterwards.
+    pub sealed_hash: String,
     pub status: RunStatus,
     pub created_ns: U64,
 }
@@ -237,6 +240,26 @@ fn emit(event: &str, data: serde_json::Value) {
         "data": [data],
     });
     env::log_str(&format!("EVENT_JSON:{}", log));
+}
+
+/// Block ids end up inside the `|`/`,`-delimited signed report, so they are restricted.
+fn valid_block_id(id: &str) -> bool {
+    (1..=64).contains(&id.len())
+        && id.bytes().all(|b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'@' | b'-')
+        })
+}
+
+fn valid_run_id(id: &str) -> bool {
+    (1..=64).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// Exactly 64 lowercase hex characters (a sha256 digest).
+fn valid_hash(h: &str) -> bool {
+    h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 fn valid_ticker(id: &str) -> bool {
@@ -377,7 +400,7 @@ impl Contract {
         fee_per_call: U128,
         manifest_hash: String,
     ) {
-        require!(!id.is_empty() && id.len() <= 64, "invalid block id");
+        require!(valid_block_id(&id), "block id must match ^[a-z0-9._@-]{1,64}$");
         require!(!self.blocks.contains_key(&id), "block exists");
         let block = Block {
             id: id.clone(),
@@ -408,6 +431,7 @@ impl Contract {
         require!(royalty_bps <= MAX_ROYALTY_BPS, "royalty too high");
         require!(total_shares.0 > 0, "total_shares must be > 0");
         require!(!sealed_hash.is_empty(), "sealed_hash required");
+        require!(!blocks.is_empty(), "recipe needs at least one block");
         let runner = self
             .runners
             .get(&runner_id)
@@ -483,31 +507,46 @@ impl Contract {
         );
         let parsed: TransferMsg =
             serde_json::from_str(&msg).unwrap_or_else(|_| env::panic_str("invalid msg"));
-        match parsed {
+        let (on_behalf_of, result) = match parsed {
             TransferMsg::Run {
                 recipe_id,
                 run_id,
                 inputs_hash,
                 on_behalf_of,
-            } => self.internal_request_run(
-                on_behalf_of.unwrap_or(sender_id),
-                amount.0,
-                recipe_id,
-                run_id,
-                inputs_hash,
-            ),
+            } => {
+                let owner = on_behalf_of.clone().unwrap_or_else(|| sender_id.clone());
+                (
+                    on_behalf_of,
+                    self.internal_request_run(owner, amount.0, recipe_id, run_id, inputs_hash),
+                )
+            }
             TransferMsg::Bid {
                 recipe_id,
                 price,
                 qty,
                 on_behalf_of,
-            } => self.internal_place_bid(
-                on_behalf_of.unwrap_or(sender_id),
-                amount.0,
-                recipe_id,
-                price.0,
-                qty.0,
-            ),
+            } => {
+                let owner = on_behalf_of.clone().unwrap_or_else(|| sender_id.clone());
+                (
+                    on_behalf_of,
+                    self.internal_place_bid(owner, amount.0, recipe_id, price.0, qty.0),
+                )
+            }
+        };
+        if let Err(reason) = result {
+            match on_behalf_of {
+                // Delivered through NEAR Intents: a panic would refund the solver/intents side,
+                // not the buyer. Keep the funds for the buyer instead.
+                Some(owner) => {
+                    self.credit(&owner, amount.0);
+                    emit(
+                        "transfer_rejected",
+                        json!({"on_behalf_of": owner, "sender_id": sender_id, "amount": amount, "reason": reason}),
+                    );
+                }
+                // Direct ft_transfer_call: panic so the token contract refunds the sender.
+                None => env::panic_str(&reason),
+            }
         }
         PromiseOrValue::Value(U128(0))
     }
@@ -519,20 +558,26 @@ impl Contract {
         recipe_id: String,
         run_id: String,
         inputs_hash: String,
-    ) {
-        require!(!run_id.is_empty() && run_id.len() <= 128, "invalid run_id");
-        require!(
-            !inputs_hash.is_empty() && inputs_hash.len() <= 128,
-            "invalid inputs_hash"
-        );
-        require!(!self.runs.contains_key(&run_id), "run exists");
-        let recipe = self
-            .recipes
-            .get(&recipe_id)
-            .unwrap_or_else(|| env::panic_str("unknown recipe"));
-        require!(recipe.listed, "recipe not listed");
+    ) -> Result<(), String> {
+        // All checks happen before any state change, so a rejection leaves no partial state.
+        if !valid_run_id(&run_id) {
+            return Err("run_id must match ^[A-Za-z0-9_-]{1,64}$".into());
+        }
+        if !valid_hash(&inputs_hash) {
+            return Err("inputs_hash must be 64 lowercase hex".into());
+        }
+        if self.runs.contains_key(&run_id) {
+            return Err("run exists".into());
+        }
+        let recipe = self.recipes.get(&recipe_id).ok_or("unknown recipe")?;
+        if !recipe.listed {
+            return Err("recipe not listed".into());
+        }
         let price = recipe.price_per_run.0;
-        require!(amount >= price, "payment below price_per_run");
+        let sealed_hash = recipe.sealed_hash.clone();
+        if amount < price {
+            return Err("payment below price_per_run".into());
+        }
         if amount > price {
             self.credit(&buyer, amount - price);
         }
@@ -542,11 +587,13 @@ impl Contract {
             buyer,
             amount: U128(price),
             inputs_hash,
+            sealed_hash,
             status: RunStatus::Pending,
             created_ns: U64(env::block_timestamp()),
         };
         emit("run_requested", json!(run));
         self.runs.insert(run_id, run);
+        Ok(())
     }
 
     pub fn report_run(
@@ -563,6 +610,7 @@ impl Contract {
             .cloned()
             .unwrap_or_else(|| env::panic_str("unknown run"));
         require!(run.status == RunStatus::Pending, "run not pending");
+        require!(valid_hash(&output_hash), "output_hash must be 64 lowercase hex");
         let recipe = self
             .recipes
             .get(&run.recipe_id)
@@ -728,13 +776,11 @@ impl Contract {
     }
 
     #[private]
-    pub fn on_withdraw(
-        &mut self,
-        account_id: AccountId,
-        amount: U128,
-        #[callback_result] result: Result<(), PromiseError>,
-    ) -> bool {
-        if result.is_err() {
+    pub fn on_withdraw(&mut self, account_id: AccountId, amount: U128) -> bool {
+        // `ft_transfer` returns nothing; only success/failure matters. (A typed
+        // `#[callback_result] Result<(), _>` would try to JSON-decode the empty result and fail.)
+        let ok = env::promise_results_count() == 1 && env::promise_result_checked(0, 64).is_ok();
+        if !ok {
             self.credit(&account_id, amount.0);
             emit(
                 "withdraw_failed",
@@ -864,11 +910,17 @@ impl Contract {
         );
     }
 
-    fn internal_place_bid(&mut self, buyer: AccountId, amount: u128, recipe_id: String, price: u128, qty: u128) {
-        require!(self.recipes.contains_key(&recipe_id), "unknown recipe");
-        require!(price > 0 && qty > 0, "price and qty must be > 0");
-        let escrow = price.checked_mul(qty).unwrap_or_else(|| env::panic_str("overflow"));
-        require!(amount >= escrow, "deposit below price * qty");
+    fn internal_place_bid(&mut self, buyer: AccountId, amount: u128, recipe_id: String, price: u128, qty: u128) -> Result<(), String> {
+        if !self.recipes.contains_key(&recipe_id) {
+            return Err("unknown recipe".into());
+        }
+        if price == 0 || qty == 0 {
+            return Err("price and qty must be > 0".into());
+        }
+        let escrow = price.checked_mul(qty).ok_or("price * qty overflows")?;
+        if amount < escrow {
+            return Err("deposit below price * qty".into());
+        }
         if amount > escrow {
             self.credit(&buyer, amount - escrow);
         }
@@ -906,6 +958,7 @@ impl Contract {
             book.bids.insert(pos, taker);
         }
         self.books.insert(recipe_id, book);
+        Ok(())
     }
 
     pub fn place_ask(&mut self, recipe_id: String, price: U128, qty: U128) -> u64 {

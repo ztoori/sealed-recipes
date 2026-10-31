@@ -52,3 +52,14 @@ export const ASSET_LABEL: Record<string, string> = {
   'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1': 'USDC (NEAR)',
   'nep141:wrap.near': 'wNEAR',
 };
+
+/**
+ * Attestation comes straight from the runner (not through the marketplace); the registered keys come
+ * from the contract view. In local mode that view is the server's mirror; in production it is NEAR RPC.
+ */
+export async function runnerAttestation(nonce: string): Promise<{ attestation: any; onchain: any }> {
+  const mode = await api<any>('/api/mode');
+  const attestation = await fetch(`${mode.runner_url}/attestation?nonce=${nonce}`).then((r) => r.json());
+  const onchain = await api(`/api/chain/runners/${mode.runner_id}`);
+  return { attestation, onchain };
+}

@@ -44,7 +44,7 @@ Fungible Recipes turns a workflow into a sealed, tradable financial instrument o
 
 Demo story: a creator builds and seals "Clean up and protect"; a buyer pays $0.75 from Arbitrum; the workflow quarantines scam airdrops, sweeps dust and confidentially swaps it to a fresh address; 8 parties plus all shareholders are paid in one settlement.
 
-Includes: a Rust NEAR contract (31 tests), a TS mirror passing the same vectors, the TEE runner, 8 blocks, the exchange UI, a headless e2e story, and a live-check against real 1Click and NEAR AI Cloud.
+Includes: a Rust NEAR contract (44 tests), a TS mirror passing the same vectors, the TEE runner, 8 blocks, the exchange UI, a headless e2e story, and a live-check against real 1Click and NEAR AI Cloud.
 ```
 
 ## 3. X demo post
@@ -72,7 +72,7 @@ Built at NEAR HACKATHON @NEARProtocol #NEARHackathon
 
 3/ One run of "Clean up and protect", $0.75 from Arbitrum: quarantine 2 scam airdrops, sweep 4 dust balances, confidentially swap to a fresh address. Protocol, runner, 5 block authors, the creator and every shareholder are paid in one receipt.
 
-4/ Repo (MIT, 48 tests, one-command demo): <repo link>
+4/ Repo (MIT, 64 tests, one-command demo): <repo link>
 Question for builders: which workflow would you seal and list first?
 ```
 

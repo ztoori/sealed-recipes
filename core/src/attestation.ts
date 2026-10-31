@@ -48,7 +48,11 @@ export function tdxReportDataFromQuote(quoteHex: string): string {
   return Array.from(q.slice(568, 632), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export interface Expected { nonce: string; signing_pk?: string; enc_pk_hex?: string; codehash?: string; compose_hash?: string }
+export interface Expected {
+  nonce: string; signing_pk?: string; enc_pk_hex?: string; codehash?: string; compose_hash?: string;
+  /** set only after the quote's Intel signature chain was verified (dcap-qvl). Without it, `hardware` is never true. */
+  dcapVerified?: boolean;
+}
 
 export function verifyRunnerAttestation(a: RunnerAttestation, exp: Expected): { ok: boolean; hardware: boolean; checks: Check[] } {
   const checks: Check[] = [];
@@ -70,8 +74,9 @@ export function verifyRunnerAttestation(a: RunnerAttestation, exp: Expected): { 
     try { qrd = tdxReportDataFromQuote(a.quote); } catch (e) { qrd = 'parse error: ' + (e as Error).message; }
     add('tdx.report_data', 'TDX quote REPORTDATA carries our report_data', qrd.startsWith(a.report_data), qrd);
     if (exp.compose_hash) add('tdx.compose', 'Compose hash matches expected deployment (mr_config)', a.compose_hash === exp.compose_hash, a.compose_hash);
-    add('tdx.chain', 'Intel signature chain (dcap-qvl / proof.t16z.com)', null, 'run `npx tsx scripts/verify-quote.ts` or paste the quote at https://proof.t16z.com');
-    hardware = checks.every((c) => c.status !== 'fail');
+    add('tdx.chain', 'Intel signature chain (dcap-qvl / proof.t16z.com)', exp.dcapVerified ? true : null, exp.dcapVerified ? 'verified with dcap-qvl' : 'not verified here: run `npx tsx scripts/verify-quote.ts` or paste the quote at https://proof.t16z.com');
+    // a parsed quote proves nothing until Intel's signature chain is checked
+    hardware = exp.dcapVerified === true && checks.every((c) => c.status !== 'fail');
   } else {
     add('tdx.quote', 'Hardware TDX quote', null, 'local-dev runner: no hardware quote. Deploy runner/ to a TDX CVM (dstack) to enable.');
   }

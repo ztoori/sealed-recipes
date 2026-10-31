@@ -94,7 +94,7 @@ On-chain commitment: `sealed_hash = sha256(canonical(envelope))`. Buyer inputs a
 
 ## 6. Execution and report
 
-The runner refuses to execute unless `sha256(sealed recipe) == recipe.sealed_hash` and `sha256(sealed inputs) == run.inputs_hash` on-chain, and the run is `Pending` (paid).
+The runner takes the recipe id from the paid run and refuses to execute unless `sha256(sealed recipe) == run.sealed_hash` (the snapshot taken at payment), `sha256(sealed inputs) == run.inputs_hash`, and the run is `Pending`. The sealed inputs carry a one-time `reply_to` key from the buyer's browser; everything the runner reports about the run, except coarse progress, is sealed to it.
 It executes nodes in topological order, then signs:
 
 ```

@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import nacl from 'tweetnacl';
-import { seal } from '../../../core/src/seal';
+import { seal, open, type SealedEnvelope } from '../../../core/src/seal';
 import { verifyRunnerAttestation } from '../../../core/src/attestation';
-import { api, ASSET_LABEL, money, PAY_ASSETS, short, usd, usePoll } from '../api';
+import { api, ASSET_LABEL, money, PAY_ASSETS, runnerAttestation, short, usd, usePoll } from '../api';
 import { useApp } from '../App';
 import { SettlementFlow } from '../components/Sankey';
 
 const hex = (u: Uint8Array) => Array.from(u, (b) => b.toString(16).padStart(2, '0')).join('');
 const RUNNER_ID = 'tee-runner-1.testnet';
-type Ev = { seq: number; at: number; source: string; type: string; data: any };
+type Ev = { seq: number; at: number; source: string; type: string; data: any; sealed?: boolean };
 
 export function Run() {
   const { ticker, setTicker, acting, story, toast, go } = useApp();
@@ -32,6 +32,8 @@ export function Run() {
   const [busy, setBusy] = useState(false);
   const [runnerOk, setRunnerOk] = useState<null | { ok: boolean; hardware: boolean }>(null);
   const storyStage = useRef(0);
+  const reply = useRef<nacl.BoxKeyPair | null>(null); // one-time key; the runner seals everything about this run to it
+  const runToken = useRef('');
 
   useEffect(() => { if (listing && listing.ticker !== ticker) setTicker(listing.ticker); }, [listing]);
   // defaults for the form
@@ -54,25 +56,33 @@ export function Run() {
     setBusy(true);
     try {
       const nonce = hex(crypto.getRandomValues(new Uint8Array(32)));
-      const { attestation, onchain } = await api(`/api/runner/attestation?nonce=${nonce}`);
+      const { attestation, onchain } = await runnerAttestation(nonce);
       const v = verifyRunnerAttestation(attestation, { nonce, signing_pk: onchain.signing_pk, enc_pk_hex: onchain.enc_pk_hex, codehash: onchain.codehash });
       setRunnerOk({ ok: v.ok, hardware: v.hardware });
       if (!v.ok) throw new Error('runner attestation failed; refusing to send inputs');
       const inputs: Record<string, unknown> = {};
       for (const f of listing.form) inputs[f.id] = f.type === 'usd' ? Number(values[f.id]) : values[f.id];
-      const sealed = seal(inputs, onchain.enc_pk_hex, 'inputs');
+      reply.current = nacl.box.keyPair();
+      const sealed = seal({ inputs, reply_to: hex(reply.current.publicKey) }, onchain.enc_pk_hex, 'inputs');
       const pa = PAY_ASSETS.find((p) => p.id === payAsset)!;
       const q = await api('/api/runs/quote', { recipe_id: listing.ticker, buyer: acting, pay_asset: payAsset, refund_to: pa.refund, sealed_inputs: sealed });
+      runToken.current = q.run_token;
       setQuote(q); setRunId(q.run_id); setEvents([]); setShown(0);
     } catch (e) { toast((e as Error).message, true); } finally { setBusy(false); }
   };
-  const pay = async () => { if (!runId) return; setBusy(true); try { await api(`/api/runs/${runId}/pay`, {}); setQuote((q: any) => ({ ...q, paid: true })); } catch (e) { toast((e as Error).message, true); } finally { setBusy(false); } };
+  const pay = async () => { if (!runId) return; setBusy(true); try { await api(`/api/runs/${runId}/pay?token=${runToken.current}`, {}); setQuote((q: any) => ({ ...q, paid: true })); } catch (e) { toast((e as Error).message, true); } finally { setBusy(false); } };
 
   // live event stream
   useEffect(() => {
     if (!runId) return;
-    const es = new EventSource(`/api/runs/${runId}/events`);
-    es.onmessage = (m) => { const e = JSON.parse(m.data) as Ev; setEvents((x) => (x.some((y) => y.seq === e.seq) ? x : [...x, e])); };
+    const es = new EventSource(`/api/runs/${runId}/events?token=${runToken.current}`);
+    es.onmessage = (m) => {
+      let e = JSON.parse(m.data) as Ev;
+      if (e.type === 'sealed' && reply.current) {
+        try { const inner = open<{ type: string; data: any }>(e.data.envelope as SealedEnvelope, reply.current.secretKey); e = { ...e, type: inner.type, data: inner.data, sealed: true }; } catch { return; }
+      }
+      setEvents((x) => (x.some((y) => y.seq === e.seq) ? x : [...x, e]));
+    };
     return () => es.close();
   }, [runId]);
 
@@ -82,8 +92,9 @@ export function Run() {
     return req && !res ? req.data : null;
   }, [events]);
   const completed = events.find((e) => e.type === 'completed');
+  const result = events.find((e) => e.type === 'result')?.data;
   const failed = events.find((e) => e.type === 'failed' || e.type === 'payment_rejected');
-  const approve = async (ok: boolean) => { try { await api(`/api/runs/${runId}/approve`, { approved: ok }); } catch (e) { toast((e as Error).message, true); } };
+  const approve = async (ok: boolean) => { try { await api(`/api/runs/${runId}/approve?token=${runToken.current}`, { approved: ok, transactions: ok ? approval?.transactions : [] }); } catch (e) { toast((e as Error).message, true); } };
 
   // ---------- story automation (steps 2-4) ----------
   useEffect(() => {
@@ -166,21 +177,21 @@ export function Run() {
               <div key={i} className={'tl ' + (r.state === 'fail' ? 'fail' : i === rows.length - 1 && !completed && !failed ? 'live' : 'done')}>
                 <span className="ic">{r.state === 'fail' ? '!' : i === rows.length - 1 && !completed && !failed ? '' : '✓'}</span>
                 <div><b>{r.title}</b>{r.sub && <div className="small muted">{r.sub}</div>}</div>
-                <span className="src">{r.source}</span>
+                <span className="src">{r.sealed ? <span className="pill sealed" title="These details were sealed to your browser key; the marketplace only relayed ciphertext">sealed to you</span> : r.source}</span>
                 {r.logs.length > 0 && <div className="logs">{r.logs.map((l, j) => <div key={j}>{l}</div>)}</div>}
               </div>
             ))}
           </div>
         </div>
 
-        {completed?.data?.ok && (
-          <div className="panel" id="settlement">
-            <header><h2>Result</h2><span className="small muted">returned only to you</span></header>
-            <div className="body"><Output out={completed.data.output} /></div>
+        {completed?.data?.ok && result && (
+          <div className="panel">
+            <header><h2>Result</h2><span className="pill sealed">sealed to your browser key</span></header>
+            <div className="body"><Output out={result.output} /></div>
           </div>
         )}
         {settlement?.payouts && (
-          <div className="panel">
+          <div className="panel" id="settlement">
             <header><h2>Settlement</h2><span className="small muted">tx {short(settlement.tx, 8, 6)} · block {settlement.block} · one receipt</span></header>
             <div className="body">
               <SettlementFlow price={Number(listing.price_per_run)} payouts={settlement.payouts} pool={pool} />
@@ -195,7 +206,7 @@ export function Run() {
           <div className="wallet-modal">
             <div className="small muted">Wallet · {approval.signer}</div>
             <h2>{approval.title}</h2>
-            <p className="small muted" style={{ margin: 0 }}>The runner never holds your funds. It prepared these NEP-141 transfers to 1Click deposit addresses; confidential intents make the deposits unlinkable to the payout.</p>
+            <p className="small muted" style={{ margin: 0 }}>Decrypted in your browser. The runner never holds your funds. It prepared these NEP-141 transfers to 1Click deposit addresses; confidential intents make the deposits unlinkable to the payout.</p>
             <table className="small"><thead><tr><th>Token</th><th className="r">Amount</th><th className="r">≈ USD</th><th>To deposit address</th></tr></thead><tbody>
               {approval.summary.map((s: any, i: number) => <tr key={i}><td>{s.symbol}</td><td className="r">{s.amount}</td><td className="r">{money(s.usd)}</td><td className="hash">{short(s.to, 8, 6)}</td></tr>)}
             </tbody></table>
@@ -224,7 +235,7 @@ function Output({ out }: { out: any }) {
   return <pre className="codebox">{JSON.stringify(out, null, 1)}</pre>;
 }
 
-interface Row { title: string; sub?: string; source: string; logs: string[]; state?: 'fail' }
+interface Row { title: string; sub?: string; source: string; logs: string[]; state?: 'fail'; sealed?: boolean }
 function timeline(events: Ev[]): Row[] {
   const rows: Row[] = [];
   let block: Row | null = null;
@@ -240,11 +251,11 @@ function timeline(events: Ev[]): Row[] {
       case 'verified': rows.push({ title: 'Runner checked the on-chain commitments', source: 'runner', logs: d.checks.map((c: any) => `${c.ok ? '✓' : '✕'} ${c.label}`) }); break;
       case 'decrypted': rows.push({ title: 'Recipe and inputs decrypted inside the runner', sub: 'plaintext never leaves the runner process', source: 'runner', logs: [] }); break;
       case 'block_start': block = { title: d.name, sub: `by ${d.author} · ${usd(d.fee, 2)} per call`, source: 'block', logs: [] }; rows.push(block); break;
-      case 'block_log': if (block) block.logs.push(d.msg); break;
+      case 'block_log': if (block) { block.logs.push(d.msg); block.sealed = true; } break;
       case 'block_done': if (block) block.sub += ` · ${d.ms} ms`; break;
       case 'block_error': rows.push({ title: 'Block failed', sub: d.error, source: 'runner', logs: [], state: 'fail' }); break;
       case 'approval_required': block?.logs.push(`wallet approval requested: ${d.transactions.length} transfers`); break;
-      case 'approval_result': block?.logs.push(d.approved ? `approved, ${d.txHashes.length} transfers sent` : 'rejected by buyer'); break;
+      case 'approval_result': block?.logs.push(d.approved ? `approved, ${d.transfers} transfers sent` : 'rejected by buyer'); break;
       case 'signed': rows.push({ title: 'Runner signed the report', sub: d.message.length > 100 ? d.message.slice(0, 100) + '…' : d.message, source: 'runner', logs: [] }); break;
       case 'frs_settlement': rows.push({ title: 'report_run verified the ed25519 signature and settled', sub: `tx ${short(d.tx, 8, 6)} · ${d.payouts.length} payees + shareholders`, source: 'contract', logs: [] }); break;
       case 'run_refunded': rows.push({ title: 'Run refunded to the buyer', sub: d.reason, source: 'contract', logs: [] }); break;

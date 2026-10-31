@@ -6,6 +6,7 @@
  *   --no-open   don't open a browser       --story   also run the 4-step story in the terminal
  */
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +20,7 @@ const base = `http://127.0.0.1:${PORT}`;
 const node = process.execPath;
 const tsx = ['--import', 'tsx'];
 const children = [];
+const RUNNER_TOKEN = randomBytes(24).toString('hex'); // marketplace ↔ runner job channel
 
 function start(name, script, env) {
   const p = spawn(node, [...tsx, script], { cwd: root, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -51,9 +53,9 @@ const rewrite = [
   `cloud-api.near.ai=${base}/mock/nearai`,
 ].join(',');
 
-start('runner', 'runner/src/main.ts', { RUNNER_PORT: RPORT, CHAIN_URL: `${base}/api/chain`, FRS_REWRITE: rewrite, TEE_MODE: process.env.TEE_MODE ?? 'local-dev' });
+start('runner', 'runner/src/main.ts', { RUNNER_PORT: RPORT, CHAIN_URL: `${base}/api/chain`, FRS_REWRITE: rewrite, RUNNER_TOKEN, TEE_MODE: process.env.TEE_MODE ?? 'local-dev' });
 await waitFor(`http://127.0.0.1:${RPORT}/health`);
-start('server', 'server/src/main.ts', { PORT, RUNNER_URL: `http://127.0.0.1:${RPORT}` });
+start('server', 'server/src/main.ts', { PORT, RUNNER_URL: `http://127.0.0.1:${RPORT}`, RUNNER_TOKEN });
 await waitFor(`${base}/api/mode`);
 const seed = spawnSync(node, [...tsx, 'scripts/seed.ts'], { cwd: root, stdio: 'inherit', env: { ...process.env, FRS_URL: base } });
 if (seed.status) shutdown(seed.status);

@@ -21,7 +21,8 @@
     "test:rust": "cargo test --manifest-path contracts/fungible-recipes/Cargo.toml",
     "test:e2e": "node scripts/demo.mjs --no-open --story --exit",
     "record": "node scripts/record-demo.mjs",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "pin-codehash": "tsx scripts/pin-codehash.ts"
   },
   "dependencies": {
     "@noble/curves": "^2.4.0",

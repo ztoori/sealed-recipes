@@ -37,7 +37,7 @@ export const intentsSwap: BlockHandler = async (inputs, ctx) => {
     if (!res.ok) { ctx.log(`no route for ${h.symbol} (${res.status}); left in wallet`); continue; }
     const q = (await res.json()) as QuoteResponse;
     quotes.push({ h, q });
-    ctx.log(`quote ${h.symbol} → ${q.quote.amountOutFormatted} out ($${q.quote.amountOutUsd}), ${confidential ? 'confidential' : 'public'}`, { correlationId: q.correlationId, depositAddress: q.quote.depositAddress, request: req });
+    ctx.log(`quote ${h.symbol} → ${q.quote.amountOutFormatted} out ($${q.quote.amountOutUsd}), ${confidential ? 'confidential' : 'public'}`, { correlationId: q.correlationId });
   }
   if (!quotes.length) { ctx.log('nothing to swap'); return { receipts: [] }; }
 

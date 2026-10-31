@@ -3,7 +3,7 @@ import { seal, sealedHash, type SealedEnvelope } from '../../../core/src/seal';
 import { publicListing, type Catalog, type Recipe } from '../../../core/src/frs';
 import { verifyRunnerAttestation } from '../../../core/src/attestation';
 import type { Check } from '../../../core/src/nearai';
-import { api, short } from '../api';
+import { api, runnerAttestation, short } from '../api';
 
 const rand = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
 
@@ -20,7 +20,7 @@ export function SealModal({ recipe, catalog, ipo, auto, onClose }: { recipe: Rec
   const verify = async () => {
     setErr('');
     const nonce = rand();
-    const { attestation, onchain } = await api(`/api/runner/attestation?nonce=${nonce}`);
+    const { attestation, onchain } = await runnerAttestation(nonce);
     const v = verifyRunnerAttestation(attestation, { nonce, signing_pk: onchain.signing_pk, enc_pk_hex: onchain.enc_pk_hex, codehash: onchain.codehash });
     setChecks(v.checks);
     if (!v.ok) { setErr('Runner attestation failed. Do not seal to this key.'); return false; }

@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { verifyChat, checkReportDataBinding, checkNras, type ChatSignature, type Check } from '../../../core/src/nearai.js';
+import { tdxReportDataFromQuote } from '../../../core/src/attestation.js';
 import type { BlockHandler, Flag, Holding } from '../types.js';
 
 /**
@@ -19,8 +20,9 @@ export const spamShield: BlockHandler = async (inputs, ctx) => {
   const att = await ctx.http(`${ctx.endpoints.nearai}/v1/attestation/report?model=${encodeURIComponent(model)}&signing_algo=ecdsa&nonce=${nonce}`, { headers }).then((r) => r.json()) as {
     model_attestations: { signing_address: string; nvidia_payload?: string; intel_quote?: string; report_data?: string; tee?: string }[];
   };
-  const node = att.model_attestations[0];
-  ctx.log(`model attestation received for ${model}; TEE signing address ${node.signing_address}`);
+  const nodes = att.model_attestations ?? [];
+  if (!nodes.length) throw new Error('no model attestations returned');
+  ctx.log(`model attestation received for ${model}: ${nodes.length} TEE node(s)`);
 
   // 2) classification
   const facts = holdings.map((h) => ({ contract: h.contract, symbol: h.symbol, name: h.name, usd: h.usd, quoted_by_solvers: h.listed }));
@@ -43,23 +45,26 @@ export const spamShield: BlockHandler = async (inputs, ctx) => {
   }
   const checks: Check[] = [];
   if (!sig) throw new Error('could not fetch chat signature');
-  // provider_tee signatures must come from the attested model key; gateway-kind signatures come from the
-  // NEAR AI gateway TEE and are checked against the key in its own signature record (see docs/THREAT_MODEL.md)
-  const v = verifyChat(requestBody, responseBody, sig, sig.signature_kind === 'gateway' ? sig.signing_address : node.signing_address);
-  if (sig.signature_kind === 'gateway') checks.push({ id: 'chat.kind', label: 'Signed by the NEAR AI gateway TEE (gateway attestation not re-verified here)', status: 'skip', detail: sig.signing_address });
+  const gateway = sig.signature_kind === 'gateway';
+  // provider_tee: the signer must be one of the attested model TEE nodes (a model can be served by several)
+  const node = nodes.find((n) => n.signing_address.toLowerCase() === sig!.signing_address.toLowerCase()) ?? nodes[0];
+  const v = verifyChat(requestBody, responseBody, sig, gateway ? sig.signing_address : node.signing_address);
   checks.push({ id: 'chat.hash', label: 'Signed text = sha256(request):sha256(response)', status: v.signedTextMatches ? 'pass' : 'fail', detail: `${v.requestHash.slice(0, 12)}…:${v.responseHash.slice(0, 12)}…` });
-  checks.push({ id: 'chat.signer', label: 'Signature recovers to attested TEE address', status: v.signerMatchesAttestation ? 'pass' : 'fail', detail: v.recovered });
-  if (node.report_data) checks.push(...checkReportDataBinding(node.report_data, node.signing_address, nonce));
+  if (gateway) checks.push({ id: 'chat.signer', label: 'Signed by the NEAR AI gateway TEE: gateway attestation not verified by this block', status: 'skip', detail: v.recovered });
+  else checks.push({ id: 'chat.signer', label: 'Signature recovers to an attested model TEE address', status: v.signerMatchesAttestation ? 'pass' : 'fail', detail: v.recovered });
+  // TDX binding: report_data (from the quote itself when present) must carry signing address + our nonce
+  const rd = node.intel_quote ? (() => { try { return tdxReportDataFromQuote(node.intel_quote!); } catch { return ''; } })() : node.report_data;
+  if (rd) checks.push(...checkReportDataBinding(rd, node.signing_address, nonce));
+  else checks.push({ id: 'tdx.bind', label: 'TDX report_data binding', status: 'skip', detail: 'no quote available' });
   if (node.nvidia_payload) {
     try {
       const nras = await ctx.http(`${ctx.endpoints.nras}/v3/attest/gpu`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: node.nvidia_payload }).then((r) => r.json());
       checks.push(...checkNras(nras, nonce));
     } catch (e) { checks.push({ id: 'nras', label: 'NVIDIA NRAS GPU attestation', status: 'fail', detail: (e as Error).message }); }
   } else checks.push({ id: 'nras', label: 'NVIDIA NRAS GPU attestation', status: 'skip', detail: 'no nvidia_payload (local mock of NEAR AI Cloud)' });
-  if (!node.intel_quote) checks.push({ id: 'tdx', label: 'Intel TDX quote (dcap-qvl)', status: 'skip', detail: 'no intel_quote (local mock of NEAR AI Cloud)' });
-  else checks.push({ id: 'tdx', label: 'Intel TDX quote present (verify with dcap-qvl)', status: 'pass', detail: `${node.intel_quote.length / 2} bytes` });
+  checks.push({ id: 'tdx', label: 'Intel TDX quote signature chain (dcap-qvl)', status: 'skip', detail: node.intel_quote ? 'quote present; Intel chain verification is done by scripts/live-check / dcap-qvl, not inside this block' : 'no intel_quote (local mock of NEAR AI Cloud)' });
   if (checks.some((c) => c.status === 'fail')) throw new Error('NEAR AI Cloud verification failed: ' + checks.filter((c) => c.status === 'fail').map((c) => c.label).join(', '));
-  ctx.log(`AI verdicts verified: ${checks.filter((c) => c.status === 'pass').length} checks passed`, { checks, chat_id: completion.id, signing_address: node.signing_address, mock: node.tee === 'mock' });
+  ctx.log(`AI verdict signature verified: ${checks.filter((c) => c.status === 'pass').length} checks passed, ${checks.filter((c) => c.status === 'skip').length} not checked here`, { checks, chat_id: completion.id, signing_address: node.signing_address, mock: node.tee === 'mock' });
 
   const flags: Flag[] = [];
   const clean: Holding[] = [];

@@ -6,3 +6,4 @@ contracts/fungible-recipes/target/
 docs/media/.video/
 *.log
 .DS_Store
+archive/

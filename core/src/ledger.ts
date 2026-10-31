@@ -4,7 +4,8 @@
  * signed-report format, same NEP-297 events. Parity is enforced by tests that run
  * the shared vectors in contracts/test-vectors against both implementations.
  *
- * In testnet mode the server swaps this for `NearContractAdapter` (server/src/chain.ts).
+ * Event names and fields follow docs/CONTRACT_EVENTS.md. Known differences from the contract:
+ * withdraw() completes synchronously (no ft_transfer promise) and there is no storage accounting.
  */
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
@@ -21,10 +22,10 @@ export interface LedgerBlock { id: string; version: string; author: string; fee_
 export interface LedgerRunner { id: string; signing_pk: string; enc_pk_hex: string; codehash: string; fee_per_run: bigint; active: boolean }
 export interface LedgerRecipe {
   id: string; name: string; creator: string; sealed_hash: string; runner_id: string; blocks: string[];
-  price_per_run: bigint; royalty_bps: number; total_shares: bigint; acc_per_share: bigint; runs: bigint; revenue: bigint; created_ns: bigint;
+  price_per_run: bigint; royalty_bps: number; total_shares: bigint; acc_per_share: bigint; runs: bigint; revenue: bigint; listed: boolean; created_ns: bigint;
 }
 export type RunStatus = 'Pending' | 'Settled' | 'Refunded';
-export interface LedgerRun { run_id: string; recipe_id: string; buyer: string; amount: bigint; inputs_hash: string; status: RunStatus; created_ns: bigint }
+export interface LedgerRun { run_id: string; recipe_id: string; buyer: string; amount: bigint; inputs_hash: string; sealed_hash: string; status: RunStatus; created_ns: bigint }
 export interface LedgerOrder { id: number; recipe_id: string; owner: string; side: 'Bid' | 'Ask'; price: bigint; qty: bigint; created_ns: bigint }
 export interface LedgerEvent { standard: string; version: string; event: string; data: Record<string, unknown>[]; block_height: number; timestamp_ns: string; tx_hash: string; signer: string }
 export interface Payout { account_id: string; role: string; amount: bigint }
@@ -119,8 +120,9 @@ export class LocalLedger {
     assert(!this.runners.has(a.id), 'runner exists');
     assert(a.signing_pk.startsWith('ed25519:') && bs58.decode(a.signing_pk.slice(8)).length === 32, 'signing_pk must be ed25519');
     assert(/^[0-9a-f]{64}$/.test(a.enc_pk_hex), 'enc_pk_hex must be 32-byte hex');
-    this.runners.set(a.id, { ...a, fee_per_run: BigInt(a.fee_per_run), active: true });
-    this.emit('runner_added', { runner_id: a.id, codehash: a.codehash });
+    const r = { id: a.id, signing_pk: a.signing_pk, enc_pk_hex: a.enc_pk_hex, codehash: a.codehash, fee_per_run: BigInt(a.fee_per_run), active: true };
+    this.runners.set(a.id, r);
+    this.emit('runner_added', { ...r });
   }
   set_runner_active(a: { id: string; active: boolean }) {
     assert(this.caller() === this.owner, 'only owner');
@@ -130,9 +132,11 @@ export class LocalLedger {
   // ---------- builders & creators ----------
   register_block(a: { id: string; version: string; fee_per_call: string; manifest_hash: string }) {
     const author = this.caller();
+    assert(/^[a-z0-9._@-]{1,64}$/.test(a.id), 'block id must match ^[a-z0-9._@-]{1,64}$');
     assert(!this.blocks.has(a.id), 'block id taken');
-    this.blocks.set(a.id, { id: a.id, version: a.version, author, fee_per_call: BigInt(a.fee_per_call), manifest_hash: a.manifest_hash, active: true });
-    this.emit('block_registered', { block_id: a.id, author, fee_per_call: a.fee_per_call, manifest_hash: a.manifest_hash });
+    const b = { id: a.id, version: a.version, author, fee_per_call: BigInt(a.fee_per_call), manifest_hash: a.manifest_hash, active: true };
+    this.blocks.set(a.id, b);
+    this.emit('block_registered', { ...b });
   }
 
   publish_recipe(a: { id: string; name: string; sealed_hash: string; runner_id: string; blocks: string[]; price_per_run: string; royalty_bps: number; total_shares: string }) {
@@ -142,19 +146,21 @@ export class LocalLedger {
     assert(a.royalty_bps <= 5000, 'royalty too high');
     const total = BigInt(a.total_shares); assert(total > 0n, 'total_shares must be > 0');
     const runner = this.runners.get(a.runner_id); assert(runner?.active, 'runner not active');
-    assert(a.blocks.length > 0, 'no blocks');
+    assert(a.blocks.length > 0, 'recipe needs at least one block');
     const fees = a.blocks.map((b) => { const blk = this.blocks.get(b); assert(blk?.active, `unknown block ${b}`); return blk.fee_per_call; });
     const price = BigInt(a.price_per_run);
     assert(minimumPrice(price, this.protocolFeeBps, runner.fee_per_run, fees), 'price below minimum viable price');
-    const r: LedgerRecipe = { id: a.id, name: a.name, creator, sealed_hash: a.sealed_hash, runner_id: a.runner_id, blocks: a.blocks, price_per_run: price, royalty_bps: a.royalty_bps, total_shares: total, acc_per_share: 0n, runs: 0n, revenue: 0n, created_ns: this.now() };
+    const r: LedgerRecipe = { id: a.id, name: a.name, creator, sealed_hash: a.sealed_hash, runner_id: a.runner_id, blocks: a.blocks, price_per_run: price, royalty_bps: a.royalty_bps, total_shares: total, acc_per_share: 0n, runs: 0n, revenue: 0n, listed: true, created_ns: this.now() };
     this.recipes.set(a.id, r);
     const h = this.holding(a.id, creator); h.shares = total; this.rebase(r, h);
-    this.emit('recipe_published', { recipe_id: a.id, creator, sealed_hash: a.sealed_hash, price_per_run: a.price_per_run, total_shares: a.total_shares });
+    const { created_ns: _c, ...pub } = r;
+    this.emit('recipe_published', { ...pub, runs: 0 });
   }
 
   update_sealed(a: { id: string; sealed_hash: string }) {
     const r = this.recipes.get(a.id); assert(r, 'no recipe'); assert(r.creator === this.caller(), 'only creator');
-    r.sealed_hash = a.sealed_hash;
+    r.sealed_hash = a.sealed_hash; // affects runs paid from now on; paid runs keep their snapshot
+    this.emit('recipe_updated', { recipe_id: a.id, sealed_hash: a.sealed_hash });
   }
 
   // ---------- NEAR Intents delivery (ft_transfer_call from payment token) ----------
@@ -162,34 +168,48 @@ export class LocalLedger {
     assert(this.caller() === this.paymentToken, 'only payment token');
     const amount = BigInt(a.amount);
     let m: { action: string; [k: string]: string };
-    try { m = JSON.parse(a.msg); } catch { throw new LedgerError('bad msg'); }
-    const owner = m.on_behalf_of || a.sender_id; // NEAR Intents: sender is the solver
+    try { m = JSON.parse(a.msg); } catch { throw new LedgerError('invalid msg'); }
+    if (m.action !== 'run' && m.action !== 'bid') throw new LedgerError('invalid msg');
+    const owner = m.on_behalf_of || a.sender_id; // NEAR Intents: sender is the solver side, not the buyer
+    // validate everything before touching state (same order and reasons as the contract)
+    const reject = (reason: string): string => {
+      if (!m.on_behalf_of) throw new LedgerError(reason); // token contract refunds sender
+      this.credit(m.on_behalf_of, amount);
+      this.emit('transfer_rejected', { on_behalf_of: m.on_behalf_of, sender_id: a.sender_id, amount, reason });
+      return '0';
+    };
     if (m.action === 'run') {
-      const r = this.recipes.get(m.recipe_id); assert(r, 'no recipe');
-      assert(!this.runs.has(m.run_id), 'run id used');
-      assert(/^[0-9a-f]{64}$/.test(m.inputs_hash ?? ''), 'inputs_hash must be sha256 hex');
-      assert(amount >= r.price_per_run, 'insufficient payment');
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(m.run_id ?? '')) return reject('run_id must match ^[A-Za-z0-9_-]{1,64}$');
+      if (!/^[0-9a-f]{64}$/.test(m.inputs_hash ?? '')) return reject('inputs_hash must be 64 lowercase hex');
+      if (this.runs.has(m.run_id)) return reject('run exists');
+      const r = this.recipes.get(m.recipe_id);
+      if (!r) return reject('unknown recipe');
+      if (!r.listed) return reject('recipe not listed');
+      if (amount < r.price_per_run) return reject('payment below price_per_run');
       this.credit(owner, amount - r.price_per_run);
-      this.runs.set(m.run_id, { run_id: m.run_id, recipe_id: r.id, buyer: owner, amount: r.price_per_run, inputs_hash: m.inputs_hash, status: 'Pending', created_ns: this.now() });
-      this.emit('run_requested', { run_id: m.run_id, recipe_id: r.id, buyer: owner, amount: r.price_per_run, inputs_hash: m.inputs_hash, paid_by: a.sender_id });
+      const run: LedgerRun = { run_id: m.run_id, recipe_id: r.id, buyer: owner, amount: r.price_per_run, inputs_hash: m.inputs_hash, sealed_hash: r.sealed_hash, status: 'Pending', created_ns: this.now() };
+      this.runs.set(m.run_id, run);
+      this.emit('run_requested', { ...run });
       return '0';
     }
-    if (m.action === 'bid') {
-      const r = this.recipes.get(m.recipe_id); assert(r, 'no recipe');
-      const price = BigInt(m.price), qty = BigInt(m.qty);
-      assert(price > 0n && qty > 0n, 'price and qty must be > 0');
-      const need = price * qty; assert(amount >= need, 'insufficient escrow');
-      this.credit(owner, amount - need);
-      this.matchBid(r, owner, price, qty);
-      return '0';
-    }
-    throw new LedgerError('unknown action');
+    const r = this.recipes.get(m.recipe_id);
+    if (!r) return reject('unknown recipe');
+    let price: bigint, qty: bigint;
+    try { price = BigInt(m.price); qty = BigInt(m.qty); } catch { return reject('price and qty must be > 0'); }
+    if (price <= 0n || qty <= 0n) return reject('price and qty must be > 0');
+    if (price * qty >= 2n ** 128n) return reject('price * qty overflows');
+    const need = price * qty;
+    if (amount < need) return reject('deposit below price * qty');
+    this.credit(owner, amount - need);
+    this.matchBid(r, owner, price, qty);
+    return '0';
   }
 
   report_run(a: { run_id: string; success: boolean; blocks_used: string[]; output_hash: string; signature: string }) {
     const run = this.runs.get(a.run_id); assert(run, 'no run'); assert(run.status === 'Pending', 'run not pending');
     const r = this.recipes.get(run.recipe_id)!;
     const runner = this.runners.get(r.runner_id); assert(runner?.active, 'runner inactive');
+    assert(/^[0-9a-f]{64}$/.test(a.output_hash), 'output_hash must be 64 lowercase hex');
     const msg = runReportMessage(this.contractId, a.run_id, r.id, a.success, a.output_hash, a.blocks_used);
     const pk = bs58.decode(runner.signing_pk.slice(8));
     const sig = base64.dec(a.signature);
@@ -238,7 +258,7 @@ export class LocalLedger {
   claim_dividends(a: { recipe_id: string }): bigint {
     const who = this.caller(); const r = this.recipes.get(a.recipe_id); assert(r, 'no recipe');
     this.harvest(r, who); const amt = this.lastHarvest;
-    this.emit('dividends_claimed', { recipe_id: r.id, account: who, amount: amt });
+    this.emit('dividends_claimed', { recipe_id: r.id, account_id: who, amount: amt });
     return amt;
   }
 
@@ -246,7 +266,7 @@ export class LocalLedger {
     const who = this.caller(); const bal = this.balances.get(who) ?? 0n;
     const amt = a.amount ? BigInt(a.amount) : bal; assert(amt > 0n && amt <= bal, 'insufficient balance');
     this.balances.set(who, bal - amt);
-    this.emit('withdrawn', { account: who, amount: amt, token: this.paymentToken });
+    this.emit('withdrawn', { account_id: who, amount: amt });
     return amt;
   }
 
@@ -256,44 +276,51 @@ export class LocalLedger {
     const price = BigInt(a.price), qty = BigInt(a.qty); assert(price > 0n && qty > 0n, 'price and qty must be > 0');
     const h = this.holding(r.id, seller); assert(h.shares - h.locked >= qty, 'insufficient available shares');
     h.locked += qty;
+    const takerId = this.placed(r.id, seller, 'Ask', price, qty);
     let left = qty;
     const bids = [...this.orders.values()].filter((o) => o.recipe_id === r.id && o.side === 'Bid' && o.price >= price).sort((x, y) => (y.price > x.price ? 1 : y.price < x.price ? -1 : x.id - y.id));
     for (const b of bids) {
       if (left === 0n) break;
       const q = b.qty < left ? b.qty : left;
-      this.fill(r, seller, b.owner, q, b.price, b.id, 'Ask');
+      this.fill(r, seller, b.owner, q, b.price, b.id, takerId);
       b.qty -= q; left -= q;
       if (b.qty === 0n) this.orders.delete(b.id);
     }
-    if (left > 0n) this.rest(r.id, seller, 'Ask', price, left);
+    if (left > 0n) this.rest(takerId, r.id, seller, 'Ask', price, left);
   }
 
   private matchBid(r: LedgerRecipe, buyer: string, price: bigint, qty: bigint) {
+    const takerId = this.placed(r.id, buyer, 'Bid', price, qty);
     let left = qty;
     const asks = [...this.orders.values()].filter((o) => o.recipe_id === r.id && o.side === 'Ask' && o.price <= price).sort((x, y) => (x.price > y.price ? 1 : x.price < y.price ? -1 : x.id - y.id));
     for (const ask of asks) {
       if (left === 0n) break;
       const q = ask.qty < left ? ask.qty : left;
-      this.fill(r, ask.owner, buyer, q, ask.price, ask.id, 'Bid');
+      this.fill(r, ask.owner, buyer, q, ask.price, ask.id, takerId);
       this.credit(buyer, (price - ask.price) * q); // price improvement back to taker
       ask.qty -= q; left -= q;
       if (ask.qty === 0n) this.orders.delete(ask.id);
     }
-    if (left > 0n) this.rest(r.id, buyer, 'Bid', price, left);
+    if (left > 0n) this.rest(takerId, r.id, buyer, 'Bid', price, left);
   }
 
-  private fill(r: LedgerRecipe, seller: string, buyer: string, qty: bigint, price: bigint, makerId: number, takerSide: 'Bid' | 'Ask') {
+  private fill(r: LedgerRecipe, seller: string, buyer: string, qty: bigint, price: bigint, makerId: number, takerId: number) {
     const hs = this.harvest(r, seller); const hb = this.harvest(r, buyer);
     hs.locked -= qty; hs.shares -= qty; hb.shares += qty;
     this.rebase(r, hs); this.rebase(r, hb);
     this.credit(seller, qty * price);
-    this.emit('trade', { recipe_id: r.id, maker_order_id: makerId, taker_side: takerSide, seller, buyer, qty, price });
+    this.emit('trade', { recipe_id: r.id, buyer, seller, price, qty, maker_order_id: makerId, taker_order_id: takerId });
   }
 
-  private rest(recipe_id: string, owner: string, side: 'Bid' | 'Ask', price: bigint, qty: bigint) {
+  /** every order consumes an id and emits order_placed before matching (contract semantics) */
+  private placed(recipe_id: string, owner: string, side: 'Bid' | 'Ask', price: bigint, qty: bigint): number {
     const id = this.nextOrderId++;
+    this.emit('order_placed', { id, recipe_id, owner, side, price, qty, created_ns: this.now() });
+    return id;
+  }
+
+  private rest(id: number, recipe_id: string, owner: string, side: 'Bid' | 'Ask', price: bigint, qty: bigint) {
     this.orders.set(id, { id, recipe_id, owner, side, price, qty, created_ns: this.now() });
-    this.emit('order_placed', { order_id: id, recipe_id, owner, side, price, qty });
   }
 
   cancel_order(a: { order_id: number }) {
@@ -301,7 +328,7 @@ export class LocalLedger {
     this.orders.delete(o.id);
     if (o.side === 'Ask') this.holding(o.recipe_id, o.owner).locked -= o.qty;
     else this.credit(o.owner, o.price * o.qty);
-    this.emit('order_cancelled', { order_id: o.id, recipe_id: o.recipe_id, owner: o.owner });
+    this.emit('order_cancelled', { ...o });
   }
 
   // ---------- views ----------

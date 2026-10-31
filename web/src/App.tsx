@@ -74,7 +74,7 @@ export function App() {
       <div className="tape" aria-label="Ticker tape">
         {(tickers ?? []).map((t) => (
           <button key={t.ticker} onClick={() => go('exchange', t.ticker)}>
-            <b>{t.ticker}</b><span>{px(t.last)}</span><span className={t.change24h >= 0 ? 'gain' : 'loss'}>{pct(t.change24h)}</span><span className="muted">{t.runs} runs</span>
+            <b>{t.ticker}</b><span>{px(t.last)}</span><span className={t.change24h >= 0 ? 'gain' : 'loss'}>{pct(t.change24h)}</span><span className="muted">{t.runs} {t.runs === 1 ? 'run' : 'runs'}</span>
           </button>
         ))}
         {!tickers?.some((t) => t.ticker === 'CLNP') && <span className="muted">CLNP not listed yet — compose it, or play the demo story</span>}

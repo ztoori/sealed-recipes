@@ -24,7 +24,7 @@ What it does:
 ## Test
 
 ```bash
-cargo test          # 31 unit tests, including the shared vectors in ../test-vectors/*.json
+cargo test          # 44 unit tests, including the shared vectors in ../test-vectors/*.json
 cargo clippy --all-targets
 ```
 
@@ -104,6 +104,14 @@ The contract pays for its own storage in v1, so there are no per-user storage de
 `on_behalf_of` is optional (defaults to `sender_id`). It exists because with NEAR Intents the
 `ft_transfer_call` comes from the solver, not from the buyer.
 
+Failure semantics: if a `run`/`bid` msg with `on_behalf_of` fails a business rule (unknown or unlisted
+recipe, duplicate or malformed `run_id`, malformed `inputs_hash`, underpayment, bad bid price/qty), the
+contract does **not** panic: it credits the whole amount to `on_behalf_of` and emits `transfer_rejected`,
+because a panic would refund the Intents/solver side rather than the buyer. Without `on_behalf_of` it panics
+and the token refunds the sender. Validation: block ids `^[a-z0-9._@-]{1,64}$`, run ids `^[A-Za-z0-9_-]{1,64}$`,
+`inputs_hash` / `output_hash` 64 lowercase hex, `publish_recipe` needs at least one block. Each `Run` records
+the recipe's `sealed_hash` at payment time. Exact event shapes: [`docs/CONTRACT_EVENTS.md`](../../docs/CONTRACT_EVENTS.md).
+
 Runner report signature: ed25519 over the UTF-8 string
 
 ```
@@ -113,4 +121,4 @@ frs-run-v1|<contract_account_id>|<run_id>|<recipe_id>|<ok|fail>|<output_hash>|<b
 Events: NEP-297 `EVENT_JSON:` logs with `standard: "fungible-recipes"`, `version: "1.0.0"`. The event names are
 `runner_added`, `block_registered`, `recipe_published`, `recipe_updated`, `run_requested`, `frs_settlement`,
 `run_refunded`, `order_placed`, `trade`, `order_cancelled`, `shares_transferred`, `dividends_claimed`,
-`withdrawn` and `withdraw_failed`.
+`withdrawn`, `withdraw_failed` and `transfer_rejected`.

@@ -7,7 +7,7 @@
  */
 import { createRequire } from 'node:module';
 import { execSync, spawnSync } from 'node:child_process';
-import { mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,7 +19,12 @@ try { ({ chromium } = await import('playwright')); } catch {
   try { const g = execSync('npm root -g').toString().trim(); ({ chromium } = createRequire(g + '/')('playwright')); } catch { console.error('Playwright not found: npm i -D playwright && npx playwright install chromium'); process.exit(1); }
 }
 mkdirSync(out, { recursive: true });
-const tmp = resolve(out, '.video'); rmSync(tmp, { recursive: true, force: true });
+// never delete: previous media is moved to archive/media-<timestamp>/
+const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+const archive = resolve(root, 'archive', `media-${stamp}`);
+const previous = readdirSync(out);
+if (previous.length) { mkdirSync(archive, { recursive: true }); for (const f of previous) renameSync(resolve(out, f), resolve(archive, f)); console.log(`archived ${previous.length} previous media file(s) to ${archive}`); }
+const tmp = resolve(out, '.video');
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, recordVideo: { dir: tmp, size: { width: 1440, height: 900 } } });
@@ -58,7 +63,8 @@ await page.waitForTimeout(4000);
 await ctx.close(); await browser.close();
 
 const webm = readdirSync(tmp).find((f) => f.endsWith('.webm'));
-renameSync(resolve(tmp, webm), resolve(out, 'demo.webm')); rmSync(tmp, { recursive: true, force: true });
-const ff = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', resolve(out, 'demo.webm'), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', resolve(out, 'demo.mp4')], { stdio: 'inherit' });
-if (ff.status === 0) rmSync(resolve(out, 'demo.webm'));
+const raw = resolve(existsSync(archive) ? archive : (mkdirSync(archive, { recursive: true }), archive), 'demo-raw.webm');
+renameSync(resolve(tmp, webm), raw); // raw recording kept in the archive folder
+const ff = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', raw, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', resolve(out, 'demo.mp4')], { stdio: 'inherit' });
+if (ff.status !== 0) console.warn('ffmpeg not available: raw video is at ' + raw);
 console.log('wrote', readdirSync(out).join(', '));

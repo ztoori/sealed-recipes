@@ -1,6 +1,7 @@
 # Reproducible runner image. Build from the repo root:
 #   docker build -f runner/Dockerfile -t frs-runner .
-FROM node:22.11.0-bookworm-slim@sha256:REPLACE_WITH_PINNED_DIGEST
+# For a reproducible image pin the digest: node:22-bookworm-slim@sha256:<digest from `docker buildx imagetools inspect`>
+FROM node:22-bookworm-slim
 WORKDIR /app
 COPY runner/package.json package.json
 RUN npm install --omit=dev --no-audit --no-fund --legacy-peer-deps

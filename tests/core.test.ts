@@ -203,3 +203,49 @@ test('runner attestation: binding, possession, on-chain key match; missing hardw
   assert.ok(!verifyRunnerAttestation(full, { nonce: 'n2' }).ok, 'replayed nonce');
   assert.ok(!verifyRunnerAttestation({ ...full, enc_pk_hex: 'ee'.repeat(32) }, { nonce: 'n1' }).ok, 'swapped encryption key breaks binding');
 });
+
+test('NEAR Intents: business-rule failures with on_behalf_of credit the buyer instead of bouncing to the solver', () => {
+  const { L } = setupLedger();
+  const send = (msg: object, amount = '750000') => L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'solver.testnet', amount, msg: JSON.stringify(msg) }));
+  assert.equal(send({ action: 'run', recipe_id: 'NOPE', run_id: 'r1', inputs_hash: '0'.repeat(64), on_behalf_of: 'bob.testnet' }), '0');
+  assert.equal(L.balance_of('bob.testnet'), 750000n);
+  assert.equal(L.events.at(-1)!.event, 'transfer_rejected');
+  assert.equal((L.events.at(-1)!.data[0] as { reason: string }).reason, 'unknown recipe');
+  send({ action: 'run', recipe_id: 'TEST', run_id: 'bad|id', inputs_hash: '0'.repeat(64), on_behalf_of: 'bob.testnet' });
+  assert.equal((L.events.at(-1)!.data[0] as { reason: string }).reason, 'run_id must match ^[A-Za-z0-9_-]{1,64}$');
+  assert.throws(() => send({ action: 'run', recipe_id: 'NOPE', run_id: 'r2', inputs_hash: '0'.repeat(64) }), /unknown recipe/, 'without on_behalf_of the token refunds the sender');
+  send({ action: 'run', recipe_id: 'TEST', run_id: 'r3', inputs_hash: '0'.repeat(64), on_behalf_of: 'bob.testnet' });
+  assert.equal(L.runs.get('r3')!.sealed_hash, 'aa', 'run snapshots the sealed hash it paid for');
+});
+
+test('every mirror event has exactly the fields documented for the contract (docs/CONTRACT_EVENTS.md)', () => {
+  const doc = readFileSync(new URL('../docs/CONTRACT_EVENTS.md', import.meta.url), 'utf8');
+  const spec = new Map<string, string[]>();
+  for (const line of doc.split('\n')) {
+    const m = line.match(/^\| `([a-z_]+)` \|[^|]*\|(.*)\|\s*$/);
+    if (!m) continue;
+    const code = [...m[2].matchAll(/`([^`]*)`/g)].map((x) => x[1]).join(", ").replace(/\[[^\]]*\]/g, "");
+    const fields = [...code.matchAll(/(?<![A-Za-z_])([a-z_]+): /g)].map((x) => x[1]);
+    if (fields.length) spec.set(m[1], [...new Set(fields)].sort());
+  }
+  spec.set('order_cancelled', spec.get('order_placed')!);
+  const { L, sign, pay, blocks } = setupLedger();
+  pay('r1'); L.call('x', (l) => l.report_run({ run_id: 'r1', success: true, blocks_used: blocks, output_hash: 'f'.repeat(64), signature: sign('r1', true, blocks) }));
+  pay('r2'); L.call('x', (l) => l.report_run({ run_id: 'r2', success: false, blocks_used: [], output_hash: 'f'.repeat(64), signature: sign('r2', false, []) }));
+  L.call('creator.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: '10', qty: '5' }));
+  L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'a.testnet', amount: '100', msg: JSON.stringify({ action: 'bid', recipe_id: 'TEST', price: '10', qty: '10' }) }));
+  L.call('a.testnet', (l) => l.cancel_order({ order_id: [...L.orders.values()][0].id }));
+  L.call('creator.testnet', (l) => l.transfer_shares({ recipe_id: 'TEST', receiver_id: 'z.testnet', qty: '1' }));
+  L.call('creator.testnet', (l) => l.claim_dividends({ recipe_id: 'TEST' }));
+  L.call('creator.testnet', (l) => l.update_sealed({ id: 'TEST', sealed_hash: 'bb' }));
+  L.call('creator.testnet', (l) => l.withdraw({}));
+  L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 's', amount: '1', msg: JSON.stringify({ action: 'run', recipe_id: 'X', run_id: 'q', inputs_hash: '0'.repeat(64), on_behalf_of: 'b' }) }));
+  const seen = new Set<string>();
+  for (const e of L.events) {
+    const want = spec.get(e.event);
+    assert.ok(want, `event ${e.event} is not in the contract spec`);
+    assert.deepEqual(Object.keys(e.data[0]).sort(), want, `fields of ${e.event}`);
+    seen.add(e.event);
+  }
+  assert.ok(seen.size >= 14, `covered ${seen.size} event types`);
+});

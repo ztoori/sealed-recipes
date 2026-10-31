@@ -8,7 +8,9 @@
  */
 import { readFileSync } from 'node:fs';
 import { api, BASE, freshImplicitAccount, publish, verifiedRunner } from './lib/client.js';
-import { seal, validateRecipe, USDC_NEAR, type Catalog, type Recipe } from '../core/src/index.js';
+import nacl from 'tweetnacl';
+import { bytesToHex } from '@noble/hashes/utils.js';
+import { seal, open, validateRecipe, USDC_NEAR, type Catalog, type Recipe, type SealedEnvelope } from '../core/src/index.js';
 
 const root = new URL('..', import.meta.url);
 const catalog = JSON.parse(readFileSync(new URL('standard/blocks.json', root), 'utf8')) as Catalog;
@@ -34,16 +36,18 @@ const fresh = freshImplicitAccount();
 const inputs = { wallet: 'bob.testnet', threshold_usd: 25, target: USDC_NEAR, recipient: fresh.account };
 console.log('  form:', JSON.stringify({ ...inputs, recipient: fresh.account.slice(0, 12) + '… (fresh, generated client-side)' }));
 const before = await api<{ wallet: { symbol: string; balance: string; decimals: number }[] }>('/api/portfolio/bob.testnet');
-const sealedInputs = seal(inputs, runner.onchain.enc_pk_hex, 'inputs');
-const q = await api<{ run_id: string; msg: string; quote: { quote: { amountInFormatted: string; depositAddress: string; amountOut: string } } }>('/api/runs/quote', {
+const reply = nacl.box.keyPair(); // one-time key: everything the runner says about this run is sealed to it
+const sealedInputs = seal({ inputs, reply_to: bytesToHex(reply.publicKey) }, runner.onchain.enc_pk_hex, 'inputs');
+const q = await api<{ run_id: string; run_token: string; msg: string; quote: { quote: { amountInFormatted: string; depositAddress: string; amountOut: string } } }>('/api/runs/quote', {
   recipe_id: 'CLNP', buyer: 'bob.testnet', pay_asset: 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near', refund_to: '0xB0b0000000000000000000000000000000000001', sealed_inputs: sealedInputs,
 });
 console.log(`  1Click EXACT_OUTPUT quote: pay ${q.quote.quote.amountInFormatted} USDC (Arbitrum) → ${usd(q.quote.quote.amountOut)} USDC delivered to the contract`);
 console.log(`  customRecipientMsg: ${q.msg}`);
-await api(`/api/runs/${q.run_id}/pay`, {});
+await api(`/api/runs/${q.run_id}/pay?token=${q.run_token}`, {});
 
 h('STEP 3 · the sealed workflow sweeps dust and swaps privately to a fresh address');
-const res = await fetch(`${BASE}/api/runs/${q.run_id}/events`);
+const res = await fetch(`${BASE}/api/runs/${q.run_id}/events?token=${q.run_token}`);
+let result: any;
 const reader = res.body!.getReader(); const dec = new TextDecoder(); let buf = ''; let done = false; let final: any;
 const t0 = Date.now();
 while (!done) {
@@ -51,7 +55,9 @@ while (!done) {
   buf += dec.decode(value, { stream: true });
   let i;
   while ((i = buf.indexOf('\n\n')) >= 0) {
-    const e = JSON.parse(buf.slice(6, i)); buf = buf.slice(i + 2);
+    let e = JSON.parse(buf.slice(6, i)); buf = buf.slice(i + 2);
+    if (e.type === 'sealed') { const inner = open<{ type: string; data: any }>(e.data.envelope as SealedEnvelope, reply.secretKey); e = { ...e, type: inner.type, data: inner.data, sealed: true }; }
+    if (e.type === 'result') { result = e.data; continue; }
     const tag = `  [${((Date.now() - t0) / 1000).toFixed(1)}s ${e.source}]`;
     if (e.type === 'status') console.log(`${tag} 1Click payment ${e.data.status}`);
     else if (e.type === 'run_requested') console.log(`${tag} ft_on_transfer → run escrowed on-chain (tx ${e.data.tx})`);
@@ -59,15 +65,16 @@ while (!done) {
     else if (e.type === 'decrypted') console.log(`${tag} ${e.data.note}`);
     else if (e.type === 'block_start') console.log(`${tag} ▶ ${e.data.name} (by ${e.data.author}, fee ${usd(e.data.fee)})`);
     else if (e.type === 'block_log') console.log(`${tag}     ${e.data.msg}`);
-    else if (e.type === 'approval_required') { console.log(`${tag} 🔐 wallet: "${e.data.title}" — ${e.data.transactions.length} ft_transfer(s); approving`); await api(`/api/runs/${q.run_id}/approve`, { approved: true }); }
+    else if (e.type === 'approval_required') { console.log(`${tag} 🔐 wallet: "${e.data.title}" — ${e.data.transactions.length} ft_transfer(s); approving`); await api(`/api/runs/${q.run_id}/approve?token=${q.run_token}`, { approved: true, transactions: e.data.transactions }); }
     else if (e.type === 'signed') console.log(`${tag} runner signed report: ${e.data.message.slice(0, 90)}…`);
     else if (e.type === 'frs_settlement') console.log(`${tag} report_run verified on-chain (tx ${e.data.tx})`);
     else if (e.type === 'completed' || e.type === 'failed') { final = e; done = true; break; }
   }
 }
 await reader.cancel();
-if (final?.type !== 'completed' || !final.data.ok) { console.error('\n✘ run failed:', JSON.stringify(final?.data)); process.exit(1); }
-const receipts = final.data.output as { symbol: string; amountIn: string; amountOut: string; status: string }[];
+if (final?.type !== 'completed' || !final.data.ok) { console.error('\n✘ run failed:', JSON.stringify(final?.data), JSON.stringify(result)); process.exit(1); }
+console.log('  (block logs, the wallet request and the result above were sealed to the buyer\'s reply key; the marketplace relayed ciphertext)');
+const receipts = result.output as { symbol: string; amountIn: string; amountOut: string; status: string }[];
 for (const r of receipts) console.log(`  ✔ ${r.symbol.padEnd(12)} ${r.amountIn.padStart(14)} → ${Number(r.amountOut).toFixed(4)} USDC  ${r.status} (confidential)`);
 const after = await api<{ wallet: { symbol: string; balance: string; contract_id: string }[] }>(`/api/portfolio/${fresh.account}`);
 console.log(`  fresh address ${fresh.account.slice(0, 12)}… now holds: ${after.wallet.map((w) => `${(Number(w.balance) / 1e6).toFixed(4)} ${w.symbol}`).join(', ')}`);

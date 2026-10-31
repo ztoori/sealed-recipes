@@ -28,7 +28,7 @@ Block   { id, version, author, fee_per_call, manifest_hash, active }
 Runner  { id, signing_pk: ed25519 (base58 "ed25519:..."), enc_pk_hex (x25519), codehash, fee_per_run, active }
 Recipe  { id (ticker, ^[A-Z0-9]{3,6}$), name, creator, sealed_hash, runner_id, blocks: [block_id],
           price_per_run, royalty_bps, total_shares, acc_per_share (u128, scaled 1e18), runs, revenue, listed }
-Run     { run_id, recipe_id, buyer, amount, inputs_hash, status: Pending|Settled|Refunded, created_ns }
+Run     { run_id, recipe_id, buyer, amount, inputs_hash, sealed_hash (snapshot at payment), status: Pending|Settled|Refunded, created_ns }
 Order   { id (u64), recipe_id, owner, side: Bid|Ask, price (per share), qty (remaining shares), created_ns }
 ```
 
@@ -40,10 +40,11 @@ Order   { id (u64), recipe_id, owner, side: Bid|Ask, price (per share), qty (rem
 - `set_runner_active(id, active)` — owner only.
 
 ### Builders & creators
-- `register_block(id, version, fee_per_call, manifest_hash)` — author = predecessor. Id unique.
+- `register_block(id, version, fee_per_call, manifest_hash)` — author = predecessor. Id unique and must match `^[a-z0-9._@-]{1,64}$` (no `,` or `|`, which delimit the signed report).
 - `publish_recipe(id, name, sealed_hash, runner_id, blocks, price_per_run, royalty_bps, total_shares)`
   - creator = predecessor; mints `total_shares` to creator.
   - rejects if `price_per_run < protocol_fee(price) + runner.fee_per_run + Σ block.fee_per_call` (minimum viable price).
+  - `blocks` must be non-empty.
   - `royalty_bps <= 5000`, `total_shares > 0`, every block exists & active, runner active.
 - `update_sealed(id, sealed_hash)` — creator only (new version of the sealed graph, same interface).
 
@@ -54,6 +55,8 @@ delivery arrives as `ft_transfer_call` → `ft_on_transfer(sender_id, amount, ms
 
 `msg` is JSON:
 - `{"action":"run","recipe_id":"CLNP","run_id":"r-…","inputs_hash":"<hex sha256>"}`
+  - `run_id` must match `^[A-Za-z0-9_-]{1,64}$`; `inputs_hash` must be 64 lowercase hex.
+  - the run records the recipe's current `sealed_hash`; a later `update_sealed` only affects new runs.
   - `amount` must be `>= price_per_run`; excess is credited to the owner's (`on_behalf_of` or sender) withdrawable balance.
   - creates `Run{status:Pending}`. Returns `"0"` (nothing refunded to the token contract).
 - `{"action":"bid","recipe_id":"CLNP","price":"<per share>","qty":"<shares>"}`
@@ -62,7 +65,10 @@ delivery arrives as `ft_transfer_call` → `ft_on_transfer(sender_id, amount, ms
   `sender_id` of `ft_transfer_call` is the solver, not the buyer, so the 1Click
   `customRecipientMsg` names the buyer here; the run (refunds, `reclaim_run`) or the
   bid (shares, refunds) belongs to `on_behalf_of`, defaulting to `sender_id`.
-- Anything else → panics → token contract refunds the full amount.
+- **Business-rule failures** (unknown/unlisted recipe, duplicate `run_id`, malformed `run_id`/`inputs_hash`, underpayment, bid price/qty 0, overflow, bid underpayment):
+  - with `on_behalf_of`: **no panic**. The full `amount` is credited to `on_behalf_of`'s withdrawable balance, event `transfer_rejected {on_behalf_of, sender_id, amount, reason}`, returns `"0"`. (A panic would refund the Intents/solver side, not the buyer.)
+  - without `on_behalf_of`: panics, so the token contract refunds `sender_id`.
+- Unparseable `msg` or unknown action → panics → token contract refunds the full amount.
 - Only calls from `payment_token` are accepted.
 
 `report_run(run_id, success, blocks_used, output_hash, signature)` — callable by anyone
@@ -71,6 +77,7 @@ delivery arrives as `ft_transfer_call` → `ft_on_transfer(sender_id, amount, ms
   ```
   frs-run-v1|<contract_account_id>|<run_id>|<recipe_id>|<ok|fail>|<output_hash>|<blocks_used joined by ",">
   ```
+- `output_hash` must be 64 lowercase hex.
 - `blocks_used` must be a sub-multiset of the recipe's `blocks` (no unknown blocks can be billed).
 - On `success`: **settlement** (below), status → Settled. On fail: full refund to buyer balance, status → Refunded.
 
@@ -92,7 +99,7 @@ acc_per_share += inc
 ```
 All payouts are credited to internal withdrawable balances inside the same receipt
 and a single NEP-297 event `frs_settlement` lists every payout.
-`withdraw(amount?)` (requires exactly 1 yoctoNEAR attached) sends `ft_transfer` of the caller's balance; the `#[private]` callback `on_withdraw` restores the credit if the transfer fails.
+`withdraw(amount?)` (requires exactly 1 yoctoNEAR attached) sends `ft_transfer` of the caller's balance; the `#[private]` callback `on_withdraw` checks the promise result with `env::promise_result_checked` (ft_transfer returns no value): success emits `withdrawn`, failure restores the credit and emits `withdraw_failed`.
 
 ### Shares & dividends
 Pending dividends for an account: `shares * acc_per_share / 1e18 - reward_debt + unpaid`.
@@ -122,5 +129,6 @@ that account's withdrawable balance and resets `reward_debt = new_shares * acc /
 `quote_settlement(recipe_id, blocks_used)` (returns the split above without state change).
 
 ### Events (NEP-297, standard `fungible-recipes`, version `1.0.0`)
+Exact field shapes and order-id rules: [CONTRACT_EVENTS.md](CONTRACT_EVENTS.md).
 `runner_added`, `block_registered`, `recipe_published`, `recipe_updated`, `run_requested`, `frs_settlement`, `run_refunded`,
-`order_placed`, `trade`, `order_cancelled`, `shares_transferred`, `dividends_claimed`, `withdrawn`, `withdraw_failed`.
+`order_placed`, `trade`, `order_cancelled`, `shares_transferred`, `dividends_claimed`, `withdrawn`, `withdraw_failed`, `transfer_rejected`.

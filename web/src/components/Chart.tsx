@@ -21,7 +21,7 @@ export function PriceChart({ candles, ticker }: { candles: Candle[]; ticker: str
       crosshair: { mode: 1 },
     });
     cs.current = c.addSeries(CandlestickSeries, { upColor: '#0f7a66', downColor: '#b8364a', borderVisible: false, wickUpColor: '#0f7a66', wickDownColor: '#b8364a', priceFormat: { type: 'price', precision: 5, minMove: 0.00001 } });
-    vs.current = c.addSeries(HistogramSeries, { priceScaleId: 'vol', priceFormat: { type: 'volume' } });
+    vs.current = c.addSeries(HistogramSeries, { priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
     c.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
     chart.current = c;
     return () => c.remove();

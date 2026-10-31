@@ -7,7 +7,8 @@ export const dustFilter: BlockHandler = async (inputs, ctx) => {
   const keep = new Set((ctx.params.keep_symbols as string[] | undefined) ?? []);
   const dust: Holding[] = [];
   for (const h of holdings) {
-    const why = keep.has(h.symbol) ? 'kept by creator rule' : h.usd >= threshold ? `above $${threshold}` : h.usd < min ? `below solver minimum $${min}` : null;
+    // reasons never reveal the creator's sealed params (keep list, minimum size) to the buyer
+    const why = keep.has(h.symbol) ? 'kept (recipe rule)' : h.usd >= threshold ? `above your $${threshold} threshold` : h.usd < min ? 'too small to swap (recipe rule)' : null;
     if (why) ctx.log(`skip ${h.symbol} ($${h.usd.toFixed(2)}): ${why}`); else dust.push(h);
   }
   ctx.log(`${dust.length} dust balance(s) worth $${dust.reduce((s, h) => s + h.usd, 0).toFixed(2)} selected`, { dust: dust.map((d) => ({ symbol: d.symbol, usd: d.usd })) });

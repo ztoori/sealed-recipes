@@ -203,6 +203,7 @@ tr.click:hover td { background: #f6f8fb; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 .wallet-modal { background: #fff; border-radius: 8px; width: min(560px, 100%); padding: 20px; display: grid; gap: 12px; border-top: 6px solid var(--ink); }
 .wallet-modal h2 { font-family: var(--serif); font-weight: 500; font-size: 22px; }
+.sankey { max-height: 430px; }
 .sankey text { font-size: 11.5px; fill: var(--ink); font-family: var(--sans); }
 
 /* ---------- trust ---------- */

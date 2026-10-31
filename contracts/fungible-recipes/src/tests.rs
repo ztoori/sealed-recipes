@@ -5,6 +5,7 @@ use near_sdk::testing_env;
 
 const CONTRACT: &str = "frs.testnet";
 const USDC: &str = "usdc.testnet";
+const OUT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn acct(s: &str) -> AccountId {
     s.parse().unwrap()
@@ -147,8 +148,10 @@ fn dividends_vector_harvest_before_transfer() {
     ctx("owner.testnet", 0);
     let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), r["protocol_fee_bps"].as_u64().unwrap() as u16);
     c.add_runner(acct("runner.testnet"), runner_pk_string(), "00".repeat(32), "x".into(), U128(p(&r["runner_fee"])));
+    ctx("author", 0);
+    c.register_block("noop".into(), "1".into(), U128(0), "h".into());
     ctx("creator", 0);
-    c.publish_recipe("DIVS".into(), "d".into(), "h".into(), acct("runner.testnet"), vec![], U128(p(&r["price"])), r["royalty_bps"].as_u64().unwrap() as u16, U128(p(&r["total_shares"])));
+    c.publish_recipe("DIVS".into(), "d".into(), "h".into(), acct("runner.testnet"), vec!["noop".into()], U128(p(&r["price"])), r["royalty_bps"].as_u64().unwrap() as u16, U128(p(&r["total_shares"])));
     let mut n = 0;
     for step in v["steps"].as_array().unwrap() {
         match step["op"].as_str().unwrap() {
@@ -156,9 +159,9 @@ fn dividends_vector_harvest_before_transfer() {
                 n += 1;
                 let id = format!("run-{n}");
                 ctx(USDC, 0);
-                let _ = c.ft_on_transfer(acct("buyer"), U128(p(&r["price"])), json!({"action":"run","recipe_id":"DIVS","run_id":id,"inputs_hash":"aa"}).to_string());
+                let _ = c.ft_on_transfer(acct("buyer"), U128(p(&r["price"])), json!({"action":"run","recipe_id":"DIVS","run_id":id,"inputs_hash":"aa".repeat(32)}).to_string());
                 ctx("relayer", 0);
-                c.report_run(id.clone(), true, vec![], "out".into(), sign(&id, "DIVS", true, "out", &[]));
+                c.report_run(id.clone(), true, vec!["noop".into()], OUT.into(), sign(&id, "DIVS", true, OUT, &["noop".to_string()]));
             }
             "transfer_shares" => {
                 ctx(step["from"].as_str().unwrap(), 0);
@@ -214,7 +217,7 @@ fn publish_mints_all_shares_to_creator() {
 fn ft_on_transfer_rejects_wrong_token() {
     let mut c = setup();
     ctx("evil-token.testnet", 0);
-    let _ = c.ft_on_transfer(acct("buyer.testnet"), U128(750_000), json!({"action":"run","recipe_id":"CLNP","run_id":"r1","inputs_hash":"aa"}).to_string());
+    let _ = c.ft_on_transfer(acct("buyer.testnet"), U128(750_000), json!({"action":"run","recipe_id":"CLNP","run_id":"r1","inputs_hash":"aa".repeat(32)}).to_string());
 }
 
 #[test]
@@ -242,7 +245,7 @@ fn run_and_signed_report_pays_every_party_in_one_settlement() {
 
     ctx("anyone-relayer.testnet", 1);
     let blocks = all_blocks();
-    let payouts = c.report_run("r1".into(), true, blocks.clone(), "sha256:out".into(), sign("r1", "CLNP", true, "sha256:out", &blocks));
+    let payouts = c.report_run("r1".into(), true, blocks.clone(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(), sign("r1", "CLNP", true, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", &blocks));
     assert_eq!(payouts.len(), 2 + BLOCKS.len() + 1);
     assert_eq!(c.get_run("r1".into()).unwrap().status, RunStatus::Settled);
 
@@ -269,7 +272,7 @@ fn partial_block_usage_bills_only_used_blocks() {
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     let used = vec!["wallet-scanner".to_string(), "dust-filter".to_string()];
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, used.clone(), "o".into(), sign("r1", "CLNP", true, "o", &used));
+    c.report_run("r1".into(), true, used.clone(), OUT.into(), sign("r1", "CLNP", true, OUT, &used));
     assert_eq!(bal(&c, "shieldai.testnet"), 0);
     assert_eq!(bal(&c, "scanlabs.testnet"), 20_000);
 }
@@ -281,9 +284,9 @@ fn report_with_bad_signature_rejected() {
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     let blocks = all_blocks();
     // signed for a different output hash
-    let sig = sign("r1", "CLNP", true, "sha256:other", &blocks);
+    let sig = sign("r1", "CLNP", true, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", &blocks);
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, blocks, "sha256:out".into(), sig);
+    c.report_run("r1".into(), true, blocks, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(), sig);
 }
 
 #[test]
@@ -292,10 +295,10 @@ fn report_signed_by_other_key_rejected() {
     let mut c = setup();
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     let blocks = all_blocks();
-    let m = run_report_message(CONTRACT, "r1", "CLNP", true, "o", &blocks);
+    let m = run_report_message(CONTRACT, "r1", "CLNP", true, OUT, &blocks);
     let sig = Base64VecU8(SigningKey::from_bytes(&[9u8; 32]).sign(m.as_bytes()).to_bytes().to_vec());
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, blocks, "o".into(), sig);
+    c.report_run("r1".into(), true, blocks, OUT.into(), sig);
 }
 
 #[test]
@@ -306,7 +309,7 @@ fn report_cannot_bill_extra_blocks() {
     let mut blocks = all_blocks();
     blocks.push("spam-shield".into()); // billed twice but recipe has it once
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, blocks.clone(), "o".into(), sign("r1", "CLNP", true, "o", &blocks));
+    c.report_run("r1".into(), true, blocks.clone(), OUT.into(), sign("r1", "CLNP", true, OUT, &blocks));
 }
 
 #[test]
@@ -316,8 +319,8 @@ fn report_cannot_settle_twice() {
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     let b = all_blocks();
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, b.clone(), "o".into(), sign("r1", "CLNP", true, "o", &b));
-    c.report_run("r1".into(), true, b.clone(), "o".into(), sign("r1", "CLNP", true, "o", &b));
+    c.report_run("r1".into(), true, b.clone(), OUT.into(), sign("r1", "CLNP", true, OUT, &b));
+    c.report_run("r1".into(), true, b.clone(), OUT.into(), sign("r1", "CLNP", true, OUT, &b));
 }
 
 #[test]
@@ -325,7 +328,7 @@ fn failed_run_refunds_buyer() {
     let mut c = setup();
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     ctx("relayer.testnet", 1);
-    let payouts = c.report_run("r1".into(), false, vec![], "err".into(), sign("r1", "CLNP", false, "err", &[]));
+    let payouts = c.report_run("r1".into(), false, vec![], OUT.into(), sign("r1", "CLNP", false, OUT, &[]));
     assert!(payouts.is_empty());
     assert_eq!(bal(&c, "buyer.testnet"), 750_000);
     assert_eq!(bal(&c, "creator.testnet"), 0);
@@ -377,13 +380,152 @@ fn withdraw_requires_one_yocto() {
     let _ = c.withdraw(None);
 }
 
+fn ctx_callback(result: near_sdk::PromiseResult) {
+    let mut b = VMContextBuilder::new();
+    b.current_account_id(acct(CONTRACT)).predecessor_account_id(acct(CONTRACT));
+    testing_env!(
+        b.build(),
+        near_sdk::test_vm_config(),
+        near_sdk::RuntimeFeesConfig::test(),
+        Default::default(),
+        vec![result],
+    );
+}
+
+fn last_event() -> serde_json::Value {
+    let logs = near_sdk::test_utils::get_logs();
+    let l = logs.iter().rev().find(|l| l.starts_with("EVENT_JSON:")).expect("no event");
+    serde_json::from_str(&l["EVENT_JSON:".len()..]).unwrap()
+}
+
 #[test]
 fn failed_withdraw_restores_balance() {
     let mut c = setup();
-    ctx(CONTRACT, 0);
-    let ok = c.on_withdraw(acct("buyer.testnet"), U128(123), Err(PromiseError::Failed));
+    ctx_callback(near_sdk::PromiseResult::Failed);
+    let ok = c.on_withdraw(acct("buyer.testnet"), U128(123));
     assert!(!ok);
     assert_eq!(bal(&c, "buyer.testnet"), 123);
+    assert_eq!(last_event()["event"], "withdraw_failed");
+}
+
+#[test]
+fn successful_withdraw_callback_with_empty_result() {
+    // ft_transfer returns no value: the callback must treat an empty successful result as success.
+    let mut c = setup();
+    ctx_callback(near_sdk::PromiseResult::Successful(vec![]));
+    let ok = c.on_withdraw(acct("buyer.testnet"), U128(123));
+    assert!(ok);
+    assert_eq!(bal(&c, "buyer.testnet"), 0);
+    let e = last_event();
+    assert_eq!(e["event"], "withdrawn");
+    assert_eq!(e["data"][0]["amount"], "123");
+}
+
+#[test]
+fn run_snapshots_sealed_hash() {
+    let mut c = setup();
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
+    ctx("creator.testnet", 0);
+    c.update_sealed("CLNP".into(), "sha256:v2".into());
+    pay_run(&mut c, "buyer.testnet", "r2", 750_000, 0);
+    assert_eq!(c.get_run("r1".into()).unwrap().sealed_hash, "sha256:sealed");
+    assert_eq!(c.get_run("r2".into()).unwrap().sealed_hash, "sha256:v2");
+    let j = serde_json::to_value(c.get_run("r1".into()).unwrap()).unwrap();
+    assert_eq!(j["sealed_hash"], "sha256:sealed");
+}
+
+fn intents_msg(extra: serde_json::Value) -> String {
+    let mut m = json!({"action":"run","recipe_id":"CLNP","run_id":"r-x","inputs_hash":"ab".repeat(32),"on_behalf_of":"bob.testnet"});
+    for (k, v) in extra.as_object().unwrap() {
+        m[k] = v.clone();
+    }
+    m.to_string()
+}
+
+fn intents_reject_case(extra: serde_json::Value, amt: u128, reason: &str) {
+    let mut c = setup();
+    ctx(USDC, 0);
+    let r = c.ft_on_transfer(acct("solver.testnet"), U128(amt), intents_msg(extra));
+    assert!(matches!(r, PromiseOrValue::Value(U128(0))));
+    assert_eq!(bal(&c, "bob.testnet"), amt, "{reason}");
+    assert!(c.get_run("r-x".into()).is_none());
+    let e = last_event();
+    assert_eq!(e["event"], "transfer_rejected");
+    assert!(e["data"][0]["reason"].as_str().unwrap().starts_with(reason), "{reason}");
+    assert_eq!(e["data"][0]["sender_id"], "solver.testnet");
+    assert_eq!(e["data"][0]["on_behalf_of"], "bob.testnet");
+}
+
+#[test]
+fn intents_unknown_recipe_credits_buyer() { intents_reject_case(json!({"recipe_id":"NOPE"}), 800_000, "unknown recipe"); }
+#[test]
+fn intents_bad_inputs_hash_credits_buyer() { intents_reject_case(json!({"inputs_hash":"XYZ"}), 800_000, "inputs_hash must be 64 lowercase hex"); }
+#[test]
+fn intents_bad_run_id_credits_buyer() { intents_reject_case(json!({"run_id":"bad|id"}), 800_000, "run_id must match"); }
+#[test]
+fn intents_underpayment_credits_buyer() { intents_reject_case(json!({}), 749_999, "payment below price_per_run"); }
+
+#[test]
+fn intents_duplicate_run_id_credits_buyer() {
+    let mut c = setup();
+    ctx(USDC, 0);
+    let _ = c.ft_on_transfer(acct("solver.testnet"), U128(750_000), intents_msg(json!({})));
+    let _ = c.ft_on_transfer(acct("solver.testnet"), U128(750_000), intents_msg(json!({})));
+    assert_eq!(bal(&c, "bob.testnet"), 750_000);
+    assert_eq!(last_event()["data"][0]["reason"], "run exists");
+}
+
+#[test]
+fn intents_bid_failure_credits_buyer() {
+    let mut c = setup();
+    ctx(USDC, 0);
+    let msg = json!({"action":"bid","recipe_id":"CLNP","price":"0","qty":"10","on_behalf_of":"bob.testnet"}).to_string();
+    let _ = c.ft_on_transfer(acct("solver.testnet"), U128(5_000), msg);
+    assert_eq!(bal(&c, "bob.testnet"), 5_000);
+    assert_eq!(last_event()["event"], "transfer_rejected");
+}
+
+#[test]
+#[should_panic(expected = "unknown recipe")]
+fn direct_transfer_failure_still_panics() {
+    let mut c = setup();
+    ctx(USDC, 0);
+    let msg = json!({"action":"run","recipe_id":"NOPE","run_id":"r1","inputs_hash":"ab".repeat(32)}).to_string();
+    let _ = c.ft_on_transfer(acct("bob.testnet"), U128(800_000), msg);
+}
+
+#[test]
+#[should_panic(expected = "block id must match")]
+fn block_id_cannot_contain_report_delimiters() {
+    let mut c = setup();
+    ctx("evil.testnet", 0);
+    c.register_block("a,b".into(), "1".into(), U128(1), "h".into());
+}
+
+#[test]
+#[should_panic(expected = "block id must match")]
+fn block_id_cannot_contain_pipe() {
+    let mut c = setup();
+    ctx("evil.testnet", 0);
+    c.register_block("a|b".into(), "1".into(), U128(1), "h".into());
+}
+
+#[test]
+#[should_panic(expected = "recipe needs at least one block")]
+fn publish_rejects_empty_blocks() {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.publish_recipe("EMPTY".into(), "e".into(), "h".into(), acct("runner.testnet"), vec![], U128(100_000), 0, U128(10));
+}
+
+#[test]
+#[should_panic(expected = "output_hash must be 64 lowercase hex")]
+fn report_rejects_malformed_output_hash() {
+    let mut c = setup();
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
+    let blocks = all_blocks();
+    ctx("relayer.testnet", 0);
+    c.report_run("r1".into(), true, blocks.clone(), "sha256:out".into(), sign("r1", "CLNP", true, "sha256:out", &blocks));
 }
 
 // ------------------------------------------------------------ order book
@@ -485,20 +627,20 @@ fn trading_shares_harvests_dividends_correctly() {
     // run 1: creator owns 100%
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     ctx("relayer.testnet", 0);
-    c.report_run("r1".into(), true, b.clone(), "o".into(), sign("r1", "CLNP", true, "o", &b));
+    c.report_run("r1".into(), true, b.clone(), OUT.into(), sign("r1", "CLNP", true, OUT, &b));
 
     // creator sells 25% to alice via the book; escrowed shares earn until filled
     ctx("creator.testnet", 0);
     c.place_ask("CLNP".into(), U128(1), U128(250_000));
     pay_run(&mut c, "buyer.testnet", "r2", 750_000, 0);
     ctx("relayer.testnet", 0);
-    c.report_run("r2".into(), true, b.clone(), "o".into(), sign("r2", "CLNP", true, "o", &b));
+    c.report_run("r2".into(), true, b.clone(), OUT.into(), sign("r2", "CLNP", true, OUT, &b));
     bid(&mut c, "alice.testnet", 1, 250_000, 250_000);
 
     // run 3: 75/25 split
     pay_run(&mut c, "buyer.testnet", "r3", 750_000, 0);
     ctx("relayer.testnet", 0);
-    c.report_run("r3".into(), true, b.clone(), "o".into(), sign("r3", "CLNP", true, "o", &b));
+    c.report_run("r3".into(), true, b.clone(), OUT.into(), sign("r3", "CLNP", true, OUT, &b));
 
     let pool = 508_500u128;
     let creator_div = bal(&c, "creator.testnet") - 3 * 56_500 - 250_000

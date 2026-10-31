@@ -9,7 +9,7 @@ export function Wallet() {
     const d = e.data[0];
     if (e.event === 'frs_settlement') return d.payouts.filter((x: any) => x.account_id === acting).map((x: any) => ({ what: x.role.startsWith('block:') ? `block fee (${x.role.slice(6).split('@')[0]})` : x.role.replace('_', ' '), ref: d.recipe_id, amount: Number(x.amount), tx: e.tx_hash }));
     if (e.event === 'trade' && d.seller === acting) return [{ what: `sold ${Number(d.qty).toLocaleString()} shares`, ref: d.recipe_id, amount: Number(d.qty) * Number(d.price), tx: e.tx_hash }];
-    if (e.event === 'dividends_claimed' && d.account === acting && d.amount !== '0') return [{ what: 'dividends claimed', ref: d.recipe_id, amount: Number(d.amount), tx: e.tx_hash }];
+    if (e.event === 'dividends_claimed' && d.account_id === acting && d.amount !== '0') return [{ what: 'dividends claimed', ref: d.recipe_id, amount: Number(d.amount), tx: e.tx_hash }];
     return [];
   }).reverse();
   const tx = async (method: string, args: Record<string, unknown>, ok: string) => {

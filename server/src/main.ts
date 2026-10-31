@@ -32,6 +32,9 @@ const RUNNER_ID = env.RUNNER_ID ?? 'tee-runner-1.testnet';
 const PAYMENT_TOKEN = USDC_NEAR.replace(/^nep141:/, '');
 const SOLVER = 'solver-relay.intents.testnet';
 const BOTS = env.FRS_BOTS !== '0';
+const RUNNER_TOKEN = env.RUNNER_TOKEN ?? '';
+const RUNNER_PUBLIC_URL = env.RUNNER_PUBLIC_URL ?? RUNNER; // browsers fetch attestation from the runner directly
+const rh = { 'content-type': 'application/json', 'x-runner-token': RUNNER_TOKEN };
 
 const catalog = JSON.parse(readFileSync(resolve(ROOT, 'standard/blocks.json'), 'utf8')) as Catalog;
 const tokens = JSON.parse(readFileSync(resolve(ROOT, 'fixtures/oneclick-tokens.json'), 'utf8')).tokens as Token[];
@@ -41,7 +44,8 @@ const market = new Market(ledger);
 
 // ---------- runs: per-run event log merged from payment (server) + execution (runner) ----------
 type Ev = { seq: number; at: number; source: 'market' | 'intents' | 'runner' | 'chain'; type: string; data: Record<string, unknown> };
-interface RunCtx { run_id: string; recipe_id: string; buyer: string; sealed_inputs: SealedEnvelope; inputs_hash: string; quote: QuoteResponse; events: Ev[]; listeners: Set<(e: Ev) => void>; started: boolean; approval?: Record<string, unknown> }
+/** `token` is a capability returned only to the buyer who requested the quote: it gates the event stream and approvals. */
+interface RunCtx { run_id: string; token: string; recipe_id: string; buyer: string; sealed_inputs: SealedEnvelope; inputs_hash: string; quote: QuoteResponse; events: Ev[]; listeners: Set<(e: Ev) => void>; started: boolean; approvalPending: boolean }
 const runs = new Map<string, RunCtx>();
 const pushEv = (r: RunCtx, source: Ev['source'], type: string, data: Record<string, unknown>) => {
   const e: Ev = { seq: r.events.length, at: Date.now(), source, type, data };
@@ -69,10 +73,10 @@ const mocks = mockRouter(world, tokens, {
 async function startRunner(r: RunCtx) {
   if (r.started) return; r.started = true;
   const sealed = vault.get(r.recipe_id)!;
-  const res = await fetch(`${RUNNER}/runs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ run_id: r.run_id, recipe_id: r.recipe_id, sealed_recipe: sealed, sealed_inputs: r.sealed_inputs }) });
+  const res = await fetch(`${RUNNER}/runs`, { method: 'POST', headers: rh, body: JSON.stringify({ run_id: r.run_id, recipe_id: r.recipe_id, sealed_recipe: sealed, sealed_inputs: r.sealed_inputs }) });
   if (!res.ok) { pushEv(r, 'runner', 'failed', { error: await res.text() }); return; }
   // proxy runner SSE into the run log
-  const sse = await fetch(`${RUNNER}/runs/${r.run_id}/events`);
+  const sse = await fetch(`${RUNNER}/runs/${r.run_id}/events`, { headers: rh });
   const reader = sse.body!.getReader(); const dec = new TextDecoder(); let buf = '';
   for (;;) {
     const { value, done } = await reader.read(); if (done) break;
@@ -82,7 +86,7 @@ async function startRunner(r: RunCtx) {
       const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
       if (!chunk.startsWith('data: ')) continue;
       const e = JSON.parse(chunk.slice(6)) as { type: string; data: Record<string, unknown> };
-      if (e.type === 'approval_required') r.approval = e.data;
+      if (e.type === 'approval_pending') r.approvalPending = true;
       pushEv(r, 'runner', e.type, e.data);
       if (e.type === 'completed' || e.type === 'failed') { await reader.cancel(); return; }
     }
@@ -134,7 +138,7 @@ app.post('/api/chain/tx', guard((req, res) => {
 
 // ---- marketplace ----
 app.get('/api/mode', (_, res) => j(res, {
-  mode: 'local', contract_id: CONTRACT_ID, runner_id: RUNNER_ID, bots: BOTS ? market.bots : [],
+  mode: 'local', contract_id: CONTRACT_ID, runner_id: RUNNER_ID, runner_url: RUNNER_PUBLIC_URL, bots: BOTS ? market.bots : [],
   services: { fastnear: 'mock', rpc: 'mock', oneclick: 'fixture (frozen token sample)', nearai: 'mock (real secp256k1 signatures, no hardware quote)', tee: 'local-dev runner (no hardware quote)' },
   ai_signing_address: mocks.aiSigningAddress,
 }));
@@ -173,7 +177,8 @@ app.get('/api/market/:ticker', guard((req, res) => {
   if (!ledger.recipes.has(t)) { res.status(404).json({ error: 'unknown ticker' }); return; }
   const book = ledger.get_book(t);
   const agg = (os: typeof book.bids) => { const m = new Map<string, { price: number; qty: number; orders: number }>(); for (const o of os) { const k = o.price.toString(); const x = m.get(k) ?? { price: Number(o.price) / 1e6, qty: 0, orders: 0 }; x.qty += Number(o.qty); x.orders++; m.set(k, x); } return [...m.values()]; };
-  const trades = ledger.events.filter((e) => e.event === 'trade' && (e.data[0] as { recipe_id: string }).recipe_id === t).slice(-40).reverse().map((e) => ({ ...(e.data[0] as Record<string, unknown>), tx: e.tx_hash, ts: e.timestamp_ns }));
+  const sideOf = new Map(ledger.events.filter((e) => e.event === 'order_placed').map((e) => [String((e.data[0] as { id: number }).id), (e.data[0] as { side: string }).side]));
+  const trades = ledger.events.filter((e) => e.event === 'trade' && (e.data[0] as { recipe_id: string }).recipe_id === t).slice(-40).reverse().map((e) => ({ ...(e.data[0] as Record<string, unknown>), taker_side: sideOf.get(String((e.data[0] as { taker_order_id: number }).taker_order_id)), tx: e.tx_hash, ts: e.timestamp_ns }));
   const settlements = ledger.events.filter((e) => e.event === 'frs_settlement' && (e.data[0] as { recipe_id: string }).recipe_id === t).slice(-20).reverse().map((e) => ({ ...(e.data[0] as Record<string, unknown>), tx: e.tx_hash, block: e.block_height }));
   j(res, { stats: market.ticker(t), candles: market.candles.get(t), book: { bids: agg(book.bids), asks: agg(book.asks) }, trades, settlements, holders: ledger.holders(t).slice(0, 10), listing: listings.get(t) });
 }));
@@ -199,13 +204,20 @@ app.post('/api/runs/quote', guard(async (req, res) => {
   const msg = JSON.stringify({ action: 'run', recipe_id, run_id, inputs_hash, on_behalf_of: buyer });
   const qreq = runPaymentQuoteRequest({ originAsset: pay_asset, refundTo: refund_to || buyer, contractId: CONTRACT_ID, price: r.price_per_run.toString(), msg });
   const quote = await mocks.oneclick.quote(qreq);
-  const ctx: RunCtx = { run_id, recipe_id, buyer, sealed_inputs, inputs_hash, quote, events: [], listeners: new Set(), started: false };
+  const token = randomBytes(24).toString('hex');
+  const ctx: RunCtx = { run_id, token, recipe_id, buyer, sealed_inputs, inputs_hash, quote, events: [], listeners: new Set(), started: false, approvalPending: false };
   runs.set(run_id, ctx);
   pushEv(ctx, 'intents', 'quote', { request: qreq, quote: quote.quote, correlationId: quote.correlationId });
-  j(res, { run_id, inputs_hash, msg, quote });
+  j(res, { run_id, run_token: token, inputs_hash, msg, quote });
 }));
+const runFor = (req: express.Request) => {
+  const r = runs.get(String(req.params.id));
+  const tok = String(req.query.token ?? req.get('x-run-token') ?? '');
+  if (!r || tok !== r.token) throw new LedgerError('unknown run or missing run token');
+  return r;
+};
 app.post('/api/runs/:id/pay', guard(async (req, res) => {
-  const r = runs.get(String(req.params.id)); if (!r) throw new LedgerError('unknown run');
+  const r = runFor(req);
   const txHash = sha256Hex('pay|' + r.run_id + Date.now()).slice(0, 44);
   const dep = r.quote.quote.depositAddress!;
   await mocks.oneclick.submitDeposit(dep, txHash);
@@ -222,24 +234,28 @@ app.post('/api/runs/:id/pay', guard(async (req, res) => {
   })();
   j(res, { ok: true, txHash });
 }));
+/**
+ * Local demo wallet. The buyer's browser decrypted the approval request (sealed to its reply key)
+ * and posts back the exact transactions it approved; a real wallet would sign and broadcast them.
+ */
 app.post('/api/runs/:id/approve', guard(async (req, res) => {
-  const r = runs.get(String(req.params.id)); if (!r?.approval) throw new LedgerError('no approval pending');
+  const r = runFor(req); if (!r.approvalPending) throw new LedgerError('no approval pending');
   const approved = !!req.body?.approved;
-  const txs = (r.approval.transactions as { receiverId: string; actions: { params: { args: { receiver_id: string; amount: string } } }[] }[]);
+  const txs = (approved ? req.body.transactions ?? [] : []) as { receiverId: string; actions: { type: string; params: { methodName: string; args: { receiver_id: string; amount: string } } }[] }[];
   const txHashes: string[] = [];
-  if (approved) for (const t of txs) {
-    // local wallet: execute the ft_transfer the buyer just signed
-    const a = t.actions[0].params.args;
-    world.debit(r.buyer, t.receiverId, BigInt(a.amount));
-    world.credit(a.receiver_id, t.receiverId, BigInt(a.amount));
-    txHashes.push(sha256Hex(`ft|${t.receiverId}|${a.receiver_id}|${Date.now()}`).slice(0, 44));
+  for (const t of txs) {
+    const a = t.actions?.[0];
+    if (t.actions.length !== 1 || a.type !== 'FunctionCall' || a.params.methodName !== 'ft_transfer' || !/^\d+$/.test(a.params.args.amount)) throw new LedgerError('demo wallet only signs single ft_transfer actions');
+    world.debit(r.buyer, t.receiverId, BigInt(a.params.args.amount));
+    world.credit(a.params.args.receiver_id, t.receiverId, BigInt(a.params.args.amount));
+    txHashes.push(sha256Hex(`ft|${t.receiverId}|${a.params.args.receiver_id}|${Date.now()}`).slice(0, 44));
   }
-  r.approval = undefined;
-  await fetch(`${RUNNER}/runs/${r.run_id}/approval`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ approved, txHashes }) });
+  r.approvalPending = false;
+  await fetch(`${RUNNER}/runs/${r.run_id}/approval`, { method: 'POST', headers: rh, body: JSON.stringify({ approved, txHashes }) });
   j(res, { ok: true, txHashes });
 }));
 app.get('/api/runs/:id/events', (req, res) => {
-  const r = runs.get(String(req.params.id)); if (!r) { res.status(404).end(); return; }
+  let r: RunCtx; try { r = runFor(req); } catch { res.status(403).end(); return; }
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
   const send = (e: Ev) => res.write(`data: ${JSON.stringify(toJson(e))}\n\n`);
   r.events.forEach(send); r.listeners.add(send);
@@ -264,7 +280,10 @@ async function boot() {
     try { att = await fetch(`${RUNNER}/attestation?nonce=${randomBytes(16).toString('hex')}`).then((r) => r.json()); } catch { await new Promise((r) => setTimeout(r, 200)); }
   }
   if (!att) throw new Error(`runner not reachable at ${RUNNER}`);
-  const audited = computeCodehash(ROOT).codehash; // owner's audited release = this repo
+  // the owner pins the audited release in AUDITED_CODEHASH (npm run pin-codehash). Edit runner/core code
+  // without re-pinning and the runner's attestation no longer matches: the UI check turns red.
+  const pinned = resolve(ROOT, 'AUDITED_CODEHASH');
+  const audited = existsSync(pinned) ? readFileSync(pinned, 'utf8').trim() : computeCodehash(ROOT).codehash;
   if (att.codehash !== audited) console.warn(`[server] WARNING runner codehash ${att.codehash.slice(0, 12)} != audited ${audited.slice(0, 12)} — UI will show the mismatch`);
   ledger.call('frs-dao.testnet', (l) => l.add_runner({ id: RUNNER_ID, signing_pk: att!.signing_pk, enc_pk_hex: att!.enc_pk_hex, codehash: audited, fee_per_run: '30000' }));
   for (const b of catalog.blocks) ledger.call(b.author, (l) => l.register_block({ id: b.id, version: b.id.split('@')[1], fee_per_call: b.fee_per_call, manifest_hash: hashObject(b) }));

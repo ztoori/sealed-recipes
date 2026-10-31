@@ -51,3 +51,7 @@ test('code hash is stable across line endings and changes when code changes', ()
   writeFileSync(f, readFileSync(f, 'utf8') + '\n// tampered');
   assert.notEqual(computeCodehash(dir).codehash, a);
 });
+
+test('AUDITED_CODEHASH is pinned to the current runner source (run `npm run pin-codehash` after reviewing changes)', () => {
+  assert.equal(readFileSync(join(root, 'AUDITED_CODEHASH'), 'utf8').trim(), computeCodehash(root).codehash);
+});
