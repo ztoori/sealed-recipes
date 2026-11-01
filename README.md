@@ -18,11 +18,28 @@ Fungible Recipes makes a workflow something you can sell without revealing it, a
 |---|---|
 | Specialized builders deploy utility apps and bots | **Blocks** with typed ports, declared network capabilities and a per-call fee, registered on-chain ([standard/blocks.json](standard/blocks.json)) |
 | A no-code / low-code standard to compose and swap blocks | **FRS-1** ([docs/FRS-1.md](docs/FRS-1.md)): a typed DAG with nominal subtyping, validation, and drop-in swap search. The visual composer is in the Compose tab |
-| Users create recipes without patents or licences | The recipe is **sealed** (X25519 + XSalsa20-Poly1305) to the runner's attested key. Only `sha256(envelope)` goes on-chain |
+| Users create recipes without patents or licences | The recipe is **sealed** (X25519 + XSalsa20-Poly1305) to the runner's attested key. Only `sha256(envelope)` goes on-chain. No filing or licence is needed to stop *copying*. See [What the sealing protects](#what-the-sealing-protects-and-what-it-doesnt) for its limits |
 | A decentralized exchange where recipes are listed, bought and traded | **Frequent batch auctions** per recipe in the contract: an opening auction at listing, then a uniform-price clearing every batch (`clear_batch`, callable by anyone), plus **pay-per-run** escrow |
 | Attribution that pays everyone involved | **`report_run`**: an ed25519-signed runner report is verified on-chain and splits the payment in one receipt |
 | Deploy on NEAR's privacy platform (TEE) | Runner container for a **dstack Intel TDX CVM** (the NEAR Shade Agent / Phala stack); AI blocks call **NEAR AI Cloud** private models and verify their TEE signatures |
 | Pay through NEAR Intents | **1Click** `EXACT_OUTPUT` quote with `customRecipientMsg`, so the solver's delivery *is* the `ft_transfer_call` that opens the run. Swaps inside the workflow use **confidential intents** (`confidentiality: "basic"`) |
+
+## What the sealing protects, and what it doesn't
+
+Fungible Recipes protects a workflow **by default, without filing anything**. The law (copyright, trade secrets, terms of use) becomes the backup instead of the first line of defence. Sealing the recipe in a TEE is also strong evidence of the "reasonable measures" trade-secret law expects.
+
+| Threat | Covered? | Why |
+|---|---|---|
+| Copying or pirating the recipe | **Yes** | It is never distributed. Only attested runner code can decrypt it; the marketplace, the chain and buyers see ciphertext and a hash |
+| Leaks through partners who run it | **Yes** | There are no licensees holding copies. Runs go through the sealed runner |
+| Getting paid without enforcing licences | **Yes** | Access is metered per run, and every builder is paid in the run's settlement |
+| Reverse engineering by probing outputs | **Partly** | Every probe costs a paid run, which slows this down. Simple recipes can still be inferred from enough input/output pairs; complex ones (tuned prompts, many parameters) are much harder |
+| Independent reinvention | **No** | The block list is public so builders can be paid, and a competitor can build their own version. Patents stop reinvention; secrecy does not. The share price shows a shrinking edge, so creators are paid while it lasts |
+| Hardware or key compromise | **Depends on the TEE** | Intel TDX side channels, a leaked runner key (one key seals every recipe today) or a lost key. The local demo has no hardware TEE at all |
+| Block authors' source code | **No** | Blocks run inside the runner image, so its builders and auditors can read them. Authors who need secrecy should serve the block from their own API or TEE |
+| Buyers sharing results, creators leaking their own recipe | **No** | Out of scope for any technical measure |
+
+Planned mitigations: one key per recipe with rotation across several runners, probe resistance (per-buyer rate limits, minimal outputs, flagging unusual input patterns), and remote blocks that run in their author's own TEE. Details are in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 ## Try it in two minutes (no keys, no network needed)
 

@@ -29,6 +29,10 @@ What Fungible Recipes protects, from whom, and where the protection ends.
 | Fast trader / MEV searcher | Front-run or pick off orders when they become visible | Shares only trade in batch auctions: all crossing orders in a batch get the same price, so seeing an order first gives no edge, and a single order cannot walk a thin book | A trader can still react to a batch's indicative price before it closes, as in any call auction |
 | Book spammer | Make clearing too expensive in gas | Each book is capped at 200 orders | The cap lets a spammer fill a book; storage deposits per order are needed before mainnet |
 | Creator | Swap the workflow after people bought shares | `update_sealed` emits `recipe_updated`. Each paid run snapshots the sealed hash it paid for, and the runner executes exactly that version | Shareholders must watch `recipe_updated`. A timelock is a reasonable v2 addition |
+| Paying buyer / competitor | Infer the recipe from many runs (black-box probing) | Every probe is a paid run; outputs reveal results, not params | Simple recipes can be inferred. Planned: per-buyer rate limits, minimal outputs, flagging unusual input patterns |
+| Competitor | Rebuild the recipe independently from the public block list | None technical: the block list must be public for attribution | Secrecy, unlike a patent, does not stop reinvention. The market prices the shrinking edge |
+| Runner key compromise or loss | Decrypt every recipe, or lose them | Keys derived in the TEE (dstack KMS), never exported | One runner key seals all recipes today. Planned: per-recipe keys, rotation and re-sealing across several runners |
+| Runner image auditor | Read block authors' code | Blocks are reviewed code in a pinned image | Authors who need secrecy should run the block remotely in their own TEE (planned remote blocks) |
 | AI model provider | Read sealed prompts | AI blocks call NEAR AI Cloud **private** models. TLS terminates in the gateway TEE, and every response is signed by the attested TEE key and checked | Gateway-kind signatures are checked against the gateway's key. Gateway attestation is not re-verified inside the block |
 
 ## Custody
@@ -41,3 +45,4 @@ The runner **never holds user funds**. Blocks that move funds (`wallet:approve`)
 - The contract owner approves runners after verifying attestation off-chain. On-chain DCAP verification (as Shade Agent contracts do) is the next step.
 - 1Click (the service) sees swap requests, including the fresh recipient. Confidential intents protect against chain observers, not against the 1Click operator.
 - The local demo has no hardware TEE, mock services and a demo wallet. See "What is real" in the README.
+- IP protection is by secrecy, not exclusivity: it stops copying, not probing at scale or independent reinvention. See "What the sealing protects" in the README.
