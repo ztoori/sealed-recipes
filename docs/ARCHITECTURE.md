@@ -54,6 +54,8 @@ Publishing is rejected unless `price ≥ protocol + runner + Σ block fees`. Fee
 
 Each share earns `pool / total_shares` per run, so a share's value tracks expected future runs. The exchange shows **runs to pay back a share** (`price / dividend per share per run`), a P/E analogue. A recipe with a real edge (CLNP: private AI guard + confidential routing) can charge more per run and attract more runs than a public copycat (SWPR). Both effects show up in its share price. Nobody has to reveal the recipe for the market to price it.
 
+Shares trade in **frequent batch auctions** rather than on a continuous order book. Orders collect for one batch interval (12 s in the demo), then `clear_batch` fills everything that crosses at a single uniform price, chosen to maximise volume, then minimise imbalance, then take the midpoint. A new recipe's first batch is its opening auction, so the creator doesn't have to guess the price. Recipe markets will usually be thin. In a batch auction, speed doesn't earn an edge, one order can't walk the book, and a batch's indicative price is a steadier fair-value signal than the last trade. Clearing rules are tested against vectors from an independent Python reference (`scripts/gen-auction-vectors.py`).
+
 ## Local mode wiring
 
 `scripts/demo.mjs` starts the runner with

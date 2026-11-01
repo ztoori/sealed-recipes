@@ -130,7 +130,10 @@ tr.click:hover td { background: #f6f8fb; }
 .book .bid .bar { background: var(--gain); }
 .book .ask span:first-child { color: var(--loss); }
 .book .bid span:first-child { color: var(--gain); }
-.book .mid { padding: 6px 10px; border-block: 1px solid var(--rule-soft); font-weight: 650; display: flex; justify-content: space-between; }
+.clock { height: 3px; background: var(--rule-soft); }
+.clock > div { height: 100%; background: var(--wax); transition: width 0.25s linear; }
+.book .lvl.in span { font-weight: 700; }
+.book .mid { padding: 6px 10px; border-block: 1px solid var(--rule-soft); font-weight: 650; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
 .seg button { border: 0; background: #fff; padding: 7px; cursor: pointer; font-weight: 600; }
 .seg button[aria-pressed='true'].b { background: var(--gain); color: #fff; }

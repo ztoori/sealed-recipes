@@ -30,12 +30,13 @@ Recipe  { id (ticker, ^[A-Z0-9]{3,6}$), name, creator, sealed_hash, runner_id, b
           price_per_run, royalty_bps, total_shares, acc_per_share (u128, scaled 1e18), runs, revenue, listed }
 Run     { run_id, recipe_id, buyer, amount, inputs_hash, sealed_hash (snapshot at payment), status: Pending|Settled|Refunded, created_ns }
 Order   { id (u64), recipe_id, owner, side: Bid|Ask, price (per share), qty (remaining shares), created_ns }
+Batch   { id (u64, 1 = opening auction), opened_ns }   (one per recipe; closes at opened_ns + batch_interval_ns)
 ```
 
 ## Methods
 
 ### Admin
-- `new(owner, payment_token, protocol_account, protocol_fee_bps)` — `#[init]`. `protocol_fee_bps <= 1000`.
+- `new(owner, payment_token, protocol_account, protocol_fee_bps, batch_interval_ns)` — `#[init]`. `protocol_fee_bps <= 1000`, `batch_interval_ns > 0`.
 - `add_runner(id, signing_pk, enc_pk_hex, codehash, fee_per_run)` — owner only.
 - `set_runner_active(id, active)` — owner only.
 
@@ -108,27 +109,51 @@ that account's withdrawable balance and resets `reward_debt = new_shares * acc /
 - `transfer_shares(recipe_id, receiver_id, qty)`
 - `claim_dividends(recipe_id)` → harvested into balance.
 
-### Order book (per recipe, shares vs payment token)
-- Order ids are `u64`, starting at 1, shared by both sides.
-- `place_ask(recipe_id, price, qty) -> u64` — escrows shares by **locking** them in the seller's own holding
-  (`locked += qty`); locked shares stay in the seller's balance and keep earning dividends until filled.
-  `available = shares - locked`; `place_ask` and `transfer_shares` both require `available >= qty`.
-- bids come via `ft_on_transfer` (`action: bid`), escrowing `price * qty` payment tokens.
-- Matching an incoming bid: asks with `price <= bid.price`, sorted price asc then order id asc; trade at the
-  ask (maker) price; the buyer's price improvement `(bid.price - ask.price) * qty` is credited to their balance.
-- Matching an incoming ask: bids with `price >= ask.price`, sorted price desc then order id asc; trade at the
-  bid (maker) price; the bid escrow is consumed exactly.
-- On every fill: harvest seller & buyer dividends, move `qty` shares seller → buyer, reduce seller `locked`,
-  credit seller `qty * maker_price`. Self-trades are allowed (no special case; shares net out).
-- `cancel_order(order_id)` — order owner only; bids refund `price * remaining_qty` to balance, asks just unlock.
-- No trading fees in v1.
+### Share trading: frequent batch auctions (per recipe, shares vs payment token)
+
+Shares never trade continuously. Orders collect into the recipe's current **batch**. When the batch
+closes, everything that crosses clears at **one uniform price**. Nobody gains from reacting a block
+earlier than someone else, and a thin book cannot be walked by a single order.
+
+- `new(..., batch_interval_ns: U64)` sets the batch length (demo: 12 s; testnet suggestion: 60 s).
+- A recipe's first batch opens at `publish_recipe` and is its **opening auction**. The creator offers the
+  float as asks at a reserve price, and bids accumulate until the first clearing.
+- Order ids are `u64`, starting at 1, shared by both sides. Every accepted order rests in the book; nothing
+  fills on placement. A book holds at most `MAX_ORDERS_PER_BOOK = 200` orders (bounds clearing gas; a full book
+  rejects new orders with `order book full`).
+- `place_ask(recipe_id, price, qty) -> u64`: escrows shares by **locking** them in the seller's own holding
+  (`locked += qty`). Locked shares keep earning dividends until they fill. `available = shares - locked`;
+  `place_ask` and `transfer_shares` require `available >= qty`.
+- Bids arrive via `ft_on_transfer` (`action: bid`), escrowing `price * qty` payment tokens.
+- `cancel_order(order_id)`: order owner only, any time before the order fills. Bids refund
+  `price * remaining_qty`; asks unlock.
+- `clear_batch(recipe_id)`: **anyone** may call it once `now >= batch.opened_ns + batch_interval_ns`. It always
+  closes the batch (`batch.id += 1`, `batch.opened_ns = now`), even when nothing crosses.
+
+**Clearing price.** For a candidate price `p`: demand `D(p) = Σ qty of bids with price >= p`, supply
+`S(p) = Σ qty of asks with price <= p`, volume `V(p) = min(D(p), S(p))`. Candidates are all distinct order prices.
+1. Keep the candidates with the largest `V` (if the largest `V` is 0, nothing clears: `price = null`, `volume = 0`).
+2. Among those, keep the ones with the smallest imbalance `|D(p) - S(p)|`.
+3. `P = floor((min + max) / 2)` of the remaining candidates. `V(P)` equals the maximum volume (proof in the
+   batch-auction vectors file).
+
+**Allocation at `P`, volume `V`.** Eligible bids (`price >= P`) are sorted by price desc, then id asc. Eligible asks
+(`price <= P`) are sorted by price asc, then id asc. Each side fills greedily up to `V`; at most one order per side is
+partially filled, and the remainder rests for the next batch. For each filled bid: harvest dividends, add `q` shares
+to the buyer, and credit the buyer `(bid.price - P) * q` (price improvement). For each filled ask: harvest dividends,
+remove `q` shares and `q` locked from the seller, and credit the seller `q * P`. Shares and tokens are conserved
+exactly. Self-matching is allowed and nets out. There are no trading fees in v1.
+
+Shared vectors: `contracts/test-vectors/batch-auction.json` (generated by `scripts/gen-auction-vectors.py`,
+an independent Python reference implementation).
 
 ### Views
 `get_config`, `get_recipe`, `list_recipes`, `get_block`, `list_blocks`, `get_runner`, `get_run`, `get_book(recipe_id)`,
+`get_batch(recipe_id) -> {id, opened_ns, closes_ns}`, `indicative_clearing(recipe_id) -> {price, volume, demand, supply}` (what would clear now),
 `shares_of(recipe_id, account_id)`, `pending_dividends(recipe_id, account_id)`, `balance_of(account_id)`,
 `quote_settlement(recipe_id, blocks_used)` (returns the split above without state change).
 
 ### Events (NEP-297, standard `fungible-recipes`, version `1.0.0`)
 Exact field shapes and order-id rules: [CONTRACT_EVENTS.md](CONTRACT_EVENTS.md).
 `runner_added`, `block_registered`, `recipe_published`, `recipe_updated`, `run_requested`, `frs_settlement`, `run_refunded`,
-`order_placed`, `trade`, `order_cancelled`, `shares_transferred`, `dividends_claimed`, `withdrawn`, `withdraw_failed`, `transfer_rejected`.
+`order_placed`, `batch_cleared`, `order_cancelled`, `shares_transferred`, `dividends_claimed`, `withdrawn`, `withdraw_failed`, `transfer_rejected`.

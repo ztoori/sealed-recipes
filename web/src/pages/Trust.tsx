@@ -57,7 +57,7 @@ export function Trust() {
         <div className="panel">
           <header><h2>What is real in local mode</h2></header>
           <div className="body small grid" style={{ gap: 6 }}>
-            <div><span className="pill ok">real</span> FRS-1 validation, sealing (X25519/XSalsa20-Poly1305), ed25519 run reports, settlement math (same vectors as the Rust contract), order matching, dividends</div>
+            <div><span className="pill ok">real</span> FRS-1 validation, sealing (X25519/XSalsa20-Poly1305), ed25519 run reports, settlement math and batch-auction clearing (same vectors as the Rust contract), dividends</div>
             <div><span className="pill ok">real</span> the runner's HTTP calls use the exact request shapes of FastNEAR, NEAR RPC, 1Click and NEAR AI Cloud</div>
             <div><span className="pill ok">real</span> NEAR AI chat signatures: secp256k1, EIP-191, recovered and matched to the attested address</div>
             {mode && Object.entries(mode.services).map(([k, v]) => <div key={k}><span className="pill warn">local</span> {k}: {String(v)}</div>)}
@@ -71,7 +71,7 @@ export function Trust() {
         <div className="panel">
           <header><h2>Contract events</h2><span className="small muted">NEP-297 · block {events?.height}</span></header>
           <table className="small"><tbody>
-            {(events?.events ?? []).filter((e: any) => e.event !== 'order_placed' && e.event !== 'order_cancelled' && e.event !== 'trade').slice(-14).reverse().map((e: any) => (
+            {(events?.events ?? []).filter((e: any) => e.event !== 'order_placed' && e.event !== 'order_cancelled' && !(e.event === 'batch_cleared' && e.data[0].price === null)).slice(-14).reverse().map((e: any) => (
               <tr key={e.idx}><td>{e.event}</td><td className="muted">{e.signer}</td><td className="hash">{short(e.tx_hash, 6, 4)}</td></tr>
             ))}
           </tbody></table>

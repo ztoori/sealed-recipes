@@ -6,7 +6,7 @@ What Fungible Recipes protects, from whom, and where the protection ends.
 
 1. **The recipe**: wiring, secret params, prompts. This is the creator's edge.
 2. **Buyer inputs**: wallet, thresholds, the fresh recipient address.
-3. **Money**: run payments in escrow, payouts, shares and dividends, order-book escrow.
+3. **Money**: run payments in escrow, payouts, shares and dividends, auction escrow (bids in tokens, asks as locked shares).
 4. **Buyer funds** touched by a workflow, such as dust swept by CLNP.
 
 ## Adversaries and mitigations
@@ -25,7 +25,9 @@ What Fungible Recipes protects, from whom, and where the protection ends.
 | Block author | Exfiltrate buyer data | Blocks only reach hosts declared in `capabilities` (`guardedFetch`); blocks are reviewed code in the runner image (code hash) | A block can send data to its own declared host. Buyers see each block's capabilities before paying |
 | Solver / 1Click | Underpay a run | `ft_on_transfer` requires `amount ≥ price_per_run`; anything else panics and the token is refunded | — |
 | Buyer | Pay, then claim a refund | Only the runner's signed failure or a 15-minute timeout refunds | — |
-| Seller in the order book | Keep dividends on sold shares | Dividends are harvested before every share movement. Escrowed (locked) shares keep earning until they fill, then move | — |
+| Seller in an auction | Keep dividends on sold shares | Dividends are harvested before every share movement. Escrowed (locked) shares keep earning until they fill, then move | — |
+| Fast trader / MEV searcher | Front-run or pick off orders when they become visible | Shares only trade in batch auctions: all crossing orders in a batch get the same price, so seeing an order first gives no edge, and a single order cannot walk a thin book | A trader can still react to a batch's indicative price before it closes, as in any call auction |
+| Book spammer | Make clearing too expensive in gas | Each book is capped at 200 orders | The cap lets a spammer fill a book; storage deposits per order are needed before mainnet |
 | Creator | Swap the workflow after people bought shares | `update_sealed` emits `recipe_updated`. Each paid run snapshots the sealed hash it paid for, and the runner executes exactly that version | Shareholders must watch `recipe_updated`. A timelock is a reasonable v2 addition |
 | AI model provider | Read sealed prompts | AI blocks call NEAR AI Cloud **private** models. TLS terminates in the gateway TEE, and every response is signed by the attested TEE key and checked | Gateway-kind signatures are checked against the gateway's key. Gateway attestation is not re-verified inside the block |
 

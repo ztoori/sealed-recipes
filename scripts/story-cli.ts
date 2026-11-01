@@ -87,4 +87,16 @@ for (const p of s.payouts) console.log(`  ${usd(p.amount).padStart(10)}  ${p.acc
 const m = await api<{ settlements: { shareholder_pool: string }[] }>('/api/market/CLNP');
 console.log(`  ${usd(m.settlements[0].shareholder_pool).padStart(10)}  CLNP shareholders         pro-rata dividend (claimable)`);
 console.log(`  one receipt: tx ${s.tx} at block ${s.block}`);
+
+h('MARKET · CLNP shares opened with a batch auction');
+let opening: { batch_id: number; price: string | null; volume: string; fills: number } | undefined;
+for (let i = 0; i < 40 && !opening; i++) {
+  const mk = await api<{ auctions: { batch_id: number; price: string | null; volume: string; fills: number }[] }>('/api/market/CLNP');
+  opening = mk.auctions.find((a) => a.batch_id === 1);
+  if (!opening) await new Promise((r) => setTimeout(r, 500));
+}
+if (!opening) { console.error('✘ opening auction did not clear'); process.exit(1); }
+console.log(opening.price === null
+  ? '  batch #1 closed with no crossing orders; the float keeps resting for the next batch'
+  : `  batch #1 cleared ${Number(opening.volume).toLocaleString()} shares at one price, ${(Number(opening.price) / 1e6).toFixed(5)} USDC, across ${opening.fills} fills`);
 console.log('\n✔ story complete');

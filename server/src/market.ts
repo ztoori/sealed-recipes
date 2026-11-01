@@ -3,9 +3,10 @@
  *
  * Honesty labels:
  *  - candles before the server started are SYNTHETIC (seeded random walk, flagged `synthetic`)
- *  - "sim traders" are local bots that place real orders on the ledger so the book is alive;
- *    they are listed as such in the UI and can be turned off with FRS_BOTS=0
- * Everything after boot (orders, trades, runs, settlements, dividends) is real ledger state.
+ *  - "sim traders" are local bots with unlimited demo USDC that place real orders into each batch so the
+ *    auctions are alive; they are listed as such in the UI and can be turned off with FRS_BOTS=0
+ * Everything after boot (orders, auction clearings, runs, settlements, dividends) is real ledger state.
+ * Shares trade only in frequent uniform-price batch auctions: one candle point per clearing.
  */
 import type { LocalLedger } from '../../core/src/ledger.js';
 
@@ -38,19 +39,21 @@ export class Market {
     this.candles.set(ticker, out);
   }
 
-  /** fold new ledger trades into the current hourly candle */
+  /** fold new auction clearings into the current hourly candle */
   ingestTrades() {
     const ev = this.ledger.events;
     for (; this.lastTradeSeen < ev.length; this.lastTradeSeen++) {
       const e = ev[this.lastTradeSeen];
-      if (e.event !== 'trade') continue;
-      const d = e.data[0] as { recipe_id: string; price: string; qty: string };
+      if (e.event !== 'batch_cleared') continue;
+      const d = e.data[0] as { recipe_id: string; price: string | null; volume: string };
+      if (d.price === null) continue;
       const px = Number(d.price) / USDC;
+      const vol = Number(d.volume);
       const arr = this.candles.get(d.recipe_id) ?? [];
       const t = Math.floor(Number(BigInt(e.timestamp_ns) / 1_000_000_000n) / 3600) * 3600;
       const last = arr.at(-1);
-      if (last && last.time === t && !last.synthetic) { last.high = Math.max(last.high, px); last.low = Math.min(last.low, px); last.close = px; last.volume += Number(d.qty); }
-      else arr.push({ time: t, open: last?.close ?? px, high: Math.max(px, last?.close ?? px), low: Math.min(px, last?.close ?? px), close: px, volume: Number(d.qty), synthetic: false });
+      if (last && last.time === t && !last.synthetic) { last.high = Math.max(last.high, px); last.low = Math.min(last.low, px); last.close = px; last.volume += vol; }
+      else arr.push({ time: t, open: last?.close ?? px, high: Math.max(px, last?.close ?? px), low: Math.min(px, last?.close ?? px), close: px, volume: vol, synthetic: false });
       this.candles.set(d.recipe_id, arr);
     }
   }
@@ -67,7 +70,10 @@ export class Market {
     const dayAgo = c.at(-25)?.close ?? c[0]?.close ?? last;
     const r = this.ledger.recipes.get(ticker)!;
     const book = this.ledger.get_book(ticker);
-    const trades = this.ledger.events.filter((e) => e.event === 'trade' && (e.data[0] as { recipe_id: string }).recipe_id === ticker);
+    const clearings = this.ledger.events.filter((e) => e.event === 'batch_cleared' && (e.data[0] as { recipe_id: string }).recipe_id === ticker);
+    const filled = clearings.filter((e) => (e.data[0] as { price: string | null }).price !== null);
+    const batch = this.ledger.get_batch(ticker);
+    const ind = this.ledger.indicative_clearing(ticker);
     const runs = this.ledger.events.filter((e) => e.event === 'frs_settlement' && (e.data[0] as { recipe_id: string }).recipe_id === ticker);
     const poolPaid = runs.reduce((s, e) => s + Number((e.data[0] as { shareholder_pool: string }).shareholder_pool), 0) / USDC;
     const q = this.ledger.quote_settlement(ticker, r.blocks);
@@ -81,12 +87,32 @@ export class Market {
       runs: Number(r.runs), revenue: Number(r.revenue) / USDC, dividendsPaid: poolPaid,
       /** break-even runs: how many runs until dividends repay today's price (a P/E analogue) */
       runsToPayback: perShare > 0 ? Math.round(last / perShare) : null,
-      volumeTrades: trades.reduce((s, e) => s + Number((e.data[0] as { qty: string }).qty), 0),
-      trades: trades.length,
+      volumeTrades: filled.reduce((s, e) => s + Number((e.data[0] as { volume: string }).volume), 0),
+      auctions: clearings.length,
+      batch: { id: batch.id, closesMs: Number(batch.closes_ns / 1_000_000n), intervalMs: Number(this.ledger.batchIntervalNs / 1_000_000n) },
+      indicative: { price: ind.price === null ? null : Number(ind.price) / USDC, volume: Number(ind.volume) },
     };
   }
 
-  /** local market-making bots: random small orders around the last price */
+  /** auction keeper: clear every batch whose interval has elapsed (anyone may do this on-chain) */
+  keeperTick() {
+    const now = BigInt(Date.now()) * 1_000_000n;
+    for (const t of this.ledger.recipes.keys()) {
+      if (now >= this.ledger.get_batch(t).closes_ns) { try { this.ledger.call('auction-keeper.testnet', (l) => l.clear_batch({ recipe_id: t })); } catch { /* ignore */ } }
+    }
+  }
+
+  /** sim traders join a new listing's opening auction with bids spread around the reserve price */
+  openingBids(ticker: string, reserve: number) {
+    const L = this.ledger;
+    this.bots.forEach((bot, i) => {
+      const px = Math.round(reserve * (0.97 + i * 0.025) * USDC);
+      const qty = BigInt(4000 + i * 2500);
+      try { L.call(L.paymentToken, (l) => l.ft_on_transfer({ sender_id: bot, amount: (BigInt(px) * qty).toString(), msg: JSON.stringify({ action: 'bid', recipe_id: ticker, price: String(px), qty: qty.toString() }) })); } catch { /* ignore */ }
+    });
+  }
+
+  /** local market-making bots: random small orders around the last price, collected into the current batch */
   botTick() {
     const L = this.ledger;
     const tickers = [...L.recipes.keys()];

@@ -29,7 +29,7 @@ Deadline: **Nov 14, 2026, 23:59 UTC**. Submissions open Nov 1, 00:00 UTC. One su
 | Repository link | *your public GitHub URL* |
 | Demo post link | *your X post URL* |
 | Website | leave empty |
-| Project description (1920 / 2000 chars) | see below |
+| Project description (1984 / 2000 chars) | see below |
 
 ```text
 Problem: businesses run on workflows that chain apps, bots and AI. The workflow itself (which tools, in what order, with which prompts and thresholds) is the edge, but it is protected only by NDAs, it is easy to copy, and the builders whose tools it uses are rarely paid.
@@ -40,11 +40,11 @@ Fungible Recipes turns a workflow into a sealed, tradable financial instrument o
 - Pay per run with NEAR Intents: a 1Click EXACT_OUTPUT quote delivers the exact run price to our contract via ft_transfer_call with the run ticket in customRecipientMsg. The buyer pays from any chain and fills one short form.
 - Execute privately: the runner checks the on-chain commitments, decrypts, and runs the blocks. AI blocks use NEAR AI Cloud private models with verified TEE signatures; swaps use confidential intents to a fresh address.
 - Settle: the runner's ed25519-signed report is verified on-chain, and one receipt pays the protocol, the runner, every block author, the creator's royalty and a dividend to all shareholders.
-- Trade: each recipe has shares and a contract-level order book, so the market prices the workflow's edge without seeing it.
+- Trade: each recipe has shares that trade in frequent batch auctions (an opening auction, then one uniform price every batch), so the market prices the workflow's edge without seeing it.
 
 Demo story: a creator builds and seals "Clean up and protect"; a buyer pays $0.75 from Arbitrum; the workflow quarantines scam airdrops, sweeps dust and confidentially swaps it to a fresh address; 8 parties plus all shareholders are paid in one settlement.
 
-Includes: a Rust NEAR contract (44 tests), a TS mirror passing the same vectors, the TEE runner, 8 blocks, the exchange UI, a headless e2e story, and a live-check against real 1Click and NEAR AI Cloud.
+Includes: a Rust NEAR contract (50 tests), a TS mirror passing the same vectors, the TEE runner, 8 blocks, the exchange UI, a headless e2e story, and a live-check against real 1Click and NEAR AI Cloud.
 ```
 
 ## 3. X demo post
@@ -56,7 +56,7 @@ Attach `docs/media/demo.mp4` (81 s, 1440×900), or the screenshots `02-sealed.pn
 ```text
 Your workflow is your edge. Copy it once and it's gone.
 
-Fungible Recipes: seal a workflow in a TEE, sell it per run via NEAR Intents, and pay every builder in one settlement. Shares trade like stocks.
+Fungible Recipes: seal a workflow in a TEE, sell it per run via NEAR Intents, and pay every builder in one settlement. Shares trade in batch auctions.
 
 Built at NEAR HACKATHON @NEARProtocol #NEARHackathon
 ```
@@ -72,7 +72,7 @@ Built at NEAR HACKATHON @NEARProtocol #NEARHackathon
 
 3/ One run of "Clean up and protect", $0.75 from Arbitrum: quarantine 2 scam airdrops, sweep 4 dust balances, confidentially swap to a fresh address. Protocol, runner, 5 block authors, the creator and every shareholder are paid in one receipt.
 
-4/ Repo (MIT, 64 tests, one-command demo): <repo link>
+4/ Repo (MIT, 72 tests, one-command demo): <repo link>
 Question for builders: which workflow would you seal and list first?
 ```
 

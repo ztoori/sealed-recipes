@@ -6,3 +6,4 @@ export * from './ledger.js';
 export * from './oneclick.js';
 export * from './nearai.js';
 export * from './attestation.js';
+export * from './auction.js';

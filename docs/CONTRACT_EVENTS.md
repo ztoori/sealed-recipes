@@ -14,8 +14,8 @@ Source of truth: `contracts/fungible-recipes/src/lib.rs`. The TS mirror (`core/s
 | `transfer_rejected` | `ft_on_transfer` with `on_behalf_of` where the run/bid failed a business rule; full amount credited to `on_behalf_of` | `on_behalf_of: AccountId, sender_id: AccountId, amount: U128, reason: string` |
 | `frs_settlement` | `report_run` success | `run_id: string, recipe_id: string, buyer: AccountId, price: U128, output_hash: string, payouts: [{account_id: AccountId, role: string, amount: U128}], shareholder_pool: U128 (= distributed), acc_increment: U128` |
 | `run_refunded` | `report_run` failure / `reclaim_run` | `run_id: string, buyer: AccountId, amount: U128, reason: "runner_reported_failure" \| "timeout"` |
-| `order_placed` | every bid (via `ft_on_transfer`) and every `place_ask`, **before** matching | the full taker `Order` as created: `id: u64, recipe_id: string, owner: AccountId, side: "Bid" \| "Ask", price: U128, qty: U128 (original qty), created_ns: U64` |
-| `trade` | each fill, after `order_placed` | `recipe_id: string, buyer: AccountId, seller: AccountId, price: U128 (maker price), qty: U128, maker_order_id: u64, taker_order_id: u64` |
+| `order_placed` | every accepted bid (via `ft_on_transfer`) and every `place_ask`; the order rests in the current batch (nothing matches on placement) | the full `Order` as created: `id: u64, recipe_id: string, owner: AccountId, side: "Bid" \| "Ask", price: U128, qty: U128, created_ns: U64` |
+| `batch_cleared` | every `clear_batch`, including batches where nothing crosses | `recipe_id: string, batch_id: u64 (the batch that closed), price: U128 \| null (uniform clearing price; null when nothing crosses), volume: U128 ("0" when null), fills: [{order_id: u64, owner: AccountId, side: "Bid" \| "Ask", qty: U128}]` (bids first, price desc then id asc; then asks, price asc then id asc) |
 | `order_cancelled` | `cancel_order` | the full `Order` as it rested (remaining `qty`) |
 | `shares_transferred` | `transfer_shares` | `recipe_id: string, from: AccountId, to: AccountId, qty: U128` |
 | `dividends_claimed` | `claim_dividends` (emitted even when amount is "0") | `recipe_id: string, account_id: AccountId, amount: U128` |
@@ -32,12 +32,13 @@ Always in this order, one entry each, **including zero amounts**:
 
 No event is emitted for individual shareholders; their share is `shareholder_pool` via `acc_increment`.
 
-## Order ids
+## Order ids and batches
 
-- A single counter `next_order_id` starts at **1** and is incremented for **every** order placed (bids and asks), whether it rests or not.
-- A taker that is **fully filled on placement still consumes an id** (it appears in `order_placed` and as `taker_order_id` in its trades) but never rests in the book and cannot be cancelled.
-- A partially filled taker rests under that same id with the remaining qty.
-- Rejected bids (`transfer_rejected`) do **not** consume an id.
+- A single counter `next_order_id` starts at **1** and is incremented for every accepted order (bids and asks). Every accepted order rests.
+- A partially filled order keeps its id and rests into the next batch with the remaining qty. Fully filled orders leave the book.
+- Rejected bids (`transfer_rejected`) and rejected asks (panic) do **not** consume an id.
+- Batch ids start at **1** per recipe (batch 1 = opening auction, opened at `publish_recipe`). `clear_batch` emits `batch_cleared` with the closing batch's id and opens `id + 1` at the current block timestamp.
+- At most one bid and one ask are partially filled per clearing. Price improvement `(limit - P) * qty` is credited to each filled bidder; each filled seller is credited `qty * P` and their locked shares drop by `qty`.
 
 ## Validation rules that produce rejections
 
@@ -53,7 +54,9 @@ No event is emitted for individual shareholders; their share is `shareholder_poo
 | bid price or qty 0 | `price and qty must be > 0` |
 | bid escrow overflow | `price * qty overflows` |
 | bid underpayment | `deposit below price * qty` |
+| book holds `MAX_ORDERS_PER_BOOK` (200) orders | `order book full` (bid: rejection reason; ask: panic) |
+| `clear_batch` before `opened_ns + batch_interval_ns` | `batch still open` (panic) |
 | output_hash 64 lowercase hex (`report_run`) | `output_hash must be 64 lowercase hex` (panic) |
 | empty `blocks` in `publish_recipe` | `recipe needs at least one block` (panic) |
 
-Checks run in the order listed for runs: run_id, inputs_hash, duplicate, recipe exists, listed, amount. For bids: recipe exists, price/qty, overflow, amount.
+Checks run in the order listed for runs: run_id, inputs_hash, duplicate, recipe exists, listed, amount. For bids: recipe exists, price/qty, overflow, amount, book full. For asks: price/qty, recipe exists, book full, available shares.

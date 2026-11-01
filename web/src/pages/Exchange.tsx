@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+
+function useNow(ms = 250) { const [n, setN] = useState(Date.now()); useEffect(() => { const t = setInterval(() => setN(Date.now()), ms); return () => clearInterval(t); }, [ms]); return n; }
 import { api, compact, money, pct, px, short, usd, usePoll } from '../api';
 import { useApp } from '../App';
 import { PriceChart } from '../components/Chart';
@@ -27,7 +29,7 @@ export function Exchange() {
           </tbody>
         </table>
         <div className="body small muted">
-          Each recipe is a sealed workflow with a fixed supply of shares. Every paid run streams a dividend to holders, so price tracks how much the workflow is actually used.
+          Each recipe is a sealed workflow with a fixed supply of shares. Every paid run streams a dividend to holders. Shares trade in frequent batch auctions: orders collect for {s?.batch ? Math.round(s.batch.intervalMs / 1000) : 12} seconds, then everything that crosses clears at one price.
           {!listings?.some((l) => l.ticker === 'CLNP') && <p><button className="btn sm" onClick={() => go('compose')}>Compose “Clean up and protect”</button></p>}
         </div>
       </section>
@@ -50,7 +52,7 @@ export function Exchange() {
               </div>
             </div>
             <PriceChart candles={m.candles} ticker={ticker} />
-            <div className="body small muted">Grey candles: synthetic pre-launch history (local mode). Coloured candles: real trades on the ledger since this server started.</div>
+            <div className="body small muted">Grey candles: synthetic pre-launch history (local mode). Coloured candles: real auction clearings on the ledger since this server started.</div>
           </div>
         )}
         {s && (
@@ -105,14 +107,15 @@ export function Exchange() {
       </section>
 
       <section className="grid">
-        {m && <OrderBook book={m.book} last={s?.last} />}
-        {m && <Ticket ticker={ticker} last={s?.last} onDone={refresh} />}
+        {m && <AuctionBook book={m.book} stats={s} />}
+        {m && <Ticket ticker={ticker} last={s?.last} batch={s?.batch} onDone={refresh} />}
         {m && (
           <div className="panel">
-            <header><h2>Trades</h2></header>
-            <table className="small"><tbody>
-              {m.trades.slice(0, 12).map((t: any, i: number) => (
-                <tr key={i}><td className={t.taker_side === 'Bid' ? 'gain' : 'loss'}>{px(Number(t.price) / 1e6)}</td><td className="r">{Number(t.qty).toLocaleString()}</td><td className="r muted">{short(t.buyer, 10, 0)}</td></tr>
+            <header><h2>Auction results</h2><span className="small muted">one price per batch</span></header>
+            {m.auctions.length === 0 && <div className="body small muted">The first batch is this recipe's opening auction.</div>}
+            <table className="small"><thead><tr><th>Batch</th><th className="r">Price</th><th className="r">Shares</th><th className="r">Fills</th></tr></thead><tbody>
+              {m.auctions.slice(0, 12).map((a: any) => (
+                <tr key={a.batch_id}><td>#{a.batch_id}{a.batch_id === 1 && <span className="pill" style={{ marginLeft: 6 }}>opening</span>}</td><td className="r">{a.price === null ? <span className="muted">no cross</span> : px(Number(a.price) / 1e6)}</td><td className="r">{Number(a.volume).toLocaleString()}</td><td className="r muted">{a.fills}</td></tr>
               ))}
             </tbody></table>
           </div>
@@ -127,22 +130,31 @@ function SealedHash({ ticker }: { ticker: string }) {
   return <span className="hash"> {v ? short(v.sealed_hash, 14, 8) : ''}</span>;
 }
 
-function OrderBook({ book, last }: { book: { bids: any[]; asks: any[] }; last: number }) {
+function AuctionBook({ book, stats }: { book: { bids: any[]; asks: any[] }; stats: any }) {
+  const now = useNow();
   const asks = book.asks.slice(0, 8).reverse();
   const bids = book.bids.slice(0, 8);
   const max = Math.max(1, ...book.asks.slice(0, 8).map((a) => a.qty), ...bids.map((b) => b.qty));
+  const left = stats?.batch ? Math.max(0, stats.batch.closesMs - now) : 0;
+  const frac = stats?.batch ? 1 - left / stats.batch.intervalMs : 0;
+  const ind = stats?.indicative;
   return (
     <div className="panel book">
-      <header><h2>Order book</h2><span className="small muted">shares vs USDC</span></header>
+      <header><h2>Batch #{stats?.batch?.id ?? '…'}</h2><span className="small muted">clears in {(left / 1000).toFixed(1)} s</span></header>
+      <div className="clock" aria-hidden><div style={{ width: `${Math.min(100, frac * 100)}%` }} /></div>
       <div className="lvl muted small"><span>Price</span><span>Shares</span><span>Orders</span></div>
-      {asks.map((a) => <div key={'a' + a.price} className="lvl ask"><div className="bar" style={{ width: `${(a.qty / max) * 100}%` }} /><span>{px(a.price)}</span><span>{a.qty.toLocaleString()}</span><span>{a.orders}</span></div>)}
-      <div className="mid"><span>{px(last)}</span><span className="muted small">spread {book.asks[0] && book.bids[0] ? px(book.asks[0].price - book.bids[0].price) : '—'}</span></div>
-      {bids.map((b) => <div key={'b' + b.price} className="lvl bid"><div className="bar" style={{ width: `${(b.qty / max) * 100}%` }} /><span>{px(b.price)}</span><span>{b.qty.toLocaleString()}</span><span>{b.orders}</span></div>)}
+      {asks.map((a) => <div key={'a' + a.price} className={'lvl ask' + (ind?.price != null && a.price <= ind.price ? ' in' : '')}><div className="bar" style={{ width: `${(a.qty / max) * 100}%` }} /><span>{px(a.price)}</span><span>{a.qty.toLocaleString()}</span><span>{a.orders}</span></div>)}
+      <div className="mid">
+        <span>{ind?.price != null ? <>Indicative {px(ind.price)}</> : <span className="muted">No cross yet</span>}</span>
+        <span className="muted small">{ind?.volume ? `${ind.volume.toLocaleString()} shares would clear` : 'bids and asks don’t overlap'}</span>
+      </div>
+      {bids.map((b) => <div key={'b' + b.price} className={'lvl bid' + (ind?.price != null && b.price >= ind.price ? ' in' : '')}><div className="bar" style={{ width: `${(b.qty / max) * 100}%` }} /><span>{px(b.price)}</span><span>{b.qty.toLocaleString()}</span><span>{b.orders}</span></div>)}
+      <div className="body small muted">Every order that crosses fills at the single clearing price, so there is nothing to gain by being first. Bold rows would fill if the batch closed now.</div>
     </div>
   );
 }
 
-function Ticket({ ticker, last, onDone }: { ticker: string; last: number; onDone: () => void }) {
+function Ticket({ ticker, last, batch, onDone }: { ticker: string; last: number; batch?: { id: number }; onDone: () => void }) {
   const { acting, toast } = useApp();
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [price, setPrice] = useState('');
@@ -154,7 +166,7 @@ function Ticket({ ticker, last, onDone }: { ticker: string; last: number; onDone
       const r = side === 'buy'
         ? await api('/api/chain/tx', { signer: acting, method: 'bid', args: { recipe_id: ticker, price: String(units), qty } })
         : await api('/api/chain/tx', { signer: acting, method: 'place_ask', args: { recipe_id: ticker, price: String(units), qty } });
-      toast(`${side === 'buy' ? 'Bid' : 'Ask'} placed as ${acting} · tx ${short(r.tx, 6, 4)}`); onDone();
+      toast(`${side === 'buy' ? 'Bid' : 'Ask'} queued for batch #${batch?.id ?? ''} as ${acting} (tx ${short(r.tx, 6, 4)})`); onDone();
     } catch (e) { toast((e as Error).message, true); }
   };
   return (
@@ -168,8 +180,8 @@ function Ticket({ ticker, last, onDone }: { ticker: string; last: number; onDone
         <div className="field"><label htmlFor="tp">Limit price (USDC per share)</label><input id="tp" value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" /></div>
         <div className="field"><label htmlFor="tq">Shares</label><input id="tq" value={qty} onChange={(e) => setQty(e.target.value.replace(/\D/g, ''))} inputMode="numeric" /></div>
         <div className="row between small"><span className="muted">{side === 'buy' ? 'Escrow' : 'Proceeds'}</span><b>{money((units * Number(qty)) / 1e6, 4)}</b></div>
-        <button className={'btn ' + (side === 'buy' ? 'buy' : 'sell')} disabled={!units || !Number(qty)} onClick={submit}>{side === 'buy' ? 'Place bid' : 'Place ask'}</button>
-        <div className="small muted">{side === 'buy' ? 'Bids arrive as ft_transfer_call on the payment token (or through NEAR Intents with on_behalf_of).' : 'Shares stay in your account, locked, and keep earning dividends until filled.'}</div>
+        <button className={'btn ' + (side === 'buy' ? 'buy' : 'sell')} disabled={!units || !Number(qty)} onClick={submit}>{side === 'buy' ? `Bid in batch #${batch?.id ?? ''}` : `Offer in batch #${batch?.id ?? ''}`}</button>
+        <div className="small muted">{side === 'buy' ? 'Your limit is the most you pay; you pay the batch’s clearing price and get the difference back. Bids arrive as ft_transfer_call (or through NEAR Intents with on_behalf_of).' : 'Your limit is the least you accept; you receive the clearing price. Shares stay in your account, locked, and keep earning dividends until filled.'}</div>
       </div>
     </div>
   );

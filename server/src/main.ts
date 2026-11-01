@@ -39,7 +39,8 @@ const rh = { 'content-type': 'application/json', 'x-runner-token': RUNNER_TOKEN 
 const catalog = JSON.parse(readFileSync(resolve(ROOT, 'standard/blocks.json'), 'utf8')) as Catalog;
 const tokens = JSON.parse(readFileSync(resolve(ROOT, 'fixtures/oneclick-tokens.json'), 'utf8')).tokens as Token[];
 const world = new World(resolve(ROOT, 'fixtures/wallets.json'), resolve(ROOT, 'fixtures/oneclick-tokens.json'));
-const ledger = new LocalLedger({ contractId: CONTRACT_ID, owner: 'frs-dao.testnet', paymentToken: PAYMENT_TOKEN, protocolAccount: 'frs-treasury.testnet', protocolFeeBps: 200 });
+const BATCH_MS = Number(env.FRS_BATCH_MS ?? 12000);
+const ledger = new LocalLedger({ contractId: CONTRACT_ID, owner: 'frs-dao.testnet', paymentToken: PAYMENT_TOKEN, protocolAccount: 'frs-treasury.testnet', protocolFeeBps: 200, batchIntervalNs: BigInt(BATCH_MS) * 1_000_000n });
 const market = new Market(ledger);
 
 // ---------- runs: per-run event log merged from payment (server) + execution (runner) ----------
@@ -121,7 +122,7 @@ app.post('/api/chain/report_run', guard((req, res) => {
   j(res, { status: run?.status, payouts, tx: ev.tx_hash, block: ev.block_height });
 }));
 /** demo wallet: sign "as" an account. Local mode only — testnet mode uses a real NEAR wallet. */
-const ALLOWED = new Set(['register_block', 'place_ask', 'cancel_order', 'transfer_shares', 'claim_dividends', 'withdraw', 'bid']);
+const ALLOWED = new Set(['register_block', 'place_ask', 'cancel_order', 'transfer_shares', 'claim_dividends', 'withdraw', 'bid', 'clear_batch']);
 app.post('/api/chain/tx', guard((req, res) => {
   const { signer, method, args } = req.body as { signer: string; method: string; args: Record<string, string> };
   if (!ALLOWED.has(method)) throw new LedgerError('method not allowed from demo wallet');
@@ -138,7 +139,7 @@ app.post('/api/chain/tx', guard((req, res) => {
 
 // ---- marketplace ----
 app.get('/api/mode', (_, res) => j(res, {
-  mode: 'local', contract_id: CONTRACT_ID, runner_id: RUNNER_ID, runner_url: RUNNER_PUBLIC_URL, bots: BOTS ? market.bots : [],
+  mode: 'local', batch_ms: BATCH_MS, contract_id: CONTRACT_ID, runner_id: RUNNER_ID, runner_url: RUNNER_PUBLIC_URL, bots: BOTS ? market.bots : [],
   services: { fastnear: 'mock', rpc: 'mock', oneclick: 'fixture (frozen token sample)', nearai: 'mock (real secp256k1 signatures, no hardware quote)', tee: 'local-dev runner (no hardware quote)' },
   ai_signing_address: mocks.aiSigningAddress,
 }));
@@ -166,9 +167,10 @@ app.post('/api/publish', guard((req, res) => {
   if (ipo && ipo.float_pct > 0) {
     const qty = (BigInt(listing.total_shares) * BigInt(Math.round(ipo.float_pct * 100))) / 10000n;
     const px = Math.round(ipoPrice * 1_000_000);
-    // ladder the float across 5 price levels above the IPO price
+    // opening auction: the float is offered across 5 price levels from the reserve price up
     for (let k = 0; k < 5; k++) ledger.call(listing.creator, (l) => l.place_ask({ recipe_id: listing.ticker, price: String(Math.round(px * (1 + k * 0.01))), qty: (qty / 5n).toString() }));
   }
+  if (BOTS) setTimeout(() => market.openingBids(listing.ticker, ipoPrice), 1500);
   j(res, { ok: true, sealed_hash: sh, tx: tx.tx_hash, block: tx.block_height });
 }));
 
@@ -177,10 +179,12 @@ app.get('/api/market/:ticker', guard((req, res) => {
   if (!ledger.recipes.has(t)) { res.status(404).json({ error: 'unknown ticker' }); return; }
   const book = ledger.get_book(t);
   const agg = (os: typeof book.bids) => { const m = new Map<string, { price: number; qty: number; orders: number }>(); for (const o of os) { const k = o.price.toString(); const x = m.get(k) ?? { price: Number(o.price) / 1e6, qty: 0, orders: 0 }; x.qty += Number(o.qty); x.orders++; m.set(k, x); } return [...m.values()]; };
-  const sideOf = new Map(ledger.events.filter((e) => e.event === 'order_placed').map((e) => [String((e.data[0] as { id: number }).id), (e.data[0] as { side: string }).side]));
-  const trades = ledger.events.filter((e) => e.event === 'trade' && (e.data[0] as { recipe_id: string }).recipe_id === t).slice(-40).reverse().map((e) => ({ ...(e.data[0] as Record<string, unknown>), taker_side: sideOf.get(String((e.data[0] as { taker_order_id: number }).taker_order_id)), tx: e.tx_hash, ts: e.timestamp_ns }));
+  const auctions = ledger.events.filter((e) => e.event === 'batch_cleared' && (e.data[0] as { recipe_id: string }).recipe_id === t).slice(-30).reverse().map((e) => {
+    const d = e.data[0] as { batch_id: number; price: string | null; volume: string; fills: unknown[] };
+    return { batch_id: d.batch_id, price: d.price, volume: d.volume, fills: d.fills.length, tx: e.tx_hash, ts: e.timestamp_ns };
+  });
   const settlements = ledger.events.filter((e) => e.event === 'frs_settlement' && (e.data[0] as { recipe_id: string }).recipe_id === t).slice(-20).reverse().map((e) => ({ ...(e.data[0] as Record<string, unknown>), tx: e.tx_hash, block: e.block_height }));
-  j(res, { stats: market.ticker(t), candles: market.candles.get(t), book: { bids: agg(book.bids), asks: agg(book.asks) }, trades, settlements, holders: ledger.holders(t).slice(0, 10), listing: listings.get(t) });
+  j(res, { stats: market.ticker(t), candles: market.candles.get(t), book: { bids: agg(book.bids), asks: agg(book.asks) }, auctions, settlements, holders: ledger.holders(t).slice(0, 10), listing: listings.get(t) });
 }));
 app.get('/api/tickers', (_, res) => j(res, [...ledger.recipes.keys()].map((t) => market.ticker(t))));
 app.get('/api/portfolio/:account', (req, res) => {
@@ -288,6 +292,7 @@ async function boot() {
   ledger.call('frs-dao.testnet', (l) => l.add_runner({ id: RUNNER_ID, signing_pk: att!.signing_pk, enc_pk_hex: att!.enc_pk_hex, codehash: audited, fee_per_run: '30000' }));
   for (const b of catalog.blocks) ledger.call(b.author, (l) => l.register_block({ id: b.id, version: b.id.split('@')[1], fee_per_call: b.fee_per_call, manifest_hash: hashObject(b) }));
   app.listen(PORT, '127.0.0.1', () => console.log(`[server] marketplace on http://127.0.0.1:${PORT}  (contract mirror ${CONTRACT_ID}, runner ${RUNNER})`));
+  setInterval(() => market.keeperTick(), 500);
   if (BOTS) setInterval(() => market.botTick(), 1200);
 }
 void boot();

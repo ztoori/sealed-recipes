@@ -6,7 +6,7 @@ import bs58 from 'bs58';
 import { hexToBytes, bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import {
   settlementSplit, LocalLedger, runReportMessage, base64, seal, open, sealedHash,
-  validateRecipe, compatibleSwaps, swapBlock, publicListing, recoverSigner, signEip191, addressFromPublicKey,
+  clearAuction, validateRecipe, compatibleSwaps, swapBlock, publicListing, recoverSigner, signEip191, addressFromPublicKey,
   verifyChat, sha256Hex, OneClick, runPaymentQuoteRequest, USDC_NEAR, reportData, verifyRunnerAttestation,
   type Catalog, type Recipe, type RunnerAttestation,
 } from '../core/src/index.js';
@@ -102,25 +102,55 @@ test('dividends vector: harvest-before-transfer keeps accounting exact', () => {
   }
 });
 
-test('order book: maker price, price improvement refund, partial fill, cancel, locked shares', () => {
-  const { L } = setupLedger();
+test('batch auction vectors: TS matches the independent Python reference (shared with the Rust contract)', () => {
+  const v = json('contracts/test-vectors/batch-auction.json');
+  for (const c of v.cases) {
+    const orders = c.orders.map((o: any) => ({ id: o.id, side: o.side, owner: o.owner, price: BigInt(o.price), qty: BigInt(o.qty) }));
+    const r = clearAuction(orders);
+    assert.equal(r.price === null ? null : r.price.toString(), c.expected.price, c.name + ' price');
+    assert.equal(r.volume.toString(), c.expected.volume, c.name + ' volume');
+    assert.deepEqual(r.fills.map((f) => ({ order_id: f.order_id, qty: f.qty.toString() })), c.expected.fills, c.name + ' fills');
+    assert.deepEqual(Object.fromEntries([...r.credits].filter(([, x]) => x !== 0n).map(([k, x]) => [k, x.toString()])), c.expected.credits, c.name + ' credits');
+    assert.deepEqual(Object.fromEntries([...r.shareDeltas].map(([k, x]) => [k, x.toString()])), c.expected.share_deltas, c.name + ' deltas');
+  }
+  assert.ok(v.cases.length >= 30);
+});
+
+test('ledger batch auction: nothing fills on placement, one uniform price at clearing, everything conserved', () => {
+  const { L, advance } = setupLedger();
   L.call('creator.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: '2000', qty: '100' }));
   L.call('creator.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: '2500', qty: '100' }));
-  assert.throws(() => L.call('creator.testnet', (l) => l.transfer_shares({ recipe_id: 'TEST', receiver_id: 'z.testnet', qty: '999900' })), /insufficient available/);
-  // bid 150 @ 3000 sweeps both asks
   L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'alice.testnet', amount: String(150 * 3000), msg: JSON.stringify({ action: 'bid', recipe_id: 'TEST', price: '3000', qty: '150' }) }));
+  assert.equal(L.shares_of('TEST', 'alice.testnet'), 0n, 'no continuous matching');
+  assert.equal(L.indicative_clearing('TEST').volume, 150n);
+  assert.throws(() => L.call('anyone.testnet', (l) => l.clear_batch({ recipe_id: 'TEST' })), /batch still open/);
+  assert.throws(() => L.call('creator.testnet', (l) => l.transfer_shares({ recipe_id: 'TEST', receiver_id: 'z.testnet', qty: '999900' })), /insufficient available/);
+  advance(12n * 1_000_000_000n);
+  const out = L.call('anyone.testnet', (l) => l.clear_batch({ recipe_id: 'TEST' }));
+  // candidates 2000 (V=100) 2500 (V=150, imbalance 50) 3000 (V=150, imbalance 50) → P = 2750
+  assert.equal(out.price, 2750n); assert.equal(out.volume, 150n);
   assert.equal(L.shares_of('TEST', 'alice.testnet'), 150n);
-  assert.equal(L.balance_of('creator.testnet'), 100n * 2000n + 50n * 2500n);
-  assert.equal(L.balance_of('alice.testnet'), 100n * 1000n + 50n * 500n);
-  const book = L.get_book('TEST');
-  assert.equal(book.asks.length, 1); assert.equal(book.asks[0].qty, 50n);
-  L.call('creator.testnet', (l) => l.cancel_order({ order_id: book.asks[0].id }));
+  assert.equal(L.balance_of('creator.testnet'), 150n * 2750n, 'both asks paid the same uniform price');
+  assert.equal(L.balance_of('alice.testnet'), 150n * 250n, 'price improvement refunded');
+  assert.equal(L.locked_of('TEST', 'creator.testnet'), 50n, 'partially filled ask keeps resting');
+  assert.equal(L.get_batch('TEST').id, 2);
+  // cancel before the next clearing returns escrow
+  const rest = L.get_book('TEST').asks[0];
+  L.call('creator.testnet', (l) => l.cancel_order({ order_id: rest.id }));
   assert.equal(L.locked_of('TEST', 'creator.testnet'), 0n);
-  // resting bid then crossing ask trades at bid price
-  L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'dan.testnet', amount: '40000', msg: JSON.stringify({ action: 'bid', recipe_id: 'TEST', price: '4000', qty: '10' }) }));
-  L.call('alice.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: '1000', qty: '10' }));
-  assert.equal(L.shares_of('TEST', 'dan.testnet'), 10n);
-  assert.equal(L.balance_of('alice.testnet'), 125000n + 40000n);
+  // an empty batch still advances
+  advance(12n * 1_000_000_000n);
+  assert.equal(L.call('k', (l) => l.clear_batch({ recipe_id: 'TEST' })).price, null);
+  assert.equal(L.get_batch('TEST').id, 3);
+});
+
+test('book is bounded: a full book rejects Intents bids into the buyer balance', () => {
+  const { L } = setupLedger();
+  for (let i = 0; i < 200; i++) L.call('creator.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: String(5000 + i), qty: '1' }));
+  assert.throws(() => L.call('creator.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: '9999', qty: '1' })), /order book full/);
+  L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'solver', amount: '100', msg: JSON.stringify({ action: 'bid', recipe_id: 'TEST', price: '10', qty: '10', on_behalf_of: 'bob.testnet' }) }));
+  assert.equal(L.balance_of('bob.testnet'), 100n);
+  assert.equal((L.events.at(-1)!.data[0] as { reason: string }).reason, 'order book full');
 });
 
 test('sealed envelopes open only inside the runner and hash deterministically', () => {
@@ -229,11 +259,13 @@ test('every mirror event has exactly the fields documented for the contract (doc
     if (fields.length) spec.set(m[1], [...new Set(fields)].sort());
   }
   spec.set('order_cancelled', spec.get('order_placed')!);
-  const { L, sign, pay, blocks } = setupLedger();
+  const { L, sign, pay, blocks, advance } = setupLedger();
   pay('r1'); L.call('x', (l) => l.report_run({ run_id: 'r1', success: true, blocks_used: blocks, output_hash: 'f'.repeat(64), signature: sign('r1', true, blocks) }));
   pay('r2'); L.call('x', (l) => l.report_run({ run_id: 'r2', success: false, blocks_used: [], output_hash: 'f'.repeat(64), signature: sign('r2', false, []) }));
   L.call('creator.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: '10', qty: '5' }));
   L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'a.testnet', amount: '100', msg: JSON.stringify({ action: 'bid', recipe_id: 'TEST', price: '10', qty: '10' }) }));
+  advance(12n * 1_000_000_000n);
+  L.call('k', (l) => l.clear_batch({ recipe_id: 'TEST' }));
   L.call('a.testnet', (l) => l.cancel_order({ order_id: [...L.orders.values()][0].id }));
   L.call('creator.testnet', (l) => l.transfer_shares({ recipe_id: 'TEST', receiver_id: 'z.testnet', qty: '1' }));
   L.call('creator.testnet', (l) => l.claim_dividends({ recipe_id: 'TEST' }));

@@ -2,7 +2,7 @@
 
 **Sealed, composable workflows that are paid per run through NEAR Intents and traded like stocks.**
 
-A creator chains blocks (apps, bots, AI calls) into a workflow, a *recipe*. The recipe is encrypted in the creator's browser to an attested TEE runner, so the marketplace, the buyers and the chain only ever see ciphertext and a hash. Everything a run reveals about the buyer (logs, wallet requests, the result) is sealed back to a one-time key in the buyer's browser. Buyers pay per run from any chain through NEAR Intents and fill one short form. Each run is settled in one receipt that pays the protocol, the TEE runner, every block author whose block ran, the creator's royalty and a dividend to every holder of the recipe's shares. The shares trade on an order book, so the market prices how valuable each workflow's edge really is.
+A creator chains blocks (apps, bots, AI calls) into a workflow, a *recipe*. The recipe is encrypted in the creator's browser to an attested TEE runner, so the marketplace, the buyers and the chain only ever see ciphertext and a hash. Everything a run reveals about the buyer (logs, wallet requests, the result) is sealed back to a one-time key in the buyer's browser. Buyers pay per run from any chain through NEAR Intents and fill one short form. Each run is settled in one receipt that pays the protocol, the TEE runner, every block author whose block ran, the creator's royalty and a dividend to every holder of the recipe's shares. The shares trade in frequent batch auctions: orders collect for a few seconds and everything that crosses clears at one uniform price. So the market prices how valuable each workflow's edge really is, and nobody profits from being faster than everyone else.
 
 Built for the [NEAR Hackathon](https://nearhackathon.com) (Nov 1–14, 2026). Suggested tracks: `privacy`, `defi`, `agents` and `open`.
 
@@ -19,7 +19,7 @@ Fungible Recipes makes a workflow something you can sell without revealing it, a
 | Specialized builders deploy utility apps and bots | **Blocks** with typed ports, declared network capabilities and a per-call fee, registered on-chain ([standard/blocks.json](standard/blocks.json)) |
 | A no-code / low-code standard to compose and swap blocks | **FRS-1** ([docs/FRS-1.md](docs/FRS-1.md)): a typed DAG with nominal subtyping, validation, and drop-in swap search. The visual composer is in the Compose tab |
 | Users create recipes without patents or licences | The recipe is **sealed** (X25519 + XSalsa20-Poly1305) to the runner's attested key. Only `sha256(envelope)` goes on-chain |
-| A decentralized exchange where recipes are listed, bought and traded | Contract-level **order book** per recipe (price-time priority) plus **pay-per-run** escrow |
+| A decentralized exchange where recipes are listed, bought and traded | **Frequent batch auctions** per recipe in the contract: an opening auction at listing, then a uniform-price clearing every batch (`clear_batch`, callable by anyone), plus **pay-per-run** escrow |
 | Attribution that pays everyone involved | **`report_run`**: an ed25519-signed runner report is verified on-chain and splits the payment in one receipt |
 | Deploy on NEAR's privacy platform (TEE) | Runner container for a **dstack Intel TDX CVM** (the NEAR Shade Agent / Phala stack); AI blocks call **NEAR AI Cloud** private models and verify their TEE signatures |
 | Pay through NEAR Intents | **1Click** `EXACT_OUTPUT` quote with `customRecipientMsg`, so the solver's delivery *is* the `ft_transfer_call` that opens the run. Swaps inside the workflow use **confidential intents** (`confidentiality: "basic"`) |
@@ -35,13 +35,13 @@ npm run demo            # starts runner :8787 + marketplace :8080, seeds the mar
 
 Then follow these steps. Each one says what you should see.
 
-1. **Open http://127.0.0.1:8080.** You see the Exchange with three listed recipes (SWPR, EXIT, SAFE), a candle chart, an order book with live orders from labelled "sim traders", and run economics for each recipe.
+1. **Open http://127.0.0.1:8080.** You see the Exchange with three listed recipes (SWPR, EXIT, SAFE), a candle chart, and the current batch: a countdown bar, the bids and asks collected so far (from labelled "sim traders"), and the *indicative* price at which they would clear right now. Every 12 seconds the batch clears and a new row appears under *Auction results*.
 2. **Click "Play the demo story"** (top right). The four steps of the brief play automatically, with a caption for each:
    1. **Compose.** Five blocks snap together into *Clean up and protect*. The seal dialog verifies the runner attestation (6 checks pass; "Hardware TDX quote" shows as skipped in local mode), then the plaintext turns into ciphertext and gets a wax seal. `publish_recipe` returns a tx hash and CLNP appears in the ticker tape.
    2. **Pay.** As `bob.testnet`, a fresh address is generated in the browser, the inputs are sealed, and a 1Click quote shows *0.75188 USDC on Arbitrum → $0.75 USDC delivered to the contract*. After payment the timeline shows `KNOWN_DEPOSIT_TX → PROCESSING`, then "Solver delivered via ft_transfer_call: run escrowed on-chain".
    3. **Execute.** The runner checks that the paid run's recipe and inputs match their on-chain commitments, decrypts, and runs each block, showing its author and fee. Block details carry a *sealed to you* tag: they arrived encrypted to the buyer's browser key, and the marketplace only relayed ciphertext. The AI Spam Shield quarantines two scam airdrops (its verdict signature is verified), the Dust Filter selects four balances, and a wallet dialog, decrypted in the browser, asks to approve four `ft_transfer`s to 1Click deposit addresses. Then four confidential swaps reach `SUCCESS`.
    4. **Settle.** A single settlement diagram shows $0.75 split into protocol $0.015, runner $0.03, five block authors, creator royalty $0.0565 and **$0.5085 to all CLNP shareholders**, with one tx hash.
-3. **Exchange → CLNP.** You see "Paid runs: 1", the settlement in the Settlements panel, and "What the market can see": the block list and form fields, with the wiring and parameters sealed.
+3. **Exchange → CLNP.** You see "Paid runs: 1", batch #1 tagged *opening* under Auction results (the float cleared at one price), the settlement in the Settlements panel, and "What the market can see": the block list and form fields, with the wiring and parameters sealed.
 4. **Acting as → chef.testnet, then Wallet.** The withdrawable balance includes the creator royalty, shown under Income as `creator royalty CLNP +$0.0565`. Dividends move into the balance automatically whenever a holder's shares move, and the sim traders trade constantly, so *Claim* is often already at $0. Withdraw works.
 5. **Compose → "Load Dust sweeper", select the *Allowlist Shield* node.** "Drop-in replacements" lists *AI Spam Shield*. Swap it in and the fees in Checks update. Now drag *Confidential Swap* onto the canvas and wire `form.recipient` (an `address.near`) into its `to` port: the edge turns red with `"to" expects address.near.fresh but form.recipient is address.near`. That is FRS-1 subtyping at work.
 6. **Trust & privacy.** Three columns show what the marketplace stores (a ciphertext), what the contract stores (hash, blocks, economics) and what only the runner sees. The page also re-runs attestation with a new nonce, shows the exact JSON bodies sent to 1Click, and lists the contract's NEP-297 events.
@@ -67,9 +67,9 @@ STEP 4 · creator and each block author are paid in the same settlement
 ## Tests
 
 ```bash
-npm test                # 20 TypeScript tests: settlement vectors, ledger, event parity with the contract, Intents rejection semantics,
+npm test                # 22 TypeScript tests: settlement + batch-auction vectors, ledger, event parity with the contract, Intents rejection semantics,
                         # sealing, FRS-1 typing/swaps, EIP-191, 1Click shapes, attestation, capability guard, pinned code hash
-npm run test:rust       # 44 Rust tests for the NEAR contract (same settlement + dividend vectors)
+npm run test:rust       # 50 Rust tests for the NEAR contract (same settlement, dividend and batch-auction vectors)
 npm run typecheck
 npm run live-check      # optional, needs internet: real 1Click dry quotes (incl. confidential), FastNEAR, NEAR RPC,
                         # and with NEAR_AI_API_KEY a real TEE-signed NEAR AI Cloud completion, verified
@@ -88,13 +88,13 @@ We separate these explicitly so nothing here needs to be taken on faith.
 | FastNEAR / NEAR RPC | `/mock/fastnear`, `/mock/rpc`, backed by fictional wallets in `fixtures/wallets.json` | Same URLs unmocked (`api.fastnear.com`, `rpc.mainnet.fastnear.com`) |
 | Wallet signing | A local demo wallet "signs as" the selected account. Sim traders and demo accounts have unlimited demo USDC, so share prices and market caps in local mode are illustrative | **Not built yet.** The approval dialog already shows the exact `signAndSendTransactions` payload a NEAR wallet (near-connect / wallet selector) would sign |
 | Chain view used for attestation checks | The browser gets the attestation **directly from the runner**, but the registered runner keys come from the server's contract mirror. In local mode the marketplace is therefore trusted for that comparison | Clients read `get_runner` from NEAR RPC. The runner also reads `get_run` / `get_recipe` over NEAR RPC when `NEAR_RPC_URL` is set (`runner/docker-compose.yml`) |
-| Market history | Candles before server start are **synthetic** and drawn in grey. "sim traders" are local bots placing real ledger orders (set `FRS_BOTS=0` to disable) | Real trades only |
+| Market history | Candles before server start are **synthetic** and drawn in grey. "sim traders" are local bots placing real orders into each batch, including opening-auction bids for new listings (set `FRS_BOTS=0` to disable). A local keeper calls `clear_batch` when each batch closes | Real clearings only. Anyone can call `clear_batch`, so a keeper bot or the next trader closes the batch |
 
 The runner never sees mock-specific code. It always builds URLs for the real hosts, and `FRS_REWRITE` (set by `scripts/demo.mjs`) maps those hosts to the local mocks. Remove the rewrite and the same code talks to the real services.
 
 ## How NEAR is used
 
-- **NEAR smart contract** (`contracts/fungible-recipes`): block and runner registry, sealed recipe commitments, shares with dividend accounting, order book, pay-per-run escrow, `env::ed25519_verify` on runner reports, and one-receipt settlement with NEP-297 events.
+- **NEAR smart contract** (`contracts/fungible-recipes`): block and runner registry, sealed recipe commitments, shares with dividend accounting, frequent batch auctions with a uniform clearing price, pay-per-run escrow, `env::ed25519_verify` on runner reports, and one-receipt settlement with NEP-297 events.
 - **NEAR Intents / 1Click**:
   - Pay-per-run uses `swapType: EXACT_OUTPUT` to the payment token with `recipient = contract` and `customRecipientMsg = {"action":"run",…,"on_behalf_of":buyer}`. The solver's delivery is the `ft_transfer_call` that escrows the run.
   - Dust swaps inside the workflow use `confidentiality: "basic"`, so deposits and withdrawals cannot be linked on-chain.
@@ -126,8 +126,8 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · threat model: [docs/THR
 ## Repository map
 
 ```
-contracts/fungible-recipes/   Rust NEAR contract + 31 unit tests
-contracts/test-vectors/       settlement + dividend vectors shared by Rust and TS
+contracts/fungible-recipes/   Rust NEAR contract + 50 unit tests
+contracts/test-vectors/       settlement, dividend and batch-auction vectors shared by Rust and TS (auction vectors come from an independent Python reference)
 core/src/                     FRS-1, sealing, settlement, ledger mirror, 1Click + NEAR AI clients, attestation
 runner/                       sealed TEE runner, 8 blocks (7 implementation files), Dockerfile, docker-compose (dstack)
 server/                       marketplace + exchange API, local mocks of external services
@@ -153,10 +153,11 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 
 ## Limitations and next steps
 
-- **Not deployed yet.** The contract has 44 unit tests and the same vectors as the mirror, but it was not built to wasm or deployed from our build machine, which had no wasm target and no NEAR RPC access. Deploy commands are in [contracts/fungible-recipes/README.md](contracts/fungible-recipes/README.md).
+- **Not deployed yet.** The contract has 50 unit tests and the same vectors as the mirror, but it was not built to wasm or deployed from our build machine, which had no wasm target and no NEAR RPC access. Deploy commands are in [contracts/fungible-recipes/README.md](contracts/fungible-recipes/README.md).
 - **No live chain adapter.** The marketplace server talks to the in-process mirror. A NEAR RPC adapter and a wallet connection (near-connect) are the main pieces missing for a testnet deployment.
 - **Runner approval is off-chain.** The contract owner approves runners after verifying their attestation off-chain. On-chain DCAP verification (as Shade Agent contracts do) is the next step. Until then the owner, and the runner itself, are trusted to report runs honestly.
-- **Spam.** v1 has no storage deposits or trading fees, and the per-recipe order book is a single stored vector. Both have to change before mainnet.
+- **Spam.** v1 has no storage deposits or trading fees. Each recipe's book is capped at 200 orders to bound the gas cost of clearing, which also means a spammer could fill a book. Storage deposits per order have to come before mainnet.
+- **Keeper.** Batches close only when someone calls `clear_batch`. In local mode a keeper does it. On-chain it needs a keeper bot or a small reward for the caller.
 - **Dividend timing.** Shares bought just before a run settles earn that run's whole dividend, which is standard for accumulator dividends.
 - **What 1Click sees.** Confidential intents hide the deposit-to-payout link from chain observers, but the 1Click service itself sees the requests, including the fresh recipient. See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 

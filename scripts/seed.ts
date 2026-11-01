@@ -21,10 +21,6 @@ for (const t of Object.keys(IPO)) {
   if (listings.some((l) => l.ticker === t)) continue;
   const r = await publish(load(t), catalog, onchain.enc_pk_hex, IPO[t]);
   console.log(`[seed] published ${t}  sealed_hash ${r.sealed_hash.slice(0, 16)}…  tx ${r.tx}`);
-  // early backers take part of the float so the book has two sides
-  for (const [i, bot] of ['sim-trader-1.testnet', 'sim-trader-2.testnet', 'sim-trader-3.testnet', 'sim-trader-4.testnet'].entries()) {
-    const px = Math.round(IPO[t].price * 1_000_000 * 1.02);
-    await api('/api/chain/tx', { signer: bot, method: 'bid', args: { recipe_id: t, price: String(px), qty: String(3000 + i * 1500) } });
-  }
+  // sim traders join the opening auction automatically (server, local mode)
 }
 console.log('[seed] done');

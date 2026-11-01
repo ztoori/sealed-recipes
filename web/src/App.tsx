@@ -21,7 +21,7 @@ export const useApp = () => useContext(AppCtx);
 
 const STEPS = [
   null,
-  { title: 'A creator chains blocks into “Clean up and protect” and publishes it privately', body: 'Five blocks from five authors, type-checked as they snap together. The recipe is sealed in the browser to the attested runner key; the market only ever sees the listing.' },
+  { title: 'A creator chains blocks into “Clean up and protect” and publishes it privately', body: 'Five blocks from five authors, type-checked as they snap together. The recipe is sealed in the browser to the attested runner key, and its shares open with a batch auction.' },
   { title: 'A buyer pays per run through Intents and fills one short form', body: 'Pay with USDC from Arbitrum; a 1Click EXACT_OUTPUT quote delivers exactly the run price to the contract with the run ticket attached. No chat, four fields.' },
   { title: 'The workflow sweeps dust and swaps privately to a fresh address', body: 'The runner verifies the on-chain commitments, decrypts, quarantines scam airdrops with a signed private-AI verdict, then routes confidential 1Click swaps to a never-used address.' },
   { title: 'The creator and every block author are paid in the same settlement', body: 'One signed report, one receipt: protocol, runner, five block authors, the creator’s royalty and every shareholder’s dividend.' },
@@ -96,7 +96,7 @@ export function App() {
       {step === 5 && (
         <div className="caption" role="status">
           <div className="stepno">✓</div>
-          <div><h3>That was one complete run</h3><p>Everything you saw is in the ledger: open Exchange → CLNP for the settlement, Wallet to claim dividends as chef.testnet, Trust & privacy for the proofs.</p></div>
+          <div><h3>That was one complete run</h3><p>Everything you saw is in the ledger. Open CLNP to see the settlement and its opening auction result; Wallet and Trust & privacy show the money and the proofs.</p></div>
           <button onClick={() => { setStep(0); go('exchange', 'CLNP'); }}>Open CLNP</button>
         </div>
       )}

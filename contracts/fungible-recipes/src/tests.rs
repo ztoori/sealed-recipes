@@ -5,6 +5,7 @@ use near_sdk::testing_env;
 
 const CONTRACT: &str = "frs.testnet";
 const USDC: &str = "usdc.testnet";
+const INTERVAL: u64 = 12_000_000_000;
 const OUT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn acct(s: &str) -> AccountId {
@@ -49,7 +50,7 @@ const BLOCKS: [(&str, &str, u128); 5] = [
 /// Contract with the demo recipe "CLNP" published by creator.testnet.
 fn setup() -> Contract {
     ctx("owner.testnet", 0);
-    let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), 200);
+    let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), 200, U64(INTERVAL));
     c.add_runner(
         acct("runner.testnet"),
         runner_pk_string(),
@@ -146,7 +147,7 @@ fn dividends_vector_harvest_before_transfer() {
     let r = &v["recipe"];
     let p = |x: &serde_json::Value| x.as_str().unwrap().parse::<u128>().unwrap();
     ctx("owner.testnet", 0);
-    let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), r["protocol_fee_bps"].as_u64().unwrap() as u16);
+    let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), r["protocol_fee_bps"].as_u64().unwrap() as u16, U64(INTERVAL));
     c.add_runner(acct("runner.testnet"), runner_pk_string(), "00".repeat(32), "x".into(), U128(p(&r["runner_fee"])));
     ctx("author", 0);
     c.register_block("noop".into(), "1".into(), U128(0), "h".into());
@@ -528,60 +529,197 @@ fn report_rejects_malformed_output_hash() {
     c.report_run("r1".into(), true, blocks.clone(), "sha256:out".into(), sign("r1", "CLNP", true, "sha256:out", &blocks));
 }
 
-// ------------------------------------------------------------ order book
+// ------------------------------------------------------ batch auctions
 
-fn bid(c: &mut Contract, who: &str, price: u128, qty: u128, deposit: u128) {
-    ctx(USDC, 0);
+fn bid_at(c: &mut Contract, who: &str, price: u128, qty: u128, deposit: u128, ts: u64) {
+    ctx(USDC, ts);
     let _ = c.ft_on_transfer(acct(who), U128(deposit), json!({"action":"bid","recipe_id":"CLNP","price":U128(price),"qty":U128(qty)}).to_string());
 }
 
-#[test]
-fn crossing_bid_trades_at_maker_price_and_refunds_improvement() {
-    let mut c = setup();
-    ctx("creator.testnet", 0);
-    let ask_id = c.place_ask("CLNP".into(), U128(100), U128(1_000));
-    assert_eq!(c.shares_of("CLNP".into(), acct("creator.testnet")).locked.0, 1_000);
+fn bid(c: &mut Contract, who: &str, price: u128, qty: u128, deposit: u128) {
+    bid_at(c, who, price, qty, deposit, 0);
+}
 
-    bid(&mut c, "alice.testnet", 120, 1_000, 120_000);
-    assert_eq!(c.shares_of("CLNP".into(), acct("alice.testnet")).shares.0, 1_000);
-    let creator = c.shares_of("CLNP".into(), acct("creator.testnet"));
-    assert_eq!((creator.shares.0, creator.locked.0), (999_000, 0));
-    assert_eq!(bal(&c, "creator.testnet"), 100_000); // 1000 * 100 maker price
-    assert_eq!(bal(&c, "alice.testnet"), 20_000); // price improvement
-    let book = c.get_book("CLNP".into());
-    assert!(book.asks.is_empty() && book.bids.is_empty());
-    assert!(c.order_index.get(&ask_id).is_none());
+fn ask(c: &mut Contract, who: &str, price: u128, qty: u128, ts: u64) -> u64 {
+    ctx(who, ts);
+    c.place_ask("CLNP".into(), U128(price), U128(qty))
+}
+
+fn clear(c: &mut Contract, ts: u64) -> ClearSummary {
+    ctx("keeper.testnet", ts);
+    c.clear_batch("CLNP".into())
+}
+
+fn shares(c: &Contract, a: &str) -> (u128, u128) {
+    let v = c.shares_of("CLNP".into(), acct(a));
+    (v.shares.0, v.locked.0)
 }
 
 #[test]
-fn partial_fill_rests_remainder_and_price_time_priority() {
+fn auction_vectors_match_reference() {
+    let v: serde_json::Value =
+        serde_json::from_str(include_str!("../../test-vectors/batch-auction.json")).unwrap();
+    let cases = v["cases"].as_array().unwrap();
+    assert!(cases.len() >= 30);
+    for case in cases {
+        let name = case["name"].as_str().unwrap();
+        let num = |x: &serde_json::Value| x.as_str().unwrap().parse::<u128>().unwrap();
+        let orders: Vec<(AuctionOrder, String)> = case["orders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| {
+                (
+                    AuctionOrder {
+                        id: o["id"].as_u64().unwrap(),
+                        side: if o["side"] == "Bid" { AuctionSide::Bid } else { AuctionSide::Ask },
+                        price: num(&o["price"]),
+                        qty: num(&o["qty"]),
+                    },
+                    o["owner"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        let plain: Vec<AuctionOrder> = orders.iter().map(|o| o.0.clone()).collect();
+        let r = clear_auction(&plain);
+        let e = &case["expected"];
+        assert_eq!(r.price, e["price"].as_str().map(|p| p.parse::<u128>().unwrap()), "{name}: price");
+        assert_eq!(r.volume, num(&e["volume"]), "{name}: volume");
+        let fills: Vec<(u64, u128)> = r.fills.iter().map(|f| (f.order_id, f.qty)).collect();
+        let want: Vec<(u64, u128)> = e["fills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| (f["order_id"].as_u64().unwrap(), num(&f["qty"])))
+            .collect();
+        assert_eq!(fills, want, "{name}: fills");
+        // per-owner credits and share deltas
+        let owner_of = |id: u64| orders.iter().find(|o| o.0.id == id).unwrap().1.clone();
+        let mut credits: std::collections::BTreeMap<String, u128> = Default::default();
+        let mut deltas: std::collections::BTreeMap<String, i128> = Default::default();
+        if let Some(p) = r.price {
+            for f in &r.fills {
+                let o = owner_of(f.order_id);
+                match f.side {
+                    AuctionSide::Bid => {
+                        *credits.entry(o.clone()).or_default() += (f.limit - p) * f.qty;
+                        *deltas.entry(o).or_default() += f.qty as i128;
+                    }
+                    AuctionSide::Ask => {
+                        *credits.entry(o.clone()).or_default() += f.qty * p;
+                        *deltas.entry(o).or_default() -= f.qty as i128;
+                    }
+                }
+            }
+        }
+        credits.retain(|_, v| *v != 0);
+        deltas.retain(|_, v| *v != 0);
+        let want_c: std::collections::BTreeMap<String, u128> = e["credits"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), num(v)))
+            .collect();
+        let want_d: std::collections::BTreeMap<String, i128> = e["share_deltas"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_str().unwrap().parse::<i128>().unwrap()))
+            .collect();
+        assert_eq!(credits, want_c, "{name}: credits");
+        assert_eq!(deltas, want_d, "{name}: share deltas");
+    }
+}
+
+#[test]
+fn orders_rest_until_the_batch_clears() {
     let mut c = setup();
-    ctx("creator.testnet", 0);
-    c.transfer_shares("CLNP".into(), acct("bob.testnet"), U128(500));
-    c.place_ask("CLNP".into(), U128(110), U128(300));
-    ctx("bob.testnet", 0);
-    c.place_ask("CLNP".into(), U128(100), U128(200)); // better price, later time
-    ctx("creator.testnet", 0);
-    c.place_ask("CLNP".into(), U128(100), U128(50)); // same price as bob, later
-
-    // Buy 400 @ up to 110: bob 200@100, creator 50@100, creator 150@110
-    bid(&mut c, "alice.testnet", 110, 400, 44_000);
-    assert_eq!(c.shares_of("CLNP".into(), acct("alice.testnet")).shares.0, 400);
-    assert_eq!(bal(&c, "bob.testnet"), 20_000);
-    assert_eq!(bal(&c, "creator.testnet"), 5_000 + 16_500);
-    assert_eq!(bal(&c, "alice.testnet"), 2_500); // (110-100)*250
+    ask(&mut c, "creator.testnet", 100, 1_000, 0);
+    bid(&mut c, "alice.testnet", 120, 1_000, 120_000);
+    // nothing matched on placement
+    assert_eq!(shares(&c, "alice.testnet"), (0, 0));
+    assert_eq!(shares(&c, "creator.testnet"), (1_000_000, 1_000));
     let book = c.get_book("CLNP".into());
-    assert_eq!(book.asks.len(), 1);
-    assert_eq!(book.asks[0].qty.0, 150);
-    assert_eq!(book.asks[0].price.0, 110);
+    assert_eq!((book.bids.len(), book.asks.len()), (1, 1));
+    let ind = c.indicative_clearing("CLNP".into());
+    assert_eq!((ind.price.map(|p| p.0), ind.volume.0), (Some(110), 1_000));
+    let b = c.get_batch("CLNP".into()).unwrap();
+    assert_eq!((b.id, b.opened_ns.0, b.closes_ns.0), (1, 0, INTERVAL));
+}
 
-    // A resting bid below the ask, then an ask that crosses it partially
-    bid(&mut c, "carol.testnet", 90, 100, 9_000);
-    ctx("bob.testnet", 0);
-    c.place_ask("CLNP".into(), U128(80), U128(40));
-    assert_eq!(bal(&c, "bob.testnet"), 20_000 + 40 * 90); // maker (bid) price
+#[test]
+#[should_panic(expected = "batch still open")]
+fn clear_before_interval_rejected() {
+    let mut c = setup();
+    clear(&mut c, INTERVAL - 1);
+}
+
+#[test]
+fn opening_auction_clears_float_at_one_price_and_conserves_everything() {
+    let mut c = setup();
+    // creator offers a 20% float as a ladder; four bidders
+    for k in 0..5u128 {
+        ask(&mut c, "creator.testnet", 85_000 + k * 850, 40_000, 0);
+    }
+    bid(&mut c, "t1.testnet", 86_700, 3_000, 86_700 * 3_000);
+    bid(&mut c, "t2.testnet", 86_700, 4_500, 86_700 * 4_500);
+    bid(&mut c, "t3.testnet", 90_000, 6_000, 90_000 * 6_000);
+    bid(&mut c, "t4.testnet", 84_000, 9_000, 84_000 * 9_000);
+    let escrow_in: u128 = 86_700 * 7_500 + 90_000 * 6_000 + 84_000 * 9_000;
+    let s = clear(&mut c, INTERVAL);
+    let p = s.price.unwrap().0;
+    assert_eq!(s.batch_id, 1);
+    assert!((85_000..=86_700).contains(&p));
+    let v = s.volume.0;
+    assert_eq!(v, 13_500);
+    assert_eq!(shares(&c, "t1.testnet").0 + shares(&c, "t2.testnet").0 + shares(&c, "t3.testnet").0, v);
+    assert_eq!(shares(&c, "t4.testnet").0, 0, "bid below the clearing price does not fill");
+    let (cs, cl) = shares(&c, "creator.testnet");
+    assert_eq!(cs, 1_000_000 - v);
+    assert_eq!(cl, 200_000 - v, "unfilled float stays locked");
+    assert_eq!(bal(&c, "creator.testnet"), v * p);
+    // tokens conserved: proceeds + refunds + escrow still resting == all deposits
+    let resting: u128 = c.get_book("CLNP".into()).bids.iter().map(|o| o.price.0 * o.qty.0).sum();
+    let paid_out = bal(&c, "creator.testnet") + bal(&c, "t1.testnet") + bal(&c, "t2.testnet") + bal(&c, "t3.testnet");
+    assert_eq!(paid_out + resting, escrow_in);
+    // the next batch opened at the clearing time
+    let b = c.get_batch("CLNP".into()).unwrap();
+    assert_eq!((b.id, b.opened_ns.0), (2, INTERVAL));
+    assert_eq!(last_event()["event"], "batch_cleared");
+}
+
+#[test]
+fn empty_batch_still_advances() {
+    let mut c = setup();
+    bid(&mut c, "alice.testnet", 50, 10, 500);
+    let s = clear(&mut c, INTERVAL);
+    assert!(s.price.is_none());
+    assert_eq!(s.volume.0, 0);
+    assert_eq!(c.get_batch("CLNP".into()).unwrap().id, 2);
+    assert_eq!(c.get_book("CLNP".into()).bids.len(), 1, "unfilled orders rest into the next batch");
+    let ev = last_event();
+    assert_eq!(ev["event"], "batch_cleared");
+    assert!(ev["data"][0]["price"].is_null());
+}
+
+#[test]
+fn partial_fill_rests_and_clears_next_batch() {
+    let mut c = setup();
+    ask(&mut c, "creator.testnet", 100, 300, 0);
+    let bid_id = c.next_order_id;
+    bid(&mut c, "alice.testnet", 100, 500, 50_000);
+    let s = clear(&mut c, INTERVAL);
+    assert_eq!((s.price.unwrap().0, s.volume.0), (100, 300));
     let book = c.get_book("CLNP".into());
-    assert_eq!(book.bids[0].qty.0, 60);
+    assert_eq!(book.bids[0].id, bid_id, "partial keeps its id");
+    assert_eq!(book.bids[0].qty.0, 200);
+    ask(&mut c, "creator.testnet", 90, 200, INTERVAL + 1);
+    let s2 = clear(&mut c, 2 * INTERVAL);
+    assert_eq!(s2.batch_id, 2);
+    assert_eq!(s2.volume.0, 200);
+    assert_eq!(shares(&c, "alice.testnet").0, 500);
+    assert!(c.get_book("CLNP".into()).bids.is_empty());
+    assert!(c.order_index.get(&bid_id).is_none());
 }
 
 #[test]
@@ -593,12 +731,14 @@ fn cancel_returns_escrow() {
     c.cancel_order(bid_id);
     assert_eq!(bal(&c, "alice.testnet"), 5_000);
 
-    ctx("creator.testnet", 0);
-    let ask_id = c.place_ask("CLNP".into(), U128(500), U128(10));
+    let ask_id = ask(&mut c, "creator.testnet", 500, 10, 0);
     c.cancel_order(ask_id);
-    assert_eq!(c.shares_of("CLNP".into(), acct("creator.testnet")).locked.0, 0);
+    assert_eq!(shares(&c, "creator.testnet").1, 0);
     let book = c.get_book("CLNP".into());
     assert!(book.bids.is_empty() && book.asks.is_empty());
+    // cancelled orders take no part in the clearing
+    let s = clear(&mut c, INTERVAL);
+    assert!(s.price.is_none());
 }
 
 #[test]
@@ -615,9 +755,39 @@ fn cannot_cancel_others_order() {
 #[should_panic(expected = "insufficient shares")]
 fn locked_shares_cannot_be_transferred() {
     let mut c = setup();
-    ctx("creator.testnet", 0);
-    c.place_ask("CLNP".into(), U128(100), U128(1_000_000));
+    ask(&mut c, "creator.testnet", 100, 1_000_000, 0);
     c.transfer_shares("CLNP".into(), acct("bob.testnet"), U128(1));
+}
+
+#[test]
+fn book_full_rejects_orders() {
+    let mut c = setup();
+    for _ in 0..MAX_ORDERS_PER_BOOK {
+        bid(&mut c, "spam.testnet", 1, 1, 1);
+    }
+    // direct transfer panics (token refunds sender) ...
+    ctx(USDC, 0);
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = c.ft_on_transfer(acct("alice.testnet"), U128(10), json!({"action":"bid","recipe_id":"CLNP","price":"10","qty":"1"}).to_string());
+    }));
+    assert!(r.is_err());
+    // ... while an Intents delivery credits the buyer
+    ctx(USDC, 0);
+    let _ = c.ft_on_transfer(acct("solver.testnet"), U128(10), json!({"action":"bid","recipe_id":"CLNP","price":"10","qty":"1","on_behalf_of":"bob.testnet"}).to_string());
+    assert_eq!(bal(&c, "bob.testnet"), 10);
+    let ev = last_event();
+    assert_eq!(ev["event"], "transfer_rejected");
+    assert_eq!(ev["data"][0]["reason"], "order book full");
+}
+
+#[test]
+#[should_panic(expected = "order book full")]
+fn book_full_rejects_asks() {
+    let mut c = setup();
+    for _ in 0..MAX_ORDERS_PER_BOOK {
+        bid(&mut c, "spam.testnet", 1, 1, 1);
+    }
+    ask(&mut c, "creator.testnet", 100, 1, 0);
 }
 
 #[test]
@@ -629,28 +799,25 @@ fn trading_shares_harvests_dividends_correctly() {
     ctx("relayer.testnet", 0);
     c.report_run("r1".into(), true, b.clone(), OUT.into(), sign("r1", "CLNP", true, OUT, &b));
 
-    // creator sells 25% to alice via the book; escrowed shares earn until filled
-    ctx("creator.testnet", 0);
-    c.place_ask("CLNP".into(), U128(1), U128(250_000));
+    // creator offers 25% in the batch; locked shares keep earning through run 2
+    ask(&mut c, "creator.testnet", 1, 250_000, 0);
+    bid(&mut c, "alice.testnet", 1, 250_000, 250_000);
     pay_run(&mut c, "buyer.testnet", "r2", 750_000, 0);
     ctx("relayer.testnet", 0);
     c.report_run("r2".into(), true, b.clone(), OUT.into(), sign("r2", "CLNP", true, OUT, &b));
-    bid(&mut c, "alice.testnet", 1, 250_000, 250_000);
+    let s = clear(&mut c, INTERVAL);
+    assert_eq!((s.price.unwrap().0, s.volume.0), (1, 250_000));
 
     // run 3: 75/25 split
-    pay_run(&mut c, "buyer.testnet", "r3", 750_000, 0);
-    ctx("relayer.testnet", 0);
+    pay_run(&mut c, "buyer.testnet", "r3", 750_000, INTERVAL);
+    ctx("relayer.testnet", INTERVAL);
     c.report_run("r3".into(), true, b.clone(), OUT.into(), sign("r3", "CLNP", true, OUT, &b));
 
     let pool = 508_500u128;
     let creator_div = bal(&c, "creator.testnet") - 3 * 56_500 - 250_000
         + c.pending_dividends("CLNP".into(), acct("creator.testnet")).0;
     assert_eq!(creator_div, 2 * pool + pool * 3 / 4);
-    assert_eq!(
-        c.pending_dividends("CLNP".into(), acct("alice.testnet")).0,
-        pool / 4
-    );
-    // conservation: all dividends accounted for
+    assert_eq!(c.pending_dividends("CLNP".into(), acct("alice.testnet")).0, pool / 4);
     assert_eq!(creator_div + pool / 4, 3 * pool);
 }
 

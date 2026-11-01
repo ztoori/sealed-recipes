@@ -13,8 +13,10 @@ import { utf8ToBytes } from '@noble/hashes/utils.js';
 import { sha256Hex } from './canonical.js';
 import { base64 } from './seal.js';
 import { SCALE, settlementSplit, minimumPrice } from './settlement.js';
+import { clearAuction, type AuctionOrder } from './auction.js';
 
 export const RUN_TIMEOUT_NS = 15n * 60n * 1_000_000_000n;
+export const MAX_ORDERS_PER_BOOK = 200;
 export const EVENT_STANDARD = 'fungible-recipes';
 export const EVENT_VERSION = '1.0.0';
 
@@ -57,17 +59,20 @@ export class LocalLedger {
   holdings = new Map<string, Holding>(); // key `${recipe}|${account}`
   balances = new Map<string, bigint>();
   events: LedgerEvent[] = [];
+  batches = new Map<string, { id: number; opened_ns: bigint }>();
+  readonly batchIntervalNs: bigint;
   height = 100_000_000;
   private nextOrderId = 1;
   private clock: () => bigint;
   private predecessor = '';
   private txCounter = 0;
 
-  constructor(o: { contractId: string; owner: string; paymentToken: string; protocolAccount: string; protocolFeeBps: number; clock?: () => bigint }) {
+  constructor(o: { contractId: string; owner: string; paymentToken: string; protocolAccount: string; protocolFeeBps: number; batchIntervalNs?: bigint; clock?: () => bigint }) {
     assert(o.protocolFeeBps <= 1000, 'protocol fee too high');
     this.contractId = o.contractId; this.owner = o.owner; this.paymentToken = o.paymentToken;
     this.protocolAccount = o.protocolAccount; this.protocolFeeBps = o.protocolFeeBps;
     this.clock = o.clock ?? (() => BigInt(Date.now()) * 1_000_000n);
+    this.batchIntervalNs = o.batchIntervalNs ?? 12n * 1_000_000_000n;
   }
 
   /** Execute a call "as" a NEAR account; mirrors one transaction/receipt. */
@@ -153,6 +158,7 @@ export class LocalLedger {
     const r: LedgerRecipe = { id: a.id, name: a.name, creator, sealed_hash: a.sealed_hash, runner_id: a.runner_id, blocks: a.blocks, price_per_run: price, royalty_bps: a.royalty_bps, total_shares: total, acc_per_share: 0n, runs: 0n, revenue: 0n, listed: true, created_ns: this.now() };
     this.recipes.set(a.id, r);
     const h = this.holding(a.id, creator); h.shares = total; this.rebase(r, h);
+    this.batches.set(a.id, { id: 1, opened_ns: this.now() }); // opening auction
     const { created_ns: _c, ...pub } = r;
     this.emit('recipe_published', { ...pub, runs: 0 });
   }
@@ -200,8 +206,9 @@ export class LocalLedger {
     if (price * qty >= 2n ** 128n) return reject('price * qty overflows');
     const need = price * qty;
     if (amount < need) return reject('deposit below price * qty');
+    if (this.bookSize(r.id) >= MAX_ORDERS_PER_BOOK) return reject('order book full');
     this.credit(owner, amount - need);
-    this.matchBid(r, owner, price, qty);
+    this.rest(r.id, owner, 'Bid', price, qty);
     return '0';
   }
 
@@ -270,57 +277,61 @@ export class LocalLedger {
     return amt;
   }
 
-  // ---------- order book ----------
-  place_ask(a: { recipe_id: string; price: string; qty: string }) {
-    const seller = this.caller(); const r = this.recipes.get(a.recipe_id); assert(r, 'no recipe');
+  // ---------- share trading: frequent batch auctions ----------
+  private bookSize(recipe_id: string) { let n = 0; for (const o of this.orders.values()) if (o.recipe_id === recipe_id) n++; return n; }
+
+  place_ask(a: { recipe_id: string; price: string; qty: string }): number {
+    const seller = this.caller();
     const price = BigInt(a.price), qty = BigInt(a.qty); assert(price > 0n && qty > 0n, 'price and qty must be > 0');
+    const r = this.recipes.get(a.recipe_id); assert(r, 'no recipe');
+    assert(this.bookSize(r.id) < MAX_ORDERS_PER_BOOK, 'order book full');
     const h = this.holding(r.id, seller); assert(h.shares - h.locked >= qty, 'insufficient available shares');
-    h.locked += qty;
-    const takerId = this.placed(r.id, seller, 'Ask', price, qty);
-    let left = qty;
-    const bids = [...this.orders.values()].filter((o) => o.recipe_id === r.id && o.side === 'Bid' && o.price >= price).sort((x, y) => (y.price > x.price ? 1 : y.price < x.price ? -1 : x.id - y.id));
-    for (const b of bids) {
-      if (left === 0n) break;
-      const q = b.qty < left ? b.qty : left;
-      this.fill(r, seller, b.owner, q, b.price, b.id, takerId);
-      b.qty -= q; left -= q;
-      if (b.qty === 0n) this.orders.delete(b.id);
-    }
-    if (left > 0n) this.rest(takerId, r.id, seller, 'Ask', price, left);
+    h.locked += qty; // shares stay with the seller and keep earning until the order fills
+    return this.rest(r.id, seller, 'Ask', price, qty);
   }
 
-  private matchBid(r: LedgerRecipe, buyer: string, price: bigint, qty: bigint) {
-    const takerId = this.placed(r.id, buyer, 'Bid', price, qty);
-    let left = qty;
-    const asks = [...this.orders.values()].filter((o) => o.recipe_id === r.id && o.side === 'Ask' && o.price <= price).sort((x, y) => (x.price > y.price ? 1 : x.price < y.price ? -1 : x.id - y.id));
-    for (const ask of asks) {
-      if (left === 0n) break;
-      const q = ask.qty < left ? ask.qty : left;
-      this.fill(r, ask.owner, buyer, q, ask.price, ask.id, takerId);
-      this.credit(buyer, (price - ask.price) * q); // price improvement back to taker
-      ask.qty -= q; left -= q;
-      if (ask.qty === 0n) this.orders.delete(ask.id);
-    }
-    if (left > 0n) this.rest(takerId, r.id, buyer, 'Bid', price, left);
-  }
-
-  private fill(r: LedgerRecipe, seller: string, buyer: string, qty: bigint, price: bigint, makerId: number, takerId: number) {
-    const hs = this.harvest(r, seller); const hb = this.harvest(r, buyer);
-    hs.locked -= qty; hs.shares -= qty; hb.shares += qty;
-    this.rebase(r, hs); this.rebase(r, hb);
-    this.credit(seller, qty * price);
-    this.emit('trade', { recipe_id: r.id, buyer, seller, price, qty, maker_order_id: makerId, taker_order_id: takerId });
-  }
-
-  /** every order consumes an id and emits order_placed before matching (contract semantics) */
-  private placed(recipe_id: string, owner: string, side: 'Bid' | 'Ask', price: bigint, qty: bigint): number {
+  /** every accepted order rests; nothing fills until the batch clears */
+  private rest(recipe_id: string, owner: string, side: 'Bid' | 'Ask', price: bigint, qty: bigint): number {
     const id = this.nextOrderId++;
-    this.emit('order_placed', { id, recipe_id, owner, side, price, qty, created_ns: this.now() });
+    const o = { id, recipe_id, owner, side, price, qty, created_ns: this.now() };
+    this.orders.set(id, o);
+    this.emit('order_placed', { ...o });
     return id;
   }
 
-  private rest(id: number, recipe_id: string, owner: string, side: 'Bid' | 'Ask', price: bigint, qty: bigint) {
-    this.orders.set(id, { id, recipe_id, owner, side, price, qty, created_ns: this.now() });
+  private bookOrders(recipe_id: string): AuctionOrder[] {
+    return [...this.orders.values()].filter((o) => o.recipe_id === recipe_id).map((o) => ({ id: o.id, side: o.side, owner: o.owner, price: o.price, qty: o.qty }));
+  }
+
+  /** permissionless once the batch interval has elapsed; always opens the next batch */
+  clear_batch(a: { recipe_id: string }) {
+    const r = this.recipes.get(a.recipe_id); assert(r, 'no recipe');
+    const b = this.batches.get(r.id)!;
+    assert(this.now() >= b.opened_ns + this.batchIntervalNs, 'batch still open');
+    const res = clearAuction(this.bookOrders(r.id));
+    // move shares (harvesting dividends first) and pay out, then shrink or remove filled orders
+    for (const f of res.fills) {
+      const o = this.orders.get(f.order_id)!;
+      const h = this.harvest(r, f.owner);
+      if (f.side === 'Bid') { h.shares += f.qty; this.credit(f.owner, (o.price - res.price!) * f.qty); }
+      else { h.shares -= f.qty; h.locked -= f.qty; this.credit(f.owner, f.qty * res.price!); }
+      this.rebase(r, h);
+      o.qty -= f.qty;
+      if (o.qty === 0n) this.orders.delete(o.id);
+    }
+    this.emit('batch_cleared', { recipe_id: r.id, batch_id: b.id, price: res.price, volume: res.volume, fills: res.fills.map((f) => ({ order_id: f.order_id, owner: f.owner, side: f.side, qty: f.qty })) });
+    this.batches.set(r.id, { id: b.id + 1, opened_ns: this.now() });
+    return { batch_id: b.id, price: res.price, volume: res.volume, fills: res.fills.length };
+  }
+
+  get_batch(recipe_id: string) {
+    const b = this.batches.get(recipe_id); assert(b, 'no recipe');
+    return { id: b.id, opened_ns: b.opened_ns, closes_ns: b.opened_ns + this.batchIntervalNs };
+  }
+
+  indicative_clearing(recipe_id: string) {
+    const res = clearAuction(this.bookOrders(recipe_id));
+    return { price: res.price, volume: res.volume, demand: res.demand, supply: res.supply };
   }
 
   cancel_order(a: { order_id: number }) {
