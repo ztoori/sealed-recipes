@@ -10,11 +10,63 @@ All token amounts are integers in the payment token's smallest unit
 on mainnet; any NEP-141 on testnet). JSON amounts are strings (`U128`).
 Shares are integer units (no decimals).
 
-## Changelog: v2 (recipe intents, bonded quotes, parts)
+## Changelog
 
-The rest of this file is written in v2 terms; this section lists what changed from v1.
+The body of this file (from **Roles** on) is written in v3 terms. Newest first.
 
-### Blocks are now called parts
+### v3 changes (hardened quotes and bonds, after independent review)
+
+These supersede the v2 quote, bond and report rules wherever they differ. Implemented in the Rust contract (all 7 `bonds.json` cases run end to end).
+
+#### Quotes are bound, single-use and fully covered
+The runner now signs:
+
+```
+frs-quote-v2|<contract>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<expected>|<promised>|<cover>|<expires_ns>
+```
+
+- `buyer` is the account the run belongs to (`on_behalf_of`, else `sender_id`).
+- `inputs_hash` is the run msg's `inputs_hash`: the hash of the sealed job envelope the quote was computed from.
+- `sealed_hash` is the recipe version that was quoted.
+- `cover <= promised` is how much of the promise the bond guarantees. It is computed by the runner as `min(promised, bond_available)` at quote time.
+
+The run msg carries `"quote": {"sealed_hash", "job_hash", "expected", "promised", "cover", "expires_ns", "signature"}`. Numbers are decimal strings; a malformed quote object makes the whole msg unparseable (panic, token refunded to the sender). After the v1 run checks, the contract checks, in order, with these reasons:
+1. `job_hash must be 64 lowercase hex`
+2. `quote for an outdated recipe version` (sealed_hash ≠ recipe.sealed_hash)
+3. `runner inactive`
+4. `invalid quote signature`
+5. `quote expired`
+6. `quote already used` (the contract stores sha256 of every accepted quote message)
+7. `cover exceeds promise`
+8. `bond below quoted cover` (`bond_available < cover`)
+
+Failures follow the `on_behalf_of` rules (credit and `transfer_rejected`, or panic). On success, `covered = cover`, which is moved from `bond_available` to `bond_locked`. The run stores `job_hash`, `expected`, `promised` and `covered`.
+
+#### Reports have three outcomes
+`report_run(run_id, outcome, parts_used, output_hash, delivered, signature)`, where `outcome` is `"ok"`, `"fail"` or `"abort"`, signed as:
+
+```
+frs-run-v3|<contract>|<run_id>|<recipe_id>|<outcome>|<output_hash>|<delivered>|<parts_used joined by ",">
+```
+
+- **ok**: v1 settlement, then `compensation = min(max(0, promised - delivered), covered)` credited to the buyer; `bond_locked -= covered`; `bond_available += covered - compensation`.
+- **fail** (the recipe failed while executing): refund the price, release the cover, `failed += 1`.
+- **abort** (the run could not start for reasons outside the recipe: the buyer's inputs did not match, or the inputs or market changed since the quote, as found by the runner's pre-execution re-check): refund the price, release the cover, `aborted += 1`. This does not count against the recipe.
+
+`parts_used` is checked only for `ok`. `reclaim_run` after the timeout counts as `failed`.
+
+#### Track record
+Adds `aborted: u64`.
+
+#### Events
+- `run_requested` Run gains `expected: U128`.
+- `run_refunded.reason` is one of `runner_reported_failure`, `runner_aborted`, `timeout`.
+
+### v2 (recipe intents, bonded quotes, parts)
+
+What changed from v1. Where v3 differs (quote message and fields, `cover`, report outcomes), v3 applies.
+
+#### Blocks are now called parts
 A *part* is anything a recipe is built from: code, a specialist agent or a data source. Renames, with no
 change in behaviour:
 `Block`→`Part`, `register_block`→`register_part`, `get_block`/`list_blocks`→`get_part`/`list_parts`,
@@ -23,7 +75,7 @@ change in behaviour:
 event `block_registered`→`part_registered`, payout role `block:<id>`→`part:<id>`, error strings
 `part id must match ^[a-z0-9._@-]{1,64}$`, `recipe needs at least one part`, `parts_used not part of recipe`.
 
-### Recipe intents: a buyer posts a job, recipes compete with signed quotes
+#### Recipe intents: a buyer posts a job, recipes compete with signed quotes
 Off-chain, every listed recipe that implements the job's type does a **dry run** inside the TEE runner and
 returns a quote: the value it expects to deliver, in payment-token units (`promised`). The runner signs it:
 
@@ -39,7 +91,7 @@ after the v1 run checks: `job_hash` must be 64 lowercase hex (`job_hash must be 
 must verify against the recipe's runner key (`invalid quote signature`), and `now <= expires_ns` (`quote expired`).
 Failures follow the v1 `on_behalf_of` rules (credit and `transfer_rejected`, or panic).
 
-### Bonds: quotes backed by money
+#### Bonds: quotes backed by money
 - `ft_on_transfer` msg `{"action":"bond","recipe_id":"CLNP"}`. Anyone may add to a recipe's bond (usually the
   creator). Errors: `unknown recipe` (credit `on_behalf_of` or panic, as in v1). Emits `bond_posted {recipe_id: string, from: AccountId, amount: U128, bond_available: U128}`.
 - When a quoted run is paid, the contract sets aside `covered = min(promised, bond_available)` from the bond
@@ -47,7 +99,7 @@ Failures follow the v1 `on_behalf_of` rules (credit and `transfer_rejected`, or 
 - `withdraw_bond(recipe_id, amount)`: creator only, `amount <= bond_available`, credits the creator's
   withdrawable balance. Emits `bond_withdrawn {recipe_id: string, amount: U128, bond_available: U128}`.
 
-### Settlement with delivery
+#### Settlement with delivery
 `report_run(run_id, success, parts_used, output_hash, delivered: U128, signature)` where the signed message is now
 
 ```
@@ -60,12 +112,12 @@ from the bond; `bond_locked -= covered`; `bond_available += covered - compensati
 On failure or `reclaim_run`, the buyer is refunded as in v1 and `covered` goes back to `bond_available`.
 Unquoted runs have `promised = covered = 0`.
 
-### Track record (on the Recipe, public)
+#### Track record (on the Recipe, public)
 `runs` (successful, as before), `failed: u64` (refunded runs, both reported failures and timeouts),
 `promised_total: U128`, `delivered_total: U128` (sums over successful **quoted** runs),
 `compensated_total: U128`, `bond_available: U128`, `bond_locked: U128`.
 
-### Events
+#### Events
 - `run_requested` carries the full Run, which now includes `job_hash` (string, `""` when unquoted), `promised` and `covered`.
 - `frs_settlement` adds `delivered: U128` and `compensation: U128`.
 - New: `bond_posted`, `bond_withdrawn` (fields above).
@@ -88,9 +140,9 @@ Part    { id, version, author, fee_per_call, manifest_hash, active }
 Runner  { id, signing_pk: ed25519 (base58 "ed25519:..."), enc_pk_hex (x25519), codehash, fee_per_run, active }
 Recipe  { id (ticker, ^[A-Z0-9]{3,6}$), name, creator, sealed_hash, runner_id, parts: [part_id],
           price_per_run, royalty_bps, total_shares, acc_per_share (u128, scaled 1e18), runs, revenue, listed,
-          failed, promised_total, delivered_total, compensated_total, bond_available, bond_locked }
+          failed, aborted, promised_total, delivered_total, compensated_total, bond_available, bond_locked }
 Run     { run_id, recipe_id, buyer, amount, inputs_hash, sealed_hash (snapshot at payment), status: Pending|Settled|Refunded, created_ns,
-          job_hash ("" if unquoted), promised, covered }
+          job_hash ("" if unquoted), expected, promised, covered }
 Order   { id (u64), recipe_id, owner, side: Bid|Ask, price (per share), qty (remaining shares), created_ns }
 Batch   { id (u64, 1 = opening auction), opened_ns }   (one per recipe; closes at opened_ns + batch_interval_ns)
 ```
@@ -119,10 +171,17 @@ delivery arrives as `ft_transfer_call` → `ft_on_transfer(sender_id, amount, ms
 
 `msg` is JSON:
 - `{"action":"run","recipe_id":"CLNP","run_id":"r-…","inputs_hash":"<hex sha256>","quote":{…}?}`
-  - optional `quote` = `{job_hash, promised, expires_ns, signature}` signed by the recipe's runner over
-    `frs-quote-v1|<contract>|<recipe_id>|<job_hash>|<promised>|<expires_ns>`; checked after the checks below
-    (`job_hash must be 64 lowercase hex`, `invalid quote signature`, `quote expired`). Sets aside
-    `covered = min(promised, bond_available)` from the recipe's bond.
+  - optional `quote` = `{sealed_hash, job_hash, expected, promised, cover, expires_ns, signature}` (numbers are
+    decimal strings; a malformed quote object makes the msg unparseable → panic), signed by the recipe's runner over
+    ```
+    frs-quote-v2|<contract>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<expected>|<promised>|<cover>|<expires_ns>
+    ```
+    where `buyer` = `on_behalf_of`, else `sender_id`, and `inputs_hash` is this msg's `inputs_hash`. Checked after
+    the run checks below, in order: `job_hash must be 64 lowercase hex`, `quote for an outdated recipe version`
+    (`sealed_hash` ≠ the recipe's), `runner inactive`, `invalid quote signature`, `quote expired`
+    (`now > expires_ns`), `quote already used` (sha256 of the message is stored for every accepted quote),
+    `cover exceeds promise`, `bond below quoted cover` (`bond_available < cover`). On success
+    `covered = cover` moves from `bond_available` to `bond_locked`; the run stores `job_hash, expected, promised, covered`.
   - `run_id` must match `^[A-Za-z0-9_-]{1,64}$`; `inputs_hash` must be 64 lowercase hex.
   - the run records the recipe's current `sealed_hash`; a later `update_sealed` only affects new runs.
   - `amount` must be `>= price_per_run`; excess is credited to the owner's (`on_behalf_of` or sender) withdrawable balance.
@@ -140,19 +199,25 @@ delivery arrives as `ft_transfer_call` → `ft_on_transfer(sender_id, amount, ms
 - Unparseable `msg` or unknown action → panics → token contract refunds the full amount.
 - Only calls from `payment_token` are accepted.
 
-`report_run(run_id, success, parts_used, output_hash, delivered, signature)` — callable by anyone
+`report_run(run_id, outcome, parts_used, output_hash, delivered, signature)` — callable by anyone
 (usually the runner's relayer); authority comes from the signature, not the caller.
 - `signature` = base64 ed25519 signature by the recipe's runner `signing_pk` over the UTF-8 string
   ```
-  frs-run-v2|<contract_account_id>|<run_id>|<recipe_id>|<ok|fail>|<output_hash>|<delivered>|<parts_used joined by ",">
+  frs-run-v3|<contract_account_id>|<run_id>|<recipe_id>|<outcome>|<output_hash>|<delivered>|<parts_used joined by ",">
   ```
+- `outcome` is `"ok"`, `"fail"` or `"abort"` (anything else: `invalid outcome`).
 - `output_hash` must be 64 lowercase hex. `delivered` is the value delivered, in payment-token units, as measured by the runner.
-- `parts_used` must be a sub-multiset of the recipe's `parts` (no unknown parts can be billed).
-- On `success`: **settlement** (below), then bond compensation `min(max(0, promised - delivered), covered)` to the buyer;
-  `covered` minus compensation returns to `bond_available`; track record updated; status → Settled.
-  On fail: full refund to buyer balance, `covered` returns to `bond_available`, `failed += 1`, status → Refunded.
+- **ok**: `parts_used` must be a sub-multiset of the recipe's `parts` (no unknown parts can be billed).
+  **Settlement** (below), then bond compensation `min(max(0, promised - delivered), covered)` to the buyer;
+  `bond_locked -= covered`; `bond_available += covered - compensation`; track record updated; status → Settled.
+- **fail** (the recipe failed while executing): full refund to buyer balance, `covered` returns to
+  `bond_available`, `failed += 1`, status → Refunded, `run_refunded.reason = "runner_reported_failure"`.
+- **abort** (the run could not start for reasons outside the recipe: inputs did not match, or inputs or market
+  changed since the quote, found by the runner's pre-execution re-check): as fail, but `aborted += 1` and
+  reason `"runner_aborted"`. Does not count against the recipe.
+- `parts_used` is only checked for `ok`.
 
-`reclaim_run(run_id)` — buyer only, after `RUN_TIMEOUT_NS = 15 min` with status Pending → Refunded (`covered` released, `failed += 1`).
+`reclaim_run(run_id)` — buyer only, after `RUN_TIMEOUT_NS = 15 min` with status Pending → Refunded (`covered` released, `failed += 1`, reason `"timeout"`).
 
 ### Settlement (one receipt, all parties)
 Given `P = run.amount_charged (= price_per_run)`, protocol bps `f`, runner fee `r`, part fees `b_i` for each entry of `parts_used`:

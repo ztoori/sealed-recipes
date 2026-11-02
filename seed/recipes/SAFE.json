@@ -36,7 +36,6 @@
         "holdings": "scan.holdings"
       },
       "params": {
-        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
         "policy": "Flag SCAM tokens and explain the red flag in under 12 words. Answer JSON only."
       },
       "ui": {

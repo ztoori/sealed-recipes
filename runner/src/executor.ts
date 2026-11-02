@@ -43,7 +43,8 @@ export function guardedFetch(partId: string, capabilities: string[], rewrites: M
     if (!allowed.has(u.host)) throw new Error(`capability violation: ${partId} may not reach ${u.host} (declared: ${[...allowed].join(', ') || 'none'})`);
     const base = rewrites.get(u.host);
     const target = base ? base.replace(/\/$/, '') + u.pathname + u.search : url;
-    return fetch(target, { ...init, signal: AbortSignal.timeout(20_000) });
+    const timeout = AbortSignal.timeout(20_000);
+    return fetch(target, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
   };
 }
 

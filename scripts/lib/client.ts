@@ -37,18 +37,30 @@ export function freshImplicitAccount() {
   return { account: bytesToHex(kp.publicKey), secretKey: kp.secretKey };
 }
 
-/** Recipe intents, client side: seal the job once (to the runner), post it, collect competing quotes. */
-export async function postJob(jobType: string, inputs: Record<string, unknown>, runnerEncPk: string, only?: string) {
-  const { randomBytes } = await import('node:crypto');
-  const { seal, jobHash, open } = await import('../../core/src/index.js');
+/**
+ * Recipe intents, client side: seal the job once (to the runner), post it, collect competing quotes.
+ * Each quote comes back sealed to this client's one-time reply key; it is opened and its runner signature is
+ * verified here, against the exact message the contract will check, before anything is paid.
+ */
+export async function postJob(jobType: string, inputs: Record<string, unknown>, runner: { enc_pk_hex: string; signing_pk: string }, buyer: string, only?: string) {
+  const { seal, jobHash, sealedHash, openQuote } = await import('../../core/src/index.js');
   const reply = nacl.box.keyPair();
   const salt = randomBytes(16).toString('hex');
   const job_hash = jobHash(inputs, salt);
-  const sealed_job = seal({ inputs, salt, reply_to: bytesToHex(reply.publicKey) }, runnerEncPk, 'inputs');
-  const r = await api<{ quotes: any[]; open_demand: boolean }>('/api/jobs', { job_type: jobType, sealed_job, job_hash, ...(only ? { only } : {}) });
-  for (const q of r.quotes) if (q.details) q.details = open(q.details, reply.secretKey);
+  const sealed_job = seal({ inputs, salt, reply_to: bytesToHex(reply.publicKey) }, runner.enc_pk_hex, 'inputs');
+  const inputsHash = sealedHash(sealed_job);
+  const { contract_id } = await api<{ contract_id: string }>('/api/chain/config');
+  const r = await api<{ quotes: any[]; open_demand: boolean }>('/api/jobs', { job_type: jobType, sealed_job, job_hash, buyer, ...(only ? { only } : {}) });
+  for (const q of r.quotes) {
+    if (!q.ok || !q.sealed_quote) continue;
+    const o = openQuote(q.sealed_quote, reply.secretKey, { contractId: contract_id, recipeId: q.recipe_id, signingPk: runner.signing_pk, buyer, inputsHash, jobHash: job_hash });
+    Object.assign(q, o, { details: o.details, ok: o.verified, error: o.problem });
+  }
   return { ...r, sealed_job, job_hash, reply };
 }
+
+/** The quote object the contract checks, as sent in the run msg. */
+export const signedQuote = (q: any) => ({ sealed_hash: q.sealed_hash, job_hash: q.job_hash, expected: q.expected, promised: q.promised, cover: q.cover, expires_ns: q.expires_ns, signature: q.signature });
 
 /** An agent-style policy for picking a quote. */
 export function pickQuote(quotes: any[], policy: { requirePrivacy?: 'confidential'; maxRisk?: 'low' | 'medium' | 'high'; sort: 'net' | 'value' | 'price' }) {

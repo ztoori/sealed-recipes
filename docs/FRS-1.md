@@ -142,10 +142,12 @@ The runner takes the recipe id from the paid run and refuses to execute unless `
 It executes nodes in topological order, then signs:
 
 ```
-frs-run-v2|<contract>|<run_id>|<recipe_id>|<ok|fail>|<output_hash>|<delivered>|<parts_used,…>
+frs-run-v3|<contract>|<run_id>|<recipe_id>|<ok|fail|abort>|<output_hash>|<delivered>|<parts_used,…>
 ```
 
-`report_run` verifies this with `env::ed25519_verify` and settles. `parts_used` must be a sub-multiset of the recipe's registered parts, so a runner cannot bill parts the recipe doesn't contain.
+`ok` settles; `fail` and `abort` refund the buyer and release any locked cover (`abort` means the runner chose not to execute, see §7, and is counted separately from failures). Once a run is verified as paid, pending and assigned to it, the runner signs a report on every exit path, so a buyer never waits for the reclaim timeout. Before executing, the runner also checks that the decrypted recipe uses exactly the parts listed on-chain; the public trust labels are computed from that list.
+
+`report_run` verifies the signature with `env::ed25519_verify`. `parts_used` must be a sub-multiset of the recipe's registered parts, so a runner cannot bill parts the recipe doesn't contain.
 
 ## 7. Recipe intents: job types, quotes and bonds
 
@@ -163,10 +165,12 @@ A recipe opts in with `"implements": "job.wallet-cleanup@1.0.0"`. The validator 
 1. **Post.** The buyer seals `{inputs, salt, reply_to}` once to the attested runner and posts it with
    `job_hash = sha256(canonical({inputs, salt}))`. The random salt means the on-chain hash can't be brute-forced back to the wallet.
 2. **Quote.** For each listed recipe implementing the type (capped), the runner checks the recipe against its on-chain hash and the job against `job_hash`. It then runs the recipe in **quote mode**: read-only, swaps priced with dry 1Click quotes, no approvals. The output is measured with the job's metric (value in payment-token units): `expected` from expected outputs, and `promised` from the post-slippage minimums. The runner signs
-   `frs-quote-v1|<contract>|<recipe>|<job_hash>|<promised>|<expires_ns>`.
-   Everything describing the buyer's wallet in the quote is sealed to `reply_to`.
+   `frs-quote-v2|<contract>|<recipe>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<expected>|<promised>|<cover>|<expires_ns>`,
+   where `inputs_hash` is the hash of the sealed job the buyer will pay with and `cover = min(promised, bond_available)`.
+   The whole quote is sealed to `reply_to`; the marketplace relays ciphertext, and the buyer's client checks the signature before paying.
 3. **Choose.** The buyer, or an agent's policy, compares expected value, promise, price, privacy, withdrawal risk and the on-chain track record.
-4. **Pay.** The signed quote rides in the run payment's `customRecipientMsg`. The contract verifies it and locks `min(promised, bond)` from the recipe's bond.
-5. **Settle.** The runner measures `delivered` and signs `frs-run-v2|…|<delivered>|…`. The contract pays any shortfall to the buyer from the locked bond, updates the recipe's track record and releases the rest.
+4. **Pay.** The signed quote rides in the run payment's `customRecipientMsg` (so its values become public; paying without a quote is always allowed and keeps them private). The contract checks, in order: `job_hash` format, recipe version, runner active, signature, expiry, single use, `cover ≤ promised`, `bond_available ≥ cover`; then it locks `cover`.
+5. **Re-check.** Right before executing, the runner re-prices the job in quote mode. If the fresh promise is below 98% of the quoted one (the wallet changed), it signs `abort`: the buyer is refunded and the cover goes back to the bond.
+6. **Settle.** The runner measures `delivered` and signs `frs-run-v3|…|ok|…|<delivered>|…`. The contract pays `min(max(0, promised − delivered), cover)` to the buyer from the locked cover, updates the recipe's track record and releases the rest.
 
 A job with no implementing recipe is recorded as **open demand**, a signal for builders.

@@ -23,7 +23,7 @@ export const useApp = () => useContext(AppCtx);
 const STEPS = [
   null,
   { title: 'A creator chains parts into “Clean up and protect” and publishes it privately', body: 'Five parts from five authors, type-checked as they snap together. The recipe is sealed in the browser to the attested runner key and backed by a $25 bond.' },
-  { title: 'A buyer posts a job, recipes compete, and the buyer pays per run through Intents', body: 'One short form, sealed once. Every recipe that does this job quotes from a sealed dry run. SWPR promises more USDC but routes publicly and sweeps your gas; Bob picks CLNP and pays from Arbitrum.' },
+  { title: 'A buyer posts a job, recipes compete, and the buyer pays per run through Intents', body: 'One short form, sealed once. Every recipe that does this job quotes from a sealed dry run. SWPR promises more USDC but routes publicly and also sweeps your wNEAR; Bob picks CLNP and pays from Arbitrum.' },
   { title: 'The workflow sweeps dust and swaps privately to a fresh address', body: 'The runner verifies the on-chain commitments, decrypts, quarantines scam airdrops with a signed private-AI verdict, then routes confidential 1Click swaps to a never-used address.' },
   { title: 'The creator and every part author are paid in the same settlement', body: 'One signed report, one receipt: protocol, runner, five part authors, the creator’s royalty and every shareholder’s dividend. Delivery is checked against the signed promise.' },
 ];

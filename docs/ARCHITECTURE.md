@@ -12,11 +12,12 @@
 ## Recipe intents: from job to quotes
 
 A buyer, or an agent acting for one, seals a job once to the attested runner (`{inputs, salt, reply_to}`) and posts it with `job_hash`. The marketplace fans it out, capped and rate-limited, to every listed recipe that implements the job type. For each one the runner:
-1. checks the sealed recipe against its on-chain hash;
+1. checks the sealed recipe against its on-chain hash and its parts against the on-chain parts list;
 2. runs it in quote mode (read-only; swaps priced with dry 1Click quotes);
-3. measures the job's value metric and signs `frs-quote-v1` with the same key that later signs run reports.
+3. measures the job's value metric, sets `cover = min(promised, bond_available)`, and signs `frs-quote-v2` (bound to the recipe version, job, sealed inputs and buyer) with the same key that later signs run reports;
+4. seals the whole quote to the buyer's `reply_to` key. The marketplace adds the public listing facts (price, privacy and risk labels it computes from the on-chain parts, track record) and relays the ciphertext.
 
-The buyer compares expected value, the signed promise, price, privacy, withdrawal risk and track record, then pays the chosen recipe with the quote attached. The contract verifies the signature and expiry and locks bond cover. At settlement it compares `delivered` with `promised` and pays any shortfall from the bond.
+The buyer's client opens each quote, verifies the runner signature against the exact message the contract will check, and compares expected value, the signed promise and cover, price, privacy, withdrawal risk and track record. It pays the chosen recipe with the quote attached (or with no quote: no guarantee, nothing written on-chain about the wallet's value). The contract verifies the quote, marks it used and locks `cover` from the bond. Before executing, the runner re-prices the job and aborts with a refund if the wallet no longer supports the quote. At settlement the contract compares `delivered` with `promised` and pays any shortfall from the locked cover.
 
 ## Lifecycle of one run
 

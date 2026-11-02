@@ -104,11 +104,6 @@
         }
       },
       "params": {
-        "model": {
-          "type": "string",
-          "default": "Qwen/Qwen3-30B-A3B-Instruct-2507",
-          "secret": false
-        },
         "policy": {
           "type": "string",
           "secret": true,
@@ -371,7 +366,7 @@
       },
       "limits": {
         "max_ms": 480000,
-        "max_http_calls": 120,
+        "max_http_calls": 600,
         "max_model_calls": 0,
         "max_output_bytes": 64000
       }
@@ -422,7 +417,7 @@
       },
       "limits": {
         "max_ms": 480000,
-        "max_http_calls": 120,
+        "max_http_calls": 600,
         "max_model_calls": 0,
         "max_output_bytes": 64000
       }

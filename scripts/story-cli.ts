@@ -10,7 +10,7 @@ import { loadCatalog } from '../core/src/codehash.js';
  * Exits non-zero if any step fails.
  */
 import { readFileSync } from 'node:fs';
-import { api, BASE, freshImplicitAccount, publish, verifiedRunner, postJob, pickQuote } from './lib/client.js';
+import { api, BASE, freshImplicitAccount, publish, verifiedRunner, postJob, pickQuote, signedQuote } from './lib/client.js';
 import nacl from 'tweetnacl';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { seal, open, validateRecipe, USDC_NEAR, type Catalog, type Recipe, type SealedEnvelope } from '../core/src/index.js';
@@ -40,17 +40,18 @@ const fresh = freshImplicitAccount();
 const inputs = { wallet: 'bob.testnet', threshold_usd: 25, target: USDC_NEAR, recipient: fresh.account };
 console.log('  job: "Clean up my wallet"', JSON.stringify({ ...inputs, recipient: fresh.account.slice(0, 12) + '… (fresh, generated client-side)' }));
 const before = await api<{ wallet: { symbol: string; balance: string; decimals: number }[] }>('/api/portfolio/bob.testnet');
-const job = await postJob('job.wallet-cleanup@1.0.0', inputs, runner.onchain.enc_pk_hex);
-for (const qt of job.quotes) console.log(`  quote ${qt.listing.ticker.padEnd(5)} expects ${usd(qt.expected).padStart(9)}  promises ${usd(qt.promised).padStart(9)} (bond ${usd(qt.track.bond_available)})  price ${usd(qt.listing.price_per_run)}  ${qt.listing.privacy.padEnd(12)} risk ${qt.listing.risk}`);
+const job = await postJob('job.wallet-cleanup@1.0.0', inputs, runner.onchain, 'bob.testnet');
+for (const qt of job.quotes) if (!qt.ok) console.log(`  quote ${qt.listing.ticker.padEnd(5)} rejected: ${qt.error}`); else console.log(`  quote ${qt.listing.ticker.padEnd(5)} expects ${usd(qt.expected).padStart(9)}  promises ${usd(qt.promised).padStart(9)} (bond covers ${usd(qt.cover ?? '0')})  price ${usd(qt.listing.price_per_run)}  ${qt.listing.privacy.padEnd(12)} risk ${qt.listing.risk}`);
 const policy = { requirePrivacy: 'confidential' as const, maxRisk: 'medium' as const, sort: 'net' as const };
 const chosen = pickQuote(job.quotes, policy);
 if (!chosen) { console.error('✘ no quote satisfies the policy'); process.exit(1); }
+console.log(`  every quote arrived sealed to the buyer's one-time key; runner signatures verified client-side (bound to bob.testnet, this job and these sealed inputs)`);
 console.log(`  policy ${JSON.stringify(policy)} → ${chosen.listing.ticker} (signed by the runner; promise backed by the bond)`);
 const reply = job.reply; // one-time key: everything the runner says about this run is sealed to it
 const sealedInputs = job.sealed_job;
 const q = await api<{ run_id: string; run_token: string; msg: string; quote: { quote: { amountInFormatted: string; depositAddress: string; amountOut: string } } }>('/api/runs/quote', {
   recipe_id: chosen.listing.ticker, buyer: 'bob.testnet', pay_asset: 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near', refund_to: '0xB0b0000000000000000000000000000000000001', sealed_inputs: sealedInputs,
-  signed_quote: { job_hash: chosen.job_hash, promised: chosen.promised, expires_ns: chosen.expires_ns, signature: chosen.signature },
+  signed_quote: signedQuote(chosen),
 });
 console.log(`  1Click EXACT_OUTPUT quote: pay ${q.quote.quote.amountInFormatted} USDC (Arbitrum) → ${usd(q.quote.quote.amountOut)} USDC delivered to the contract`);
 console.log(`  customRecipientMsg: ${q.msg}`);
@@ -73,6 +74,8 @@ while (!done) {
     if (e.type === 'status') console.log(`${tag} 1Click payment ${e.data.status}`);
     else if (e.type === 'run_requested') console.log(`${tag} ft_on_transfer → run escrowed on-chain (tx ${e.data.tx})`);
     else if (e.type === 'verified') for (const c of e.data.checks) console.log(`${tag} ${c.ok ? '✔' : '✘'} ${c.label}`);
+    else if (e.type === 'rechecked') console.log(`${tag} re-priced the job right before executing: ${e.data.ok ? 'quote still holds' : 'wallet changed, aborting with a refund'}`);
+    else if (e.type === 'recheck') console.log(`${tag}     fresh promise ${usd(e.data.fresh_promised)} vs quoted ${usd(e.data.quoted_promised)} (needs ≥ 98%)`);
     else if (e.type === 'decrypted') console.log(`${tag} ${e.data.note}`);
     else if (e.type === 'part_start') console.log(`${tag} ▶ ${e.data.name} (by ${e.data.author}, fee ${usd(e.data.fee)})`);
     else if (e.type === 'part_log') console.log(`${tag}     ${e.data.msg}`);

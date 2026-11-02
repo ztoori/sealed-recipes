@@ -13,10 +13,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
-import { LocalLedger, toJson, LedgerError } from '../../core/src/ledger.js';
+import { LocalLedger, toJson, LedgerError, type SignedQuote } from '../../core/src/ledger.js';
 import { hashObject, sha256Hex } from '../../core/src/canonical.js';
 import { sealedHash, type SealedEnvelope } from '../../core/src/seal.js';
-import { validateRecipe, type Catalog, type PublicListing } from '../../core/src/frs.js';
+import { validateRecipe, labelsFromParts, type Catalog, type PublicListing } from '../../core/src/frs.js';
 import { computeCodehash, loadCatalog } from '../../core/src/codehash.js';
 import { runPaymentQuoteRequest, USDC_NEAR, type Token, type QuoteResponse } from '../../core/src/oneclick.js';
 import { World } from './world.js';
@@ -157,6 +157,7 @@ app.post('/api/publish', guard((req, res) => {
   const runner = ledger.runners.get(RUNNER_ID)!;
   if (sealed.to !== runner.enc_pk_hex) throw new LedgerError('envelope is not sealed to the registered runner key');
   if ((listing as unknown as Record<string, unknown>).nodes) throw new LedgerError('refusing plaintext recipe: only the public listing may be sent');
+  try { labelsFromParts(listing.parts, catalog); } catch (e) { throw new LedgerError((e as Error).message); }
   const sh = sealedHash(sealed);
   ledger.call(listing.creator, (l) => l.publish_recipe({ id: listing.ticker, name: listing.name, sealed_hash: sh, runner_id: RUNNER_ID, parts: listing.parts, price_per_run: listing.price_per_run, royalty_bps: listing.royalty_bps, total_shares: listing.total_shares }));
   const tx = ledger.events.at(-1)!;
@@ -164,7 +165,10 @@ app.post('/api/publish', guard((req, res) => {
   if (bond && BigInt(bond) > 0n) ledger.call(PAYMENT_TOKEN, (l) => l.ft_on_transfer({ sender_id: listing.creator, amount: bond, msg: JSON.stringify({ action: 'bond', recipe_id: listing.ticker }) }));
   vault.set(listing.ticker, sealed);
   const ipoPrice = ipo?.price ?? 0.01;
-  listings.set(listing.ticker, { ...listing, ipo_price: ipoPrice, published_at: new Date().toISOString() });
+  // trust labels are recomputed from the on-chain parts (the runner refuses sealed recipes whose parts differ),
+  // so what a creator writes in the listing cannot make a closed-model recipe look low-risk or confidential
+  const labels = labelsFromParts(listing.parts, catalog);
+  listings.set(listing.ticker, { ...listing, risk: labels.risk, disclosures: labels.disclosures, privacy: labels.privacy, capabilities: labels.capabilities, ipo_price: ipoPrice, published_at: new Date().toISOString() });
   market.seedHistory(listing.ticker, ipoPrice, 0.0004, 0.02, [...listing.ticker].reduce((s, c) => s * 31 + c.charCodeAt(0), 7));
   if (ipo && ipo.float_pct > 0) {
     const qty = (BigInt(listing.total_shares) * BigInt(Math.round(ipo.float_pct * 100))) / 10000n;
@@ -181,7 +185,10 @@ app.get('/api/market/:ticker', guard((req, res) => {
   if (!ledger.recipes.has(t)) { res.status(404).json({ error: 'unknown ticker' }); return; }
   const book = ledger.get_book(t);
   const agg = (os: typeof book.bids) => { const m = new Map<string, { price: number; qty: number; orders: number }>(); for (const o of os) { const k = o.price.toString(); const x = m.get(k) ?? { price: Number(o.price) / 1e6, qty: 0, orders: 0 }; x.qty += Number(o.qty); x.orders++; m.set(k, x); } return [...m.values()]; };
-  const auctions = ledger.events.filter((e) => e.event === 'batch_cleared' && (e.data[0] as { recipe_id: string }).recipe_id === t).slice(-30).reverse().map((e) => {
+  const cleared = ledger.events.filter((e) => e.event === 'batch_cleared' && (e.data[0] as { recipe_id: string }).recipe_id === t);
+  // the latest 30 batches, plus the opening auction (batch #1) so the IPO clearing stays visible
+  const shown = cleared.length > 30 ? [cleared[0], ...cleared.slice(-29)] : cleared;
+  const auctions = shown.reverse().map((e) => {
     const d = e.data[0] as { batch_id: number; price: string | null; volume: string; fills: unknown[] };
     return { batch_id: d.batch_id, price: d.price, volume: d.volume, fills: d.fills.length, tx: e.tx_hash, ts: e.timestamp_ns };
   });
@@ -189,6 +196,14 @@ app.get('/api/market/:ticker', guard((req, res) => {
   j(res, { stats: market.ticker(t), candles: market.candles.get(t), book: { bids: agg(book.bids), asks: agg(book.asks) }, auctions, settlements, onchain: ledger.recipes.get(t), holders: ledger.holders(t).slice(0, 10), listing: listings.get(t) });
 }));
 app.get('/api/tickers', (_, res) => j(res, [...ledger.recipes.keys()].map((t) => market.ticker(t))));
+/** Local world only: the account owner moves tokens out of their own wallet (stands in for a signed ft_transfer).
+ *  Used by `npm run attack:drain` to show that emptying a wallet after a quote gets an abort, not the bond. */
+app.post('/api/world/transfer', guard((req, res) => {
+  const { from, token, to, amount } = req.body as { from: string; token: string; to: string; amount: string };
+  if (!/^[a-z0-9._-]{2,64}$/.test(from ?? '') || !/^[a-z0-9._-]{2,64}$/.test(to ?? '')) throw new LedgerError('from and to must be NEAR accounts');
+  world.debit(from, token, BigInt(amount)); world.credit(to, token, BigInt(amount));
+  j(res, { ok: true });
+}));
 app.get('/api/portfolio/:account', (req, res) => {
   const a = String(req.params.account);
   j(res, {
@@ -213,28 +228,30 @@ app.post('/api/jobs', guard(async (req, res) => {
   const recent = (jobLog.get(ip) ?? []).filter((t) => now - t < 60_000);
   if (recent.length >= JOBS_PER_MINUTE) throw new LedgerError('too many jobs posted in the last minute');
   jobLog.set(ip, [...recent, now]);
-  const { job_type, sealed_job, job_hash, only } = req.body as { job_type: string; sealed_job: SealedEnvelope; job_hash: string; only?: string };
+  const { job_type, sealed_job, job_hash, only, buyer } = req.body as { job_type: string; sealed_job: SealedEnvelope; job_hash: string; only?: string; buyer: string };
+  if (typeof buyer !== 'string' || !/^[a-z0-9._-]{2,64}$/.test(buyer)) throw new LedgerError('buyer account required: quotes are bound to the account that pays');
   if (!catalog.jobs?.some((jt) => jt.id === job_type)) throw new LedgerError('unknown job type');
   if (!/^[0-9a-f]{64}$/.test(job_hash ?? '') || sealed_job?.purpose !== 'inputs') throw new LedgerError('expected a sealed job and its job_hash');
   const candidates = [...listings.values()].filter((l) => l.implements === job_type && (!only || l.ticker === only)).slice(0, MAX_QUOTES_PER_JOB);
   if (!candidates.length) { openDemand.push({ job_type, at: new Date().toISOString() }); j(res, { quotes: [], open_demand: true }); return; }
   const quotes = await Promise.all(candidates.map(async (l) => {
-    const q = await fetch(`${RUNNER}/quotes`, { method: 'POST', headers: rh, body: JSON.stringify({ recipe_id: l.ticker, sealed_recipe: vault.get(l.ticker), sealed_job, job_hash }) }).then((x) => x.json()).catch((e) => ({ recipe_id: l.ticker, ok: false, error: String(e) }));
+    const q = await fetch(`${RUNNER}/quotes`, { method: 'POST', headers: rh, body: JSON.stringify({ recipe_id: l.ticker, sealed_recipe: vault.get(l.ticker), sealed_job, job_hash, buyer }) }).then((x) => x.json()).catch((e) => ({ recipe_id: l.ticker, ok: false, error: String(e) }));
+    // relay only ciphertext: the quote's values describe the buyer's wallet and are sealed to the buyer's reply key
     const r = ledger.recipes.get(l.ticker)!;
-    return { ...q, listing: { ticker: l.ticker, name: l.name, creator: l.creator, price_per_run: l.price_per_run, privacy: l.privacy, risk: l.risk, disclosures: l.disclosures, parts: l.parts },
-      track: { runs: r.runs, failed: r.failed, promised_total: r.promised_total, delivered_total: r.delivered_total, compensated_total: r.compensated_total, bond_available: r.bond_available } };
+    return { recipe_id: l.ticker, ok: !!q.ok, error: q.error, sealed_quote: q.sealed_quote, listing: { ticker: l.ticker, name: l.name, creator: l.creator, price_per_run: l.price_per_run, privacy: l.privacy, risk: l.risk, disclosures: l.disclosures, parts: l.parts },
+      track: { runs: r.runs, failed: r.failed, promised_total: r.promised_total, delivered_total: r.delivered_total, compensated_total: r.compensated_total, aborted: r.aborted, bond_available: r.bond_available } };
   }));
   j(res, { quotes, open_demand: false });
 }));
 
 // ---- runs ----
 app.post('/api/runs/quote', guard(async (req, res) => {
-  const { recipe_id, buyer, pay_asset, refund_to, sealed_inputs, signed_quote: sq } = req.body as { recipe_id: string; buyer: string; pay_asset: string; refund_to: string; sealed_inputs: SealedEnvelope; signed_quote?: { job_hash: string; promised: string; expires_ns: string; signature: string } };
+  const { recipe_id, buyer, pay_asset, refund_to, sealed_inputs, signed_quote: sq } = req.body as { recipe_id: string; buyer: string; pay_asset: string; refund_to: string; sealed_inputs: SealedEnvelope; signed_quote?: SignedQuote };
   const r = ledger.recipes.get(recipe_id); if (!r) throw new LedgerError('unknown recipe');
   if (sealed_inputs?.purpose !== 'inputs' || sealed_inputs.to !== ledger.runners.get(r.runner_id)!.enc_pk_hex) throw new LedgerError('inputs must be sealed to the recipe runner');
   const run_id = 'r-' + randomBytes(6).toString('hex');
   const inputs_hash = sealedHash(sealed_inputs);
-  const msg = JSON.stringify({ action: 'run', recipe_id, run_id, inputs_hash, on_behalf_of: buyer, ...(sq ? { quote: { job_hash: sq.job_hash, promised: sq.promised, expires_ns: sq.expires_ns, signature: sq.signature } } : {}) });
+  const msg = JSON.stringify({ action: 'run', recipe_id, run_id, inputs_hash, on_behalf_of: buyer, ...(sq ? { quote: { sealed_hash: sq.sealed_hash, job_hash: sq.job_hash, expected: sq.expected, promised: sq.promised, cover: sq.cover, expires_ns: sq.expires_ns, signature: sq.signature } } : {}) });
   const qreq = runPaymentQuoteRequest({ originAsset: pay_asset, refundTo: refund_to || buyer, contractId: CONTRACT_ID, price: r.price_per_run.toString(), msg });
   const quote = await mocks.oneclick.quote(qreq);
   const token = randomBytes(24).toString('hex');

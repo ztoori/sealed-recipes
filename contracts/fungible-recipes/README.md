@@ -13,13 +13,16 @@ What it does:
   `customRecipientMsg = {"action":"run",...}`, which arrives as `ft_transfer_call` → `ft_on_transfer`. The run
   stays in escrow until the runner sends a report.
 - **Recipe intents with bonded quotes.** Recipes compete for a buyer's job with quotes signed by the TEE runner
-  (`frs-quote-v1|…`). A paid quote sets aside `min(promised, bond_available)` from the recipe's bond
-  (`{"action":"bond"}`); if the run delivers less than promised, the shortfall is paid to the buyer from that
-  cover in the same settlement. Each recipe keeps a public track record: successful and failed runs, promised vs
-  delivered totals, compensation paid, bond available and locked.
+  (`frs-quote-v2|…`). A quote is bound to the recipe version, the job, the buyer's sealed inputs and the buyer,
+  and can back only one run. It names a `cover` (at most `promised`) that the recipe's bond (`{"action":"bond"}`)
+  must hold in full; paying the quote locks that cover. If the run delivers less than promised, the shortfall is
+  paid to the buyer from the cover in the same settlement. A runner that finds the inputs or market changed since
+  the quote reports `abort`: the buyer is refunded and the recipe's record is not penalised. Each recipe keeps a
+  public track record: successful, failed and aborted runs, promised vs delivered totals, compensation paid,
+  bond available and locked.
 - **Signed settlement.** Anyone can relay `report_run`, because the contract checks the runner's ed25519
   signature (`env::ed25519_verify`). In one receipt it pays the protocol, the runner, every part author used,
-  the creator's royalty and the shareholder dividend pool. A failed run refunds the buyer. If no report arrives
+  the creator's royalty and the shareholder dividend pool. A `fail` or `abort` report refunds the buyer. If no report arrives
   within 15 minutes, the buyer can call `reclaim_run`.
 - **Shares and dividends.** Dividends use an accumulator (`acc_per_share`, scale 1e18). Pending dividends are
   harvested before any change to a balance, and shares escrowed in asks keep earning.
@@ -33,7 +36,7 @@ What it does:
 ## Test
 
 ```bash
-cargo test          # 61 unit tests, including the shared vectors in ../test-vectors/*.json (settlement, dividends, batch auctions, bonds)
+cargo test          # 68 unit tests, including the shared vectors in ../test-vectors/*.json (settlement, dividends, batch auctions, bonds)
 cargo clippy --all-targets
 ```
 
@@ -93,7 +96,7 @@ The contract pays for its own storage in v1, so there are no per-user storage de
 | `publish_recipe` | call | `id: String (^[A-Z0-9]{3,6}$), name: String, sealed_hash: String, runner_id: AccountId, parts: Vec<String>, price_per_run: U128, royalty_bps: u16 (≤5000), total_shares: U128` |
 | `update_sealed` | creator | `id: String, sealed_hash: String` |
 | `ft_on_transfer` | payment token only | `sender_id: AccountId, amount: U128, msg: String` → `U128("0")` |
-| `report_run` | anyone (signature-gated) | `run_id: String, success: bool, parts_used: Vec<String>, output_hash: String, delivered: U128, signature: Base64VecU8` → `Vec<Payout>` |
+| `report_run` | anyone (signature-gated) | `run_id: String, outcome: String ("ok" \| "fail" \| "abort"), parts_used: Vec<String>, output_hash: String, delivered: U128, signature: Base64VecU8` → `Vec<Payout>` |
 | `withdraw_bond` | creator | `recipe_id: String, amount: U128` (≤ `bond_available`; credited to the creator's balance) |
 | `reclaim_run` | buyer, after 15 min | `run_id: String` |
 | `withdraw` | call, 1 yocto | `amount: Option<U128>` (default: whole balance) |
@@ -110,7 +113,8 @@ The contract pays for its own storage in v1, so there are no per-user storage de
 ```json
 {"action":"run","recipe_id":"CLNP","run_id":"r-123","inputs_hash":"<sha256 hex>","on_behalf_of":"bob.testnet"}
 {"action":"run","recipe_id":"CLNP","run_id":"r-124","inputs_hash":"<sha256 hex>","on_behalf_of":"bob.testnet",
- "quote":{"job_hash":"<sha256 hex>","promised":"27500000","expires_ns":"1793500000000000000","signature":"<base64>"}}
+ "quote":{"sealed_hash":"<recipe sealed_hash>","job_hash":"<sha256 hex>","expected":"28000000","promised":"27500000",
+          "cover":"25000000","expires_ns":"1793500000000000000","signature":"<base64>"}}
 {"action":"bid","recipe_id":"CLNP","price":"120","qty":"1000","on_behalf_of":"bob.testnet"}
 {"action":"bond","recipe_id":"CLNP"}
 ```
@@ -129,9 +133,13 @@ the recipe's `sealed_hash` at payment time. Exact event shapes: [`docs/CONTRACT_
 Runner signatures: ed25519 over the UTF-8 strings
 
 ```
-frs-run-v2|<contract_account_id>|<run_id>|<recipe_id>|<ok|fail>|<output_hash>|<delivered>|<parts_used joined by ",">
-frs-quote-v1|<contract_account_id>|<recipe_id>|<job_hash>|<promised>|<expires_ns>
+frs-run-v3|<contract_account_id>|<run_id>|<recipe_id>|<ok|fail|abort>|<output_hash>|<delivered>|<parts_used joined by ",">
+frs-quote-v2|<contract_account_id>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<expected>|<promised>|<cover>|<expires_ns>
 ```
+
+`buyer` is `on_behalf_of`, else `sender_id`. Quote checks, in order: `job_hash must be 64 lowercase hex`,
+`quote for an outdated recipe version`, `runner inactive`, `invalid quote signature`, `quote expired`,
+`quote already used`, `cover exceeds promise`, `bond below quoted cover`.
 
 Events: NEP-297 `EVENT_JSON:` logs with `standard: "fungible-recipes"`, `version: "1.0.0"`. The event names are
 `runner_added`, `part_registered`, `recipe_published`, `recipe_updated`, `run_requested`, `frs_settlement`,

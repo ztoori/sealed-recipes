@@ -11,7 +11,10 @@ import type { PartHandler, Flag, Holding } from '../types.js';
  */
 export const spamShield: PartHandler = async (inputs, ctx) => {
   const holdings = inputs.holdings as Holding[];
-  const model = String(ctx.params.model ?? ctx.manifest.disclosure?.model.name ?? 'Qwen/Qwen3-30B-A3B-Instruct-2507');
+  // the model is the one the part discloses (FRS-1 §2.1), never a recipe param: a creator cannot list an
+  // open-weights part and quietly route it to a different model
+  const model = ctx.manifest.disclosure?.model.name;
+  if (!model) throw new Error(`${ctx.manifest.id} does not disclose a model name`);
   const policy = String(ctx.params.policy ?? 'Flag scam tokens. Answer JSON only.');
   const headers = { 'content-type': 'application/json', authorization: `Bearer ${ctx.secrets.nearAiKey ?? ''}` };
 

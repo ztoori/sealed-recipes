@@ -11,7 +11,7 @@
 #![allow(clippy::too_many_arguments)] // publish_recipe mirrors the spec signature
 
 use near_sdk::json_types::{Base64VecU8, U128, U64};
-use near_sdk::store::{IterableMap, LookupMap};
+use near_sdk::store::{IterableMap, LookupMap, LookupSet};
 use near_sdk::{
     env, near, require, AccountId, BorshStorageKey, CurveType, Gas, NearToken, PanicOnDefault,
     Promise, PromiseOrValue, PublicKey,
@@ -31,8 +31,8 @@ pub const MAX_PROTOCOL_FEE_BPS: u16 = 1_000;
 pub const MAX_ROYALTY_BPS: u16 = 5_000;
 pub const EVENT_STANDARD: &str = "fungible-recipes";
 pub const EVENT_VERSION: &str = "1.0.0";
-pub const SIGNED_MESSAGE_PREFIX: &str = "frs-run-v2";
-pub const QUOTE_MESSAGE_PREFIX: &str = "frs-quote-v1";
+pub const SIGNED_MESSAGE_PREFIX: &str = "frs-run-v3";
+pub const QUOTE_MESSAGE_PREFIX: &str = "frs-quote-v2";
 const GAS_FT_TRANSFER: Gas = Gas::from_tgas(10);
 const GAS_ON_WITHDRAW: Gas = Gas::from_tgas(10);
 /// Upper bound on resting orders per recipe book; bounds `clear_batch` gas and storage spam.
@@ -50,6 +50,7 @@ enum StorageKey {
     Books,
     OrderIndex,
     Batches,
+    UsedQuotes,
 }
 
 #[near(serializers = [json, borsh])]
@@ -96,8 +97,11 @@ pub struct Recipe {
     pub revenue: U128,
     pub listed: bool,
     // ---- public track record (v2) ----
-    /// Refunded runs: reported failures and timeouts.
+    /// Refunded runs that count against the recipe: reported failures and timeouts.
     pub failed: u64,
+    /// Refunded runs the runner aborted before executing (inputs or market changed since the
+    /// quote). Shown in the track record but not counted against the recipe.
+    pub aborted: u64,
     /// Sum of `promised` over successful quoted runs.
     pub promised_total: U128,
     /// Sum of `delivered` over successful quoted runs.
@@ -133,9 +137,12 @@ pub struct Run {
     pub created_ns: U64,
     /// sha256 of the canonical job inputs the quote was made for; `""` for unquoted runs.
     pub job_hash: String,
+    /// Value the signed quote expected to deliver (best estimate), in payment-token units
+    /// (0 when unquoted). Informational: compensation is measured against `promised`.
+    pub expected: U128,
     /// Value the signed quote promised to deliver, in payment-token units (0 when unquoted).
     pub promised: U128,
-    /// Part of the recipe's bond set aside for this run: `min(promised, bond_available)` at payment.
+    /// Part of the recipe's bond set aside for this run: the quote's signed `cover`.
     pub covered: U128,
 }
 
@@ -268,8 +275,13 @@ pub struct ConfigView {
 #[near(serializers = [json])]
 #[derive(Clone, Debug)]
 pub struct QuoteMsg {
+    /// The recipe version that was quoted; must equal the recipe's current `sealed_hash`.
+    pub sealed_hash: String,
     pub job_hash: String,
+    pub expected: U128,
     pub promised: U128,
+    /// Amount of the promise the bond guarantees; `cover <= promised`.
+    pub cover: U128,
     pub expires_ns: U64,
     /// base64 ed25519 signature over `quote_message(...)` by the recipe's runner.
     pub signature: Base64VecU8,
@@ -325,6 +337,8 @@ pub struct Contract {
     next_order_id: u64,
     batch_interval_ns: u64,
     batches: LookupMap<String, Batch>,
+    /// sha256 of every accepted quote message: each signed quote backs exactly one run.
+    used_quotes: LookupSet<Vec<u8>>,
 }
 
 fn emit(event: &str, data: serde_json::Value) {
@@ -377,12 +391,15 @@ fn parse_ed25519(pk: &str) -> [u8; 32] {
     out
 }
 
-/// The exact UTF-8 message a runner signs for `report_run` (v2).
+/// Accepted `report_run` outcomes.
+pub const OUTCOMES: [&str; 3] = ["ok", "fail", "abort"];
+
+/// The exact UTF-8 message a runner signs for `report_run` (frs-run-v3).
 pub fn run_report_message(
     contract_id: &str,
     run_id: &str,
     recipe_id: &str,
-    success: bool,
+    outcome: &str,
     output_hash: &str,
     delivered: u128,
     parts_used: &[String],
@@ -393,24 +410,41 @@ pub fn run_report_message(
         contract_id,
         run_id,
         recipe_id,
-        if success { "ok" } else { "fail" },
+        outcome,
         output_hash,
         delivered,
         parts_used.join(",")
     )
 }
 
-/// The exact UTF-8 message a runner signs for a quote.
+/// The exact UTF-8 message a runner signs for a quote (frs-quote-v2). It binds the quote to
+/// the recipe version, the job, the buyer's sealed inputs and the buyer, so it can't be
+/// replayed for another version, another job, another input set or another account.
 pub fn quote_message(
     contract_id: &str,
     recipe_id: &str,
+    sealed_hash: &str,
     job_hash: &str,
+    inputs_hash: &str,
+    buyer: &str,
+    expected: u128,
     promised: u128,
+    cover: u128,
     expires_ns: u64,
 ) -> String {
     format!(
-        "{}|{}|{}|{}|{}|{}",
-        QUOTE_MESSAGE_PREFIX, contract_id, recipe_id, job_hash, promised, expires_ns
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        QUOTE_MESSAGE_PREFIX,
+        contract_id,
+        recipe_id,
+        sealed_hash,
+        job_hash,
+        inputs_hash,
+        buyer,
+        expected,
+        promised,
+        cover,
+        expires_ns
     )
 }
 
@@ -468,6 +502,7 @@ impl Contract {
             next_order_id: 1,
             batch_interval_ns: batch_interval_ns.0,
             batches: LookupMap::new(StorageKey::Batches),
+            used_quotes: LookupSet::new(StorageKey::UsedQuotes),
         }
     }
 
@@ -561,13 +596,13 @@ impl Contract {
             .unwrap_or_else(|| env::panic_str("unknown runner"));
         require!(runner.active, "runner inactive");
         let mut fixed = protocol_fee(price_per_run.0, self.protocol_fee_bps) + runner.fee_per_run.0;
-        for b in &parts {
-            let blk = self
+        for part_id in &parts {
+            let part = self
                 .parts
-                .get(b)
-                .unwrap_or_else(|| env::panic_str(&format!("unknown part {}", b)));
-            require!(blk.active, "part inactive");
-            fixed += blk.fee_per_call.0;
+                .get(part_id)
+                .unwrap_or_else(|| env::panic_str(&format!("unknown part {}", part_id)));
+            require!(part.active, "part inactive");
+            fixed += part.fee_per_call.0;
         }
         require!(
             price_per_run.0 >= fixed,
@@ -592,6 +627,7 @@ impl Contract {
             revenue: U128(0),
             listed: true,
             failed: 0,
+            aborted: 0,
             promised_total: U128(0),
             delivered_total: U128(0),
             compensated_total: U128(0),
@@ -719,18 +755,29 @@ impl Contract {
             return Err("payment below price_per_run".into());
         }
         // signed quote (recipe intents): checked after the plain run checks, before any state change
-        let (job_hash, promised, covered) = match &quote {
-            None => (String::new(), 0u128, 0u128),
+        let (job_hash, expected, promised, covered, quote_key) = match &quote {
+            None => (String::new(), 0u128, 0u128, 0u128, None),
             Some(q) => {
                 if !valid_hash(&q.job_hash) {
                     return Err("job_hash must be 64 lowercase hex".into());
                 }
+                if q.sealed_hash != recipe.sealed_hash {
+                    return Err("quote for an outdated recipe version".into());
+                }
                 let runner = self.runners.get(&recipe.runner_id).ok_or("unknown runner")?;
+                if !runner.active {
+                    return Err("runner inactive".into());
+                }
                 let msg = quote_message(
                     env::current_account_id().as_str(),
                     &recipe.id,
+                    &q.sealed_hash,
                     &q.job_hash,
+                    &inputs_hash,
+                    buyer.as_str(),
+                    q.expected.0,
                     q.promised.0,
+                    q.cover.0,
                     q.expires_ns.0,
                 );
                 if !verify_ed25519(&q.signature.0, &msg, &runner.signing_pk) {
@@ -739,10 +786,22 @@ impl Contract {
                 if env::block_timestamp() > q.expires_ns.0 {
                     return Err("quote expired".into());
                 }
-                let covered = q.promised.0.min(recipe.bond_available.0);
-                (q.job_hash.clone(), q.promised.0, covered)
+                let key = env::sha256(msg.as_bytes());
+                if self.used_quotes.contains(&key) {
+                    return Err("quote already used".into());
+                }
+                if q.cover.0 > q.promised.0 {
+                    return Err("cover exceeds promise".into());
+                }
+                if recipe.bond_available.0 < q.cover.0 {
+                    return Err("bond below quoted cover".into());
+                }
+                (q.job_hash.clone(), q.expected.0, q.promised.0, q.cover.0, Some(key))
             }
         };
+        if let Some(key) = quote_key {
+            self.used_quotes.insert(key);
+        }
         if amount > price {
             self.credit(&buyer, amount - price);
         }
@@ -761,6 +820,7 @@ impl Contract {
             status: RunStatus::Pending,
             created_ns: U64(env::block_timestamp()),
             job_hash,
+            expected: U128(expected),
             promised: U128(promised),
             covered: U128(covered),
         };
@@ -799,18 +859,29 @@ impl Contract {
         );
     }
 
-    /// Returns a refunded run's cover to the bond and counts the failure.
-    fn release_on_refund(&mut self, run: &Run) {
+    /// Refunds a run's price, returns its cover to the bond and records it in the track record:
+    /// `aborted` runs don't count against the recipe, every other refund counts as `failed`.
+    fn refund_run(&mut self, run: &Run, reason: &str) {
+        self.credit(&run.buyer, run.amount.0);
         let r = self.recipes.get_mut(&run.recipe_id).unwrap();
         r.bond_locked = U128(r.bond_locked.0 - run.covered.0);
         r.bond_available = U128(r.bond_available.0 + run.covered.0);
-        r.failed += 1;
+        if reason == "runner_aborted" {
+            r.aborted += 1;
+        } else {
+            r.failed += 1;
+        }
+        self.set_run_status(&run.run_id, RunStatus::Refunded);
+        emit(
+            "run_refunded",
+            json!({"run_id": run.run_id, "buyer": run.buyer, "amount": run.amount, "reason": reason}),
+        );
     }
 
     pub fn report_run(
         &mut self,
         run_id: String,
-        success: bool,
+        outcome: String,
         parts_used: Vec<String>,
         output_hash: String,
         delivered: U128,
@@ -822,6 +893,7 @@ impl Contract {
             .cloned()
             .unwrap_or_else(|| env::panic_str("unknown run"));
         require!(run.status == RunStatus::Pending, "run not pending");
+        require!(OUTCOMES.contains(&outcome.as_str()), "invalid outcome");
         require!(valid_hash(&output_hash), "output_hash must be 64 lowercase hex");
         let recipe = self
             .recipes
@@ -839,7 +911,7 @@ impl Contract {
             env::current_account_id().as_str(),
             &run_id,
             &recipe.id,
-            success,
+            &outcome,
             &output_hash,
             delivered.0,
             &parts_used,
@@ -855,15 +927,16 @@ impl Contract {
             "invalid runner signature"
         );
 
-        if !success {
-            self.credit(&run.buyer, run.amount.0);
-            self.release_on_refund(&run);
-            self.set_run_status(&run_id, RunStatus::Refunded);
-            emit(
-                "run_refunded",
-                json!({"run_id": run_id, "buyer": run.buyer, "amount": run.amount, "reason": "runner_reported_failure"}),
-            );
-            return vec![];
+        match outcome.as_str() {
+            "fail" => {
+                self.refund_run(&run, "runner_reported_failure");
+                return vec![];
+            }
+            "abort" => {
+                self.refund_run(&run, "runner_aborted");
+                return vec![];
+            }
+            _ => {}
         }
 
         require!(
@@ -872,9 +945,9 @@ impl Contract {
         );
         let part_infos: Vec<Part> = parts_used
             .iter()
-            .map(|b| self.parts.get(b).cloned().unwrap())
+            .map(|part_id| self.parts.get(part_id).cloned().unwrap())
             .collect();
-        let fees: Vec<u128> = part_infos.iter().map(|b| b.fee_per_call.0).collect();
+        let fees: Vec<u128> = part_infos.iter().map(|part| part.fee_per_call.0).collect();
         let split = settlement_split(
             run.amount.0,
             self.protocol_fee_bps,
@@ -899,8 +972,8 @@ impl Contract {
         let protocol_account = self.protocol_account.clone();
         pay(self, &protocol_account, "protocol", split.protocol_total());
         pay(self, &runner.id, "runner", split.runner);
-        for (blk, fee) in part_infos.iter().zip(fees.iter()) {
-            pay(self, &blk.author, &format!("part:{}", blk.id), *fee);
+        for (part, fee) in part_infos.iter().zip(fees.iter()) {
+            pay(self, &part.author, &format!("part:{}", part.id), *fee);
         }
         pay(self, &recipe.creator, "creator_royalty", split.creator);
 
@@ -953,13 +1026,7 @@ impl Contract {
             env::block_timestamp() >= run.created_ns.0 + RUN_TIMEOUT_NS,
             "run not timed out"
         );
-        self.credit(&run.buyer, run.amount.0);
-        self.release_on_refund(&run);
-        self.set_run_status(&run_id, RunStatus::Refunded);
-        emit(
-            "run_refunded",
-            json!({"run_id": run_id, "buyer": run.buyer, "amount": run.amount, "reason": "timeout"}),
-        );
+        self.refund_run(&run, "timeout");
     }
 
     fn set_run_status(&mut self, run_id: &String, status: RunStatus) {

@@ -26,23 +26,25 @@ export interface LedgerRecipe {
   id: string; name: string; creator: string; sealed_hash: string; runner_id: string; parts: string[];
   price_per_run: bigint; royalty_bps: number; total_shares: bigint; acc_per_share: bigint; runs: bigint; revenue: bigint; listed: boolean; created_ns: bigint;
   /** track record + bond (v2) */
-  failed: bigint; promised_total: bigint; delivered_total: bigint; compensated_total: bigint; bond_available: bigint; bond_locked: bigint;
+  failed: bigint; aborted: bigint; promised_total: bigint; delivered_total: bigint; compensated_total: bigint; bond_available: bigint; bond_locked: bigint;
 }
 export type RunStatus = 'Pending' | 'Settled' | 'Refunded';
-export interface LedgerRun { run_id: string; recipe_id: string; buyer: string; amount: bigint; inputs_hash: string; sealed_hash: string; job_hash: string; promised: bigint; covered: bigint; status: RunStatus; created_ns: bigint }
+export interface LedgerRun { run_id: string; recipe_id: string; buyer: string; amount: bigint; inputs_hash: string; sealed_hash: string; job_hash: string; expected: bigint; promised: bigint; covered: bigint; status: RunStatus; created_ns: bigint }
 export interface LedgerOrder { id: number; recipe_id: string; owner: string; side: 'Bid' | 'Ask'; price: bigint; qty: bigint; created_ns: bigint }
 export interface LedgerEvent { standard: string; version: string; event: string; data: Record<string, unknown>[]; block_height: number; timestamp_ns: string; tx_hash: string; signer: string }
 export interface Payout { account_id: string; role: string; amount: bigint }
 export interface Holding { shares: bigint; reward_debt: bigint; locked: bigint }
 
-export function runReportMessage(contractId: string, runId: string, recipeId: string, ok: boolean, outputHash: string, delivered: string, partsUsed: string[]): string {
-  return ['frs-run-v2', contractId, runId, recipeId, ok ? 'ok' : 'fail', outputHash, delivered, partsUsed.join(',')].join('|');
+export type Outcome = 'ok' | 'fail' | 'abort';
+export function runReportMessage(contractId: string, runId: string, recipeId: string, outcome: Outcome, outputHash: string, delivered: string, partsUsed: string[]): string {
+  return ['frs-run-v3', contractId, runId, recipeId, outcome, outputHash, delivered, partsUsed.join(',')].join('|');
 }
-/** what a runner signs when a recipe quotes for a job (recipe intents) */
-export function quoteMessage(contractId: string, recipeId: string, jobHash: string, promised: string, expiresNs: string): string {
-  return ['frs-quote-v1', contractId, recipeId, jobHash, promised, expiresNs].join('|');
+/** what a runner signs when a recipe quotes for a job: bound to the recipe version, the sealed job, the buyer and the cover */
+export interface QuoteFields { sealed_hash: string; job_hash: string; expected: string; promised: string; cover: string; expires_ns: string }
+export interface SignedQuote extends QuoteFields { signature: string }
+export function quoteMessage(contractId: string, recipeId: string, inputsHash: string, buyer: string, q: QuoteFields): string {
+  return ['frs-quote-v2', contractId, recipeId, q.sealed_hash, q.job_hash, inputsHash, buyer, q.expected, q.promised, q.cover, q.expires_ns].join('|');
 }
-export interface SignedQuote { job_hash: string; promised: string; expires_ns: string; signature: string }
 
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new LedgerError(msg);
@@ -66,6 +68,7 @@ export class LocalLedger {
   holdings = new Map<string, Holding>(); // key `${recipe}|${account}`
   balances = new Map<string, bigint>();
   events: LedgerEvent[] = [];
+  usedQuotes = new Set<string>();
   batches = new Map<string, { id: number; opened_ns: bigint }>();
   readonly batchIntervalNs: bigint;
   height = 100_000_000;
@@ -163,7 +166,7 @@ export class LocalLedger {
     const price = BigInt(a.price_per_run);
     assert(minimumPrice(price, this.protocolFeeBps, runner.fee_per_run, fees), 'price below minimum viable price');
     const r: LedgerRecipe = { id: a.id, name: a.name, creator, sealed_hash: a.sealed_hash, runner_id: a.runner_id, parts: a.parts, price_per_run: price, royalty_bps: a.royalty_bps, total_shares: total, acc_per_share: 0n, runs: 0n, revenue: 0n, listed: true, created_ns: this.now(),
-      failed: 0n, promised_total: 0n, delivered_total: 0n, compensated_total: 0n, bond_available: 0n, bond_locked: 0n };
+      failed: 0n, aborted: 0n, promised_total: 0n, delivered_total: 0n, compensated_total: 0n, bond_available: 0n, bond_locked: 0n };
     this.recipes.set(a.id, r);
     const h = this.holding(a.id, creator); h.shares = total; this.rebase(r, h);
     this.batches.set(a.id, { id: 1, opened_ns: this.now() }); // opening auction
@@ -200,21 +203,33 @@ export class LocalLedger {
       if (!r) return reject('unknown recipe');
       if (!r.listed) return reject('recipe not listed');
       if (amount < r.price_per_run) return reject('payment below price_per_run');
-      let job_hash = '', promised = 0n;
+      let job_hash = '', expected = 0n, promised = 0n, covered = 0n, quoteKey = '';
       if (m.quote) {
-        const q = m.quote;
-        if (!/^[0-9a-f]{64}$/.test(q.job_hash ?? '')) return reject('job_hash must be 64 lowercase hex');
+        const q = m.quote as SignedQuote;
+        const dec = (x: unknown) => typeof x === 'string' && /^\d+$/.test(x);
+        // malformed quote objects make the msg unparseable, like the contract (panic → token refunds the sender)
+        if (![q.expected, q.promised, q.cover, q.expires_ns].every(dec) || typeof q.signature !== 'string' || typeof q.sealed_hash !== 'string' || typeof q.job_hash !== 'string') throw new LedgerError('invalid msg');
+        let sig: Uint8Array; try { sig = base64.dec(q.signature); } catch { throw new LedgerError('invalid msg'); }
+        const norm = { sealed_hash: q.sealed_hash, job_hash: q.job_hash, expected: BigInt(q.expected).toString(), promised: BigInt(q.promised).toString(), cover: BigInt(q.cover).toString(), expires_ns: BigInt(q.expires_ns).toString() };
+        if (!/^[0-9a-f]{64}$/.test(q.job_hash)) return reject('job_hash must be 64 lowercase hex');
+        if (q.sealed_hash !== r.sealed_hash) return reject('quote for an outdated recipe version');
         const runner = this.runners.get(r.runner_id)!;
+        if (!runner.active) return reject('runner inactive');
+        const msg = quoteMessage(this.contractId, r.id, m.inputs_hash, owner, norm);
         let ok = false;
-        try { ok = nacl.sign.detached.verify(utf8ToBytes(quoteMessage(this.contractId, r.id, q.job_hash, q.promised, q.expires_ns)), base64.dec(q.signature), bs58.decode(runner.signing_pk.slice(8))); } catch { ok = false; }
+        try { ok = sig.length === 64 && nacl.sign.detached.verify(utf8ToBytes(msg), sig, bs58.decode(runner.signing_pk.slice(8))); } catch { ok = false; }
         if (!ok) return reject('invalid quote signature');
-        if (this.now() > BigInt(q.expires_ns)) return reject('quote expired');
-        job_hash = q.job_hash; promised = BigInt(q.promised);
+        if (this.now() > BigInt(norm.expires_ns)) return reject('quote expired');
+        quoteKey = sha256Hex(msg);
+        if (this.usedQuotes.has(quoteKey)) return reject('quote already used');
+        if (BigInt(norm.cover) > BigInt(norm.promised)) return reject('cover exceeds promise');
+        if (r.bond_available < BigInt(norm.cover)) return reject('bond below quoted cover');
+        job_hash = q.job_hash; expected = BigInt(norm.expected); promised = BigInt(norm.promised); covered = BigInt(norm.cover);
       }
+      if (quoteKey) this.usedQuotes.add(quoteKey);
       this.credit(owner, amount - r.price_per_run);
-      const covered = promised < r.bond_available ? promised : r.bond_available;
       r.bond_available -= covered; r.bond_locked += covered;
-      const run: LedgerRun = { run_id: m.run_id, recipe_id: r.id, buyer: owner, amount: r.price_per_run, inputs_hash: m.inputs_hash, sealed_hash: r.sealed_hash, job_hash, promised, covered, status: 'Pending', created_ns: this.now() };
+      const run: LedgerRun = { run_id: m.run_id, recipe_id: r.id, buyer: owner, amount: r.price_per_run, inputs_hash: m.inputs_hash, sealed_hash: r.sealed_hash, job_hash, expected, promised, covered, status: 'Pending', created_ns: this.now() };
       this.runs.set(m.run_id, run);
       this.emit('run_requested', { ...run });
       return '0';
@@ -240,19 +255,22 @@ export class LocalLedger {
     return '0';
   }
 
-  report_run(a: { run_id: string; success: boolean; parts_used: string[]; output_hash: string; delivered: string; signature: string }) {
-    const run = this.runs.get(a.run_id); assert(run, 'no run'); assert(run.status === 'Pending', 'run not pending');
+  report_run(a: { run_id: string; outcome: Outcome; parts_used: string[]; output_hash: string; delivered: string; signature: string }) {
+    // same check order and messages as the contract
+    const run = this.runs.get(a.run_id); assert(run, 'unknown run'); assert(run.status === 'Pending', 'run not pending');
+    assert(a.outcome === 'ok' || a.outcome === 'fail' || a.outcome === 'abort', 'invalid outcome');
+    assert(/^[0-9a-f]{64}$/.test(a.output_hash), 'output_hash must be 64 lowercase hex');
     const r = this.recipes.get(run.recipe_id)!;
     const runner = this.runners.get(r.runner_id); assert(runner?.active, 'runner inactive');
-    assert(/^[0-9a-f]{64}$/.test(a.output_hash), 'output_hash must be 64 lowercase hex');
-    const msg = runReportMessage(this.contractId, a.run_id, r.id, a.success, a.output_hash, a.delivered, a.parts_used);
+    const msg = runReportMessage(this.contractId, a.run_id, r.id, a.outcome, a.output_hash, a.delivered, a.parts_used);
     const pk = bs58.decode(runner.signing_pk.slice(8));
     const sig = base64.dec(a.signature);
     assert(sig.length === 64 && nacl.sign.detached.verify(utf8ToBytes(msg), sig, pk), 'invalid runner signature');
-    if (!a.success) {
+    if (a.outcome !== 'ok') {
       run.status = 'Refunded'; this.credit(run.buyer, run.amount);
-      this.releaseCover(r, run); r.failed += 1n;
-      this.emit('run_refunded', { run_id: run.run_id, buyer: run.buyer, amount: run.amount, reason: 'runner_reported_failure' });
+      this.releaseCover(r, run);
+      if (a.outcome === 'abort') r.aborted += 1n; else r.failed += 1n;
+      this.emit('run_refunded', { run_id: run.run_id, buyer: run.buyer, amount: run.amount, reason: a.outcome === 'abort' ? 'runner_aborted' : 'runner_reported_failure' });
       return [];
     }
     const pool = [...r.parts];

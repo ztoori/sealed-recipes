@@ -41,13 +41,13 @@ Businesses and agents run on workflows that chain several tools, bots and AI cal
    Parts on open-weights models are labelled **low** withdrawal risk, because anyone can re-host the weights. Parts on closed models are **high** risk, because their provider can retire, change or reprice the model at any time.
 2. **Creators compose recipes** in a no-code canvas, declare which job type they compete for, back their quotes with a bond, and publish the recipe sealed.
 3. **Buyers post a job.** They fill one short form, sealed once to the attested runner. Every recipe implementing the job type quotes from a dry run inside the runner, with:
-   - the value it expects to deliver, and a conservative **signed promise**;
+   - the value it expects to deliver, a conservative **signed promise**, and how much of it the bond covers;
    - its price, privacy, withdrawal risk and on-chain track record.
 
-   Recipes stay sealed: buyers compare results, not methods. A job nobody serves yet is recorded as **open demand** for builders.
-4. **The buyer picks a quote and pays** from any chain through NEAR Intents. The signed promise travels with the payment, so the contract can enforce it.
-5. **The sealed workflow runs.** Each part is held to its resource limits; a run that goes over fails and is refunded. Anything about the buyer leaves the runner encrypted to a one-time key in the buyer's browser.
-6. **One settlement** pays the protocol, the runner, every part author used, the creator's royalty and the shareholders' dividend. Delivery is checked against the promise, and any shortfall is paid to the buyer from the bond.
+   Each quote is sealed to the buyer's browser, which checks the runner's signature before paying. The signature binds the quote to that buyer, that job and that recipe version, and it can be used once. Recipes stay sealed: buyers compare results, not methods. A job nobody serves yet is recorded as **open demand** for builders.
+4. **The buyer picks a quote and pays** from any chain through NEAR Intents. The signed promise travels with the payment, so the contract can enforce it (it is then public on-chain; a buyer who prefers privacy can choose "No guarantee" and skip the promise and the bond).
+5. **The sealed workflow runs.** First the runner re-prices the job: if the wallet changed since the quote, it aborts and refunds instead of letting the bond pay for an emptied wallet (`npm run attack:drain` shows this). Each part runs under declared limits on time, HTTP calls, model calls and output size; a run that goes over is cancelled and refunded. Part logs, wallet requests and the result leave the runner encrypted to a one-time key in the buyer's browser.
+6. **One settlement** pays the protocol, the runner, every part author used, the creator's royalty and the shareholders' dividend. Delivery is checked against the promise, and any shortfall is paid to the buyer from the bond, up to the cover in the quote.
 
 ## Try it in two minutes (no keys, no network needed)
 
@@ -65,7 +65,7 @@ Then follow these steps. Each one says what you should see.
    1. **Compose.** Five parts snap together into *Clean up and protect* (CLNP). The seal dialog verifies the runner attestation: 6 checks pass, and "Hardware TDX quote" shows as skipped in local mode. The plaintext turns into ciphertext and gets a wax seal. `publish_recipe` returns a tx hash, and a $25 bond backs CLNP's quotes.
    2. **Post a job.**
       - As `bob.testnet`, a fresh address is generated in the browser and the job *Clean up my wallet* is sealed and posted.
-      - Two recipes quote. **SWPR** expects $37.54 and promises $36.98, but it is *public* and sweeps the wallet's gas token. **CLNP** expects $28.02 and promises $27.81, is *confidential* and has a $25 bond.
+      - Two recipes quote. **SWPR** expects $37.54 and promises $36.98, but it is *public* and also sweeps the wallet's wNEAR. **CLNP** expects $28.02 and promises $27.81, is *confidential* and its $25 bond covers $25.00 of the promise.
       - Bob chooses CLNP. A 1Click quote shows *0.75188 USDC on Arbitrum → $0.75 delivered to the contract*, with the signed promise in the `customRecipientMsg`.
    3. **Execute.**
       - The runner checks the paid run against its on-chain commitments, decrypts, and runs each part, showing its author and fee. Part details carry a *sealed to you* tag.
@@ -106,10 +106,10 @@ Expected tail of the output:
 ## Tests
 
 ```bash
-npm test                # 27 TypeScript tests: settlement, batch-auction and bond vectors; quote signatures and expiry;
+npm test                # 30 TypeScript tests: settlement, batch-auction and bond vectors; quote signatures and expiry;
                         # event parity with the contract; FRS-1 typing, swaps, job types and withdrawal risk;
                         # sealing; per-part resource limits; EIP-191; 1Click shapes; attestation; capability guard; code hash
-npm run test:rust       # 61 Rust tests for the NEAR contract (same settlement, dividend, auction and bond vectors)
+npm run test:rust       # 68 Rust tests for the NEAR contract (same settlement, dividend, auction and bond vectors)
 npm run typecheck
 npm run live-check      # optional, needs internet: real 1Click dry quotes (incl. confidential), FastNEAR, NEAR RPC,
                         # and with NEAR_AI_API_KEY a real TEE-signed NEAR AI Cloud completion, verified
@@ -186,7 +186,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · threat model: [docs/THR
 ## Repository map
 
 ```
-contracts/fungible-recipes/   Rust NEAR contract + 61 unit tests
+contracts/fungible-recipes/   Rust NEAR contract + 68 unit tests
 contracts/test-vectors/       settlement, dividend, batch-auction and bond vectors shared by Rust and TS
 core/src/                     FRS-1 (parts, disclosure, job types), sealing, settlement, ledger mirror, auctions, job hashing, clients, attestation
 runner/                       sealed TEE runner: dry-run quotes, execution with resource limits, 8 parts (7 implementation files)
@@ -215,7 +215,7 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 
 ## Limitations and next steps
 
-- **Not deployed yet.** The contract has 61 unit tests and the same vectors as the mirror, but it was not built to wasm or deployed from our build machine (no wasm target, no NEAR RPC access). Deploy commands are in [contracts/fungible-recipes/README.md](contracts/fungible-recipes/README.md).
+- **Not deployed yet.** The contract has 68 unit tests and the same vectors as the mirror, but it was not built to wasm or deployed from our build machine (no wasm target, no NEAR RPC access). Deploy commands are in [contracts/fungible-recipes/README.md](contracts/fungible-recipes/README.md).
 - **No live chain adapter or wallet.** The server talks to the in-process mirror. A NEAR RPC adapter and near-connect are the main pieces missing for testnet.
 - **The runner is trusted to measure delivery.** Bonds pay out on the runner's signed `delivered` value. That is sound only as far as the runner is attested; on-chain DCAP verification of the runner is the next step.
 - **Quotes cost compute.** Dry runs are capped at 5 recipes per job and 12 jobs per minute per client. A small quote fee would be the on-chain version.

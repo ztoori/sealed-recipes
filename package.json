@@ -23,7 +23,8 @@
     "record": "node scripts/record-demo.mjs",
     "seed": "tsx scripts/seed.ts",
     "pin-codehash": "tsx scripts/pin-codehash.ts",
-    "agent": "tsx scripts/agent-buyer.ts"
+    "agent": "tsx scripts/agent-buyer.ts",
+    "attack:drain": "tsx scripts/attack-drain.ts"
   },
   "dependencies": {
     "@noble/curves": "^2.4.0",

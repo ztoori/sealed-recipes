@@ -82,8 +82,8 @@ fn pay_run(c: &mut Contract, buyer: &str, run_id: &str, amount: u128, ts: u64) {
     let _ = c.ft_on_transfer(acct(buyer), U128(amount), msg);
 }
 
-fn sign(run_id: &str, recipe: &str, ok: bool, out: &str, parts: &[String]) -> Base64VecU8 {
-    let m = run_report_message(CONTRACT, run_id, recipe, ok, out, 0, parts);
+fn sign(run_id: &str, recipe: &str, outcome: &str, out: &str, parts: &[String]) -> Base64VecU8 {
+    let m = run_report_message(CONTRACT, run_id, recipe, outcome, out, 0, parts);
     Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec())
 }
 
@@ -162,7 +162,7 @@ fn dividends_vector_harvest_before_transfer() {
                 ctx(USDC, 0);
                 let _ = c.ft_on_transfer(acct("buyer"), U128(p(&r["price"])), json!({"action":"run","recipe_id":"DIVS","run_id":id,"inputs_hash":"aa".repeat(32)}).to_string());
                 ctx("relayer", 0);
-                c.report_run(id.clone(), true, vec!["noop".into()], OUT.into(), U128(0), sign(&id, "DIVS", true, OUT, &["noop".to_string()]));
+                c.report_run(id.clone(), "ok".into(), vec!["noop".into()], OUT.into(), U128(0), sign(&id, "DIVS", "ok", OUT, &["noop".to_string()]));
             }
             "transfer_shares" => {
                 ctx(step["from"].as_str().unwrap(), 0);
@@ -246,7 +246,7 @@ fn run_and_signed_report_pays_every_party_in_one_settlement() {
 
     ctx("anyone-relayer.testnet", 1);
     let parts = all_parts();
-    let payouts = c.report_run("r1".into(), true, parts.clone(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(), U128(0), sign("r1", "CLNP", true, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", &parts));
+    let payouts = c.report_run("r1".into(), "ok".into(), parts.clone(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(), U128(0), sign("r1", "CLNP", "ok", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", &parts));
     assert_eq!(payouts.len(), 2 + PARTS.len() + 1);
     assert_eq!(c.get_run("r1".into()).unwrap().status, RunStatus::Settled);
 
@@ -273,7 +273,7 @@ fn partial_part_usage_bills_only_used_parts() {
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     let used = vec!["wallet-scanner".to_string(), "dust-filter".to_string()];
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, used.clone(), OUT.into(), U128(0), sign("r1", "CLNP", true, OUT, &used));
+    c.report_run("r1".into(), "ok".into(), used.clone(), OUT.into(), U128(0), sign("r1", "CLNP", "ok", OUT, &used));
     assert_eq!(bal(&c, "shieldai.testnet"), 0);
     assert_eq!(bal(&c, "scanlabs.testnet"), 20_000);
 }
@@ -285,9 +285,9 @@ fn report_with_bad_signature_rejected() {
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     let parts = all_parts();
     // signed for a different output hash
-    let sig = sign("r1", "CLNP", true, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", &parts);
+    let sig = sign("r1", "CLNP", "ok", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", &parts);
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, parts, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(), U128(0), sig);
+    c.report_run("r1".into(), "ok".into(), parts, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(), U128(0), sig);
 }
 
 #[test]
@@ -296,10 +296,10 @@ fn report_signed_by_other_key_rejected() {
     let mut c = setup();
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     let parts = all_parts();
-    let m = run_report_message(CONTRACT, "r1", "CLNP", true, OUT, 0, &parts);
+    let m = run_report_message(CONTRACT, "r1", "CLNP", "ok", OUT, 0, &parts);
     let sig = Base64VecU8(SigningKey::from_bytes(&[9u8; 32]).sign(m.as_bytes()).to_bytes().to_vec());
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, parts, OUT.into(), U128(0), sig);
+    c.report_run("r1".into(), "ok".into(), parts, OUT.into(), U128(0), sig);
 }
 
 #[test]
@@ -310,7 +310,7 @@ fn report_cannot_bill_extra_parts() {
     let mut parts = all_parts();
     parts.push("spam-shield".into()); // billed twice but recipe has it once
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, parts.clone(), OUT.into(), U128(0), sign("r1", "CLNP", true, OUT, &parts));
+    c.report_run("r1".into(), "ok".into(), parts.clone(), OUT.into(), U128(0), sign("r1", "CLNP", "ok", OUT, &parts));
 }
 
 #[test]
@@ -320,8 +320,8 @@ fn report_cannot_settle_twice() {
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     let b = all_parts();
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, b.clone(), OUT.into(), U128(0), sign("r1", "CLNP", true, OUT, &b));
-    c.report_run("r1".into(), true, b.clone(), OUT.into(), U128(0), sign("r1", "CLNP", true, OUT, &b));
+    c.report_run("r1".into(), "ok".into(), b.clone(), OUT.into(), U128(0), sign("r1", "CLNP", "ok", OUT, &b));
+    c.report_run("r1".into(), "ok".into(), b.clone(), OUT.into(), U128(0), sign("r1", "CLNP", "ok", OUT, &b));
 }
 
 #[test]
@@ -329,7 +329,7 @@ fn failed_run_refunds_buyer() {
     let mut c = setup();
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     ctx("relayer.testnet", 1);
-    let payouts = c.report_run("r1".into(), false, vec![], OUT.into(), U128(0), sign("r1", "CLNP", false, OUT, &[]));
+    let payouts = c.report_run("r1".into(), "fail".into(), vec![], OUT.into(), U128(0), sign("r1", "CLNP", "fail", OUT, &[]));
     assert!(payouts.is_empty());
     assert_eq!(bal(&c, "buyer.testnet"), 750_000);
     assert_eq!(bal(&c, "creator.testnet"), 0);
@@ -526,7 +526,7 @@ fn report_rejects_malformed_output_hash() {
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     let parts = all_parts();
     ctx("relayer.testnet", 0);
-    c.report_run("r1".into(), true, parts.clone(), "sha256:out".into(), U128(0), sign("r1", "CLNP", true, "sha256:out", &parts));
+    c.report_run("r1".into(), "ok".into(), parts.clone(), "sha256:out".into(), U128(0), sign("r1", "CLNP", "ok", "sha256:out", &parts));
 }
 
 // ------------------------------------------------------ batch auctions
@@ -797,21 +797,21 @@ fn trading_shares_harvests_dividends_correctly() {
     // run 1: creator owns 100%
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     ctx("relayer.testnet", 0);
-    c.report_run("r1".into(), true, b.clone(), OUT.into(), U128(0), sign("r1", "CLNP", true, OUT, &b));
+    c.report_run("r1".into(), "ok".into(), b.clone(), OUT.into(), U128(0), sign("r1", "CLNP", "ok", OUT, &b));
 
     // creator offers 25% in the batch; locked shares keep earning through run 2
     ask(&mut c, "creator.testnet", 1, 250_000, 0);
     bid(&mut c, "alice.testnet", 1, 250_000, 250_000);
     pay_run(&mut c, "buyer.testnet", "r2", 750_000, 0);
     ctx("relayer.testnet", 0);
-    c.report_run("r2".into(), true, b.clone(), OUT.into(), U128(0), sign("r2", "CLNP", true, OUT, &b));
+    c.report_run("r2".into(), "ok".into(), b.clone(), OUT.into(), U128(0), sign("r2", "CLNP", "ok", OUT, &b));
     let s = clear(&mut c, INTERVAL);
     assert_eq!((s.price.unwrap().0, s.volume.0), (1, 250_000));
 
     // run 3: 75/25 split
     pay_run(&mut c, "buyer.testnet", "r3", 750_000, INTERVAL);
     ctx("relayer.testnet", INTERVAL);
-    c.report_run("r3".into(), true, b.clone(), OUT.into(), U128(0), sign("r3", "CLNP", true, OUT, &b));
+    c.report_run("r3".into(), "ok".into(), b.clone(), OUT.into(), U128(0), sign("r3", "CLNP", "ok", OUT, &b));
 
     let pool = 508_500u128;
     let creator_div = bal(&c, "creator.testnet") - 3 * 56_500 - 250_000
@@ -823,10 +823,30 @@ fn trading_shares_harvests_dividends_correctly() {
 
 #[test]
 fn signed_message_format_is_stable() {
-    let m = run_report_message("frs.testnet", "r-1", "CLNP", true, "sha256:ab", 28_024_900, &["a".into(), "b".into()]);
-    assert_eq!(m, "frs-run-v2|frs.testnet|r-1|CLNP|ok|sha256:ab|28024900|a,b");
-    let q = quote_message("frs.testnet", "CLNP", &"ab".repeat(32), 27_500_000, 1_000);
-    assert_eq!(q, format!("frs-quote-v1|frs.testnet|CLNP|{}|27500000|1000", "ab".repeat(32)));
+    let m = run_report_message("frs.testnet", "r-1", "CLNP", "ok", "sha256:ab", 28_024_900, &["a".into(), "b".into()]);
+    assert_eq!(m, "frs-run-v3|frs.testnet|r-1|CLNP|ok|sha256:ab|28024900|a,b");
+    let m = run_report_message("frs.testnet", "r-1", "CLNP", "abort", "sha256:ab", 0, &[]);
+    assert_eq!(m, "frs-run-v3|frs.testnet|r-1|CLNP|abort|sha256:ab|0|");
+    let q = quote_message(
+        "frs.testnet",
+        "CLNP",
+        "sha256:sealed",
+        &"ab".repeat(32),
+        &"ff".repeat(32),
+        "bob.testnet",
+        28_000_000,
+        27_500_000,
+        25_000_000,
+        1_000,
+    );
+    assert_eq!(
+        q,
+        format!(
+            "frs-quote-v2|frs.testnet|CLNP|sha256:sealed|{}|{}|bob.testnet|28000000|27500000|25000000|1000",
+            "ab".repeat(32),
+            "ff".repeat(32)
+        )
+    );
 }
 
 #[test]
@@ -841,14 +861,66 @@ fn intents_solver_pays_on_behalf_of_buyer() {
     assert_eq!(bal(&c, "solver.testnet"), 0);
 }
 
-// ------------------------------------------------------- v2: quotes & bonds
+// ------------------------------------------------------- v3: quotes & bonds
 
 const JOB: &str = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+const SEALED: &str = "sha256:sealed";
 
-fn quote_json(key: &SigningKey, job: &str, promised: u128, expires_ns: u64) -> serde_json::Value {
-    let m = quote_message(CONTRACT, "CLNP", job, promised, expires_ns);
-    let sig = near_sdk::base64::Engine::encode(&near_sdk::base64::engine::general_purpose::STANDARD, key.sign(m.as_bytes()).to_bytes());
-    json!({"job_hash": job, "promised": U128(promised), "expires_ns": U64(expires_ns), "signature": sig})
+/// Everything a quote binds; `Q::new` is a valid quote for bob's default inputs.
+#[derive(Clone)]
+struct Q {
+    key: SigningKey,
+    sealed_hash: String,
+    job_hash: String,
+    inputs_hash: String,
+    buyer: String,
+    expected: u128,
+    promised: u128,
+    cover: u128,
+    expires_ns: u64,
+}
+
+impl Q {
+    fn new(promised: u128, cover: u128) -> Self {
+        Q {
+            key: signing_key(),
+            sealed_hash: SEALED.into(),
+            job_hash: JOB.into(),
+            inputs_hash: "ff".repeat(32),
+            buyer: "bob.testnet".into(),
+            expected: promised + promised / 10,
+            promised,
+            cover,
+            expires_ns: 10_000,
+        }
+    }
+    fn json(&self) -> serde_json::Value {
+        let m = quote_message(
+            CONTRACT,
+            "CLNP",
+            &self.sealed_hash,
+            &self.job_hash,
+            &self.inputs_hash,
+            &self.buyer,
+            self.expected,
+            self.promised,
+            self.cover,
+            self.expires_ns,
+        );
+        let sig = near_sdk::base64::Engine::encode(
+            &near_sdk::base64::engine::general_purpose::STANDARD,
+            self.key.sign(m.as_bytes()).to_bytes(),
+        );
+        json!({
+            "sealed_hash": self.sealed_hash,
+            "job_hash": self.job_hash,
+            "expected": U128(self.expected),
+            "promised": U128(self.promised),
+            "cover": U128(self.cover),
+            "expires_ns": U64(self.expires_ns),
+            "signature": sig,
+        })
+    }
 }
 
 fn post_bond(c: &mut Contract, from: &str, amount: u128) {
@@ -860,29 +932,41 @@ fn post_bond(c: &mut Contract, from: &str, amount: u128) {
     let _ = c.ft_on_transfer(acct(from), U128(amount), msg);
 }
 
-fn pay_quoted(c: &mut Contract, buyer: &str, run_id: &str, quote: serde_json::Value, ts: u64, on_behalf: bool) {
+/// Direct payment by `buyer` (a rejected quote panics).
+fn pay_quoted(c: &mut Contract, buyer: &str, run_id: &str, q: &Q, ts: u64) {
     ctx(USDC, ts);
-    let mut msg = json!({"action":"run","recipe_id":"CLNP","run_id":run_id,"inputs_hash":"ff".repeat(32),"quote":quote});
-    if on_behalf {
-        msg["on_behalf_of"] = json!(buyer);
-        let _ = c.ft_on_transfer(acct("solver.testnet"), U128(750_000), msg.to_string());
+    let msg = json!({"action":"run","recipe_id":"CLNP","run_id":run_id,"inputs_hash":"ff".repeat(32),"quote":q.json()});
+    let _ = c.ft_on_transfer(acct(buyer), U128(750_000), msg.to_string());
+}
+
+/// Payment by a solver on behalf of `buyer`; returns the rejection reason, if any.
+fn solver_pays(c: &mut Contract, buyer: &str, run_id: &str, inputs_hash: &str, q: &Q, ts: u64) -> Option<String> {
+    ctx(USDC, ts);
+    let msg = json!({"action":"run","recipe_id":"CLNP","run_id":run_id,"inputs_hash":inputs_hash,"on_behalf_of":buyer,"quote":q.json()});
+    let _ = c.ft_on_transfer(acct("solver.testnet"), U128(750_000), msg.to_string());
+    let e = last_event();
+    if e["event"] == "transfer_rejected" {
+        Some(e["data"][0]["reason"].as_str().unwrap().to_string())
     } else {
-        let _ = c.ft_on_transfer(acct(buyer), U128(750_000), msg.to_string());
+        assert_eq!(e["event"], "run_requested");
+        None
     }
 }
 
-fn report_v2(c: &mut Contract, run_id: &str, ok: bool, delivered: u128) {
-    let parts = if ok { all_parts() } else { vec![] };
-    let m = run_report_message(CONTRACT, run_id, "CLNP", ok, OUT, delivered, &parts);
+fn report(c: &mut Contract, run_id: &str, outcome: &str, delivered: u128) {
+    let parts = if outcome == "ok" { all_parts() } else { vec![] };
+    let m = run_report_message(CONTRACT, run_id, "CLNP", outcome, OUT, delivered, &parts);
     let sig = Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec());
     ctx("relayer.testnet", 1);
-    c.report_run(run_id.into(), ok, parts, OUT.into(), U128(delivered), sig);
+    c.report_run(run_id.into(), outcome.into(), parts, OUT.into(), U128(delivered), sig);
 }
 
 #[test]
 fn bond_vectors_end_to_end() {
     let v: serde_json::Value = serde_json::from_str(include_str!("../../test-vectors/bonds.json")).unwrap();
-    for case in v["cases"].as_array().unwrap().clone() {
+    let cases = v["cases"].as_array().unwrap().clone();
+    assert_eq!(cases.len(), 7);
+    for case in cases {
         // fresh mocked blockchain (thread-local storage) per case
         std::thread::spawn(move || bond_case(&case)).join().expect("bond case failed");
     }
@@ -890,68 +974,213 @@ fn bond_vectors_end_to_end() {
 
 fn bond_case(case: &serde_json::Value) {
     let p = |x: &serde_json::Value| x.as_str().unwrap().parse::<u128>().unwrap();
-    {
-        let name = case["name"].as_str().unwrap();
-        let i = &case["input"];
-        let e = &case["expected"];
-        let mut c = setup();
-        post_bond(&mut c, "creator.testnet", p(&i["bond_available"]));
-        let promised = p(&i["promised"]);
-        if promised > 0 {
-            pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&signing_key(), JOB, promised, 10_000), 0, false);
-        } else {
-            pay_run(&mut c, "bob.testnet", "r1", 750_000, 0);
-        }
-        let run = c.get_run("r1".into()).unwrap();
-        assert_eq!(run.covered.0, p(&e["covered"]), "{name}: covered");
-        assert_eq!(run.promised.0, promised, "{name}: promised");
-        let before = bal(&c, "bob.testnet");
-        let ok = i["outcome"].as_str().unwrap() == "ok";
-        report_v2(&mut c, "r1", ok, p(&i["delivered"]));
-        let refund = if ok { 0 } else { 750_000 };
-        assert_eq!(bal(&c, "bob.testnet") - before, p(&e["compensation"]) + refund, "{name}: buyer credit");
-        let r = c.get_recipe("CLNP".into()).unwrap();
-        assert_eq!(r.bond_available.0, p(&e["bond_available_after"]), "{name}: bond_available");
-        assert_eq!(r.bond_locked.0, p(&e["bond_locked_after"]), "{name}: bond_locked");
-        assert_eq!(r.compensated_total.0, p(&e["compensation"]), "{name}: compensated_total");
+    let name = case["name"].as_str().unwrap();
+    let i = &case["input"];
+    let e = &case["expected"];
+    let outcome = i["outcome"].as_str().unwrap();
+    let mut c = setup();
+    post_bond(&mut c, "creator.testnet", p(&i["bond_available"]));
+    let q = Q::new(p(&i["promised"]), p(&i["cover"]));
+    pay_quoted(&mut c, "bob.testnet", "r1", &q, 0);
+    let run = c.get_run("r1".into()).unwrap();
+    assert_eq!(run.covered.0, p(&e["covered"]), "{name}: covered");
+    assert_eq!(run.promised.0, q.promised, "{name}: promised");
+    assert_eq!(run.expected.0, q.expected, "{name}: expected");
+    let r = c.get_recipe("CLNP".into()).unwrap();
+    assert_eq!(r.bond_locked.0, p(&e["covered"]), "{name}: cover locked at payment");
+    let before = bal(&c, "bob.testnet");
+    report(&mut c, "r1", outcome, p(&i["delivered"]));
+    let refund = if outcome == "ok" { 0 } else { 750_000 };
+    assert_eq!(bal(&c, "bob.testnet") - before, p(&e["compensation"]) + refund, "{name}: buyer credit");
+    let r = c.get_recipe("CLNP".into()).unwrap();
+    assert_eq!(r.bond_available.0, p(&e["bond_available_after"]), "{name}: bond_available");
+    assert_eq!(r.bond_locked.0, p(&e["bond_locked_after"]), "{name}: bond_locked");
+    assert_eq!(r.compensated_total.0, p(&e["compensation"]), "{name}: compensated_total");
+    let expect = |o: &str| u64::from(outcome == o);
+    assert_eq!((r.runs, r.failed, r.aborted), (expect("ok"), expect("fail"), expect("abort")), "{name}: track record");
+    if outcome != "ok" {
+        let ev = last_event();
+        assert_eq!(ev["event"], "run_refunded");
+        let reason = if outcome == "fail" { "runner_reported_failure" } else { "runner_aborted" };
+        assert_eq!(ev["data"][0]["reason"], reason, "{name}: refund reason");
     }
 }
 
+/// Each v3 rejection, triggered on its own with every earlier check passing.
 #[test]
-fn quote_signed_by_other_key_rejected() {
+fn quote_rejection_reasons() {
+    let ff = "ff".repeat(32);
+    let ok = Q::new(1_000_000, 1_000_000);
+
+    // 1. job_hash
     let mut c = setup();
-    let other = SigningKey::from_bytes(&[9u8; 32]);
-    ctx(USDC, 0);
-    let msg = json!({"action":"run","recipe_id":"CLNP","run_id":"r1","inputs_hash":"ff".repeat(32),"quote":quote_json(&other, JOB, 1, 10_000)}).to_string();
-    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.ft_on_transfer(acct("bob.testnet"), U128(750_000), msg)));
-    assert!(r.is_err());
-    assert!(c.get_run("r1".into()).is_none());
+    post_bond(&mut c, "creator.testnet", 5_000_000);
+    let q = Q { job_hash: "XYZ".into(), ..ok.clone() };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &q, 0).as_deref(), Some("job_hash must be 64 lowercase hex"));
+
+    // 2. outdated recipe version: quote made before update_sealed
+    ctx("creator.testnet", 0);
+    c.update_sealed("CLNP".into(), "sha256:sealed-v2".into());
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &ok, 0).as_deref(), Some("quote for an outdated recipe version"));
+    let fresh = Q { sealed_hash: "sha256:sealed-v2".into(), ..ok.clone() };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &fresh, 0), None, "re-quoted for the new version");
+
+    // 3. runner inactive
+    let mut c = setup();
+    post_bond(&mut c, "creator.testnet", 5_000_000);
+    ctx("owner.testnet", 0);
+    c.set_runner_active(acct("runner.testnet"), false);
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &ok, 0).as_deref(), Some("runner inactive"));
+
+    // 4. wrong key
+    let mut c = setup();
+    post_bond(&mut c, "creator.testnet", 5_000_000);
+    let q = Q { key: SigningKey::from_bytes(&[9u8; 32]), ..ok.clone() };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &q, 0).as_deref(), Some("invalid quote signature"));
+
+    // 5. expired
+    let q = Q { expires_ns: 500, ..ok.clone() };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &q, 501).as_deref(), Some("quote expired"));
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &q, 500), None, "valid up to and including expires_ns");
+
+    // 6. reused (same quote, new run_id)
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r2", &ff, &q, 0).as_deref(), Some("quote already used"));
+
+    // 7. cover > promise
+    let q = Q { promised: 1_000_000, cover: 1_000_001, ..ok.clone() };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r3", &ff, &q, 0).as_deref(), Some("cover exceeds promise"));
+
+    // 8. bond below cover after the creator withdraws
+    let mut c = setup();
+    post_bond(&mut c, "creator.testnet", 5_000_000);
+    ctx("creator.testnet", 0);
+    c.withdraw_bond("CLNP".into(), U128(4_500_000));
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &ok, 0).as_deref(), Some("bond below quoted cover"));
+    let q = Q { cover: 500_000, ..ok.clone() };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &q, 0), None, "cover that fits the bond");
+
+    // every rejection credited the buyer and left no run or locked bond behind
+    assert_eq!(bal(&c, "bob.testnet"), 750_000);
+    assert_eq!(c.get_recipe("CLNP".into()).unwrap().bond_locked.0, 500_000);
+}
+
+/// When several checks fail at once, the earliest in the spec order wins.
+#[test]
+fn quote_rejection_order() {
+    let ff = "ff".repeat(32);
+    let ok = Q::new(1_000_000, 1_000_000);
+    let wrong_key = SigningKey::from_bytes(&[9u8; 32]);
+    let mut c = setup();
+    post_bond(&mut c, "creator.testnet", 1_500_000);
+    // 1 before 2
+    let q = Q { job_hash: "XYZ".into(), sealed_hash: "sha256:old".into(), ..ok.clone() };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &q, 0).as_deref(), Some("job_hash must be 64 lowercase hex"));
+    // 2 before 3
+    ctx("owner.testnet", 0);
+    c.set_runner_active(acct("runner.testnet"), false);
+    let q = Q { sealed_hash: "sha256:old".into(), ..ok.clone() };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &q, 0).as_deref(), Some("quote for an outdated recipe version"));
+    // 3 before 4
+    let q = Q { key: wrong_key.clone(), ..ok.clone() };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &q, 0).as_deref(), Some("runner inactive"));
+    ctx("owner.testnet", 0);
+    c.set_runner_active(acct("runner.testnet"), true);
+    // 4 before 5
+    let q = Q { key: wrong_key, expires_ns: 1, ..ok.clone() };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &q, 2).as_deref(), Some("invalid quote signature"));
+    // use a quote, then: 5 before 6
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &ok, 0), None);
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r2", &ff, &ok, 10_001).as_deref(), Some("quote expired"));
+    // 6 before 8 (bond is now 500_000 < cover)
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r2", &ff, &ok, 0).as_deref(), Some("quote already used"));
+    // 7 before 8
+    let q = Q { promised: 600_000, cover: 700_000, ..ok.clone() };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r2", &ff, &q, 0).as_deref(), Some("cover exceeds promise"));
 }
 
 #[test]
 #[should_panic(expected = "quote expired")]
-fn expired_quote_rejected() {
+fn expired_quote_panics_on_direct_payment() {
     let mut c = setup();
-    pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&signing_key(), JOB, 1, 500), 501, false);
+    post_bond(&mut c, "creator.testnet", 5_000_000);
+    pay_quoted(&mut c, "bob.testnet", "r1", &Q { expires_ns: 500, ..Q::new(1, 1) }, 501);
 }
 
 #[test]
-#[should_panic(expected = "job_hash must be 64 lowercase hex")]
-fn bad_job_hash_rejected() {
+#[should_panic(expected = "invalid msg")]
+fn malformed_quote_object_panics_at_parse() {
     let mut c = setup();
-    pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&signing_key(), "XYZ", 1, 500), 0, false);
+    ctx(USDC, 0);
+    let mut quote = Q::new(1, 1).json();
+    quote["cover"] = json!(1); // numbers must be decimal strings
+    let msg = json!({"action":"run","recipe_id":"CLNP","run_id":"r1","inputs_hash":"ff".repeat(32),"on_behalf_of":"bob.testnet","quote":quote});
+    let _ = c.ft_on_transfer(acct("solver.testnet"), U128(750_000), msg.to_string());
 }
 
 #[test]
-fn quote_failure_with_on_behalf_of_credits_buyer() {
+fn quote_is_bound_to_buyer() {
+    let ff = "ff".repeat(32);
     let mut c = setup();
-    let other = SigningKey::from_bytes(&[9u8; 32]);
-    pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&other, JOB, 1, 10_000), 0, true);
-    assert!(c.get_run("r1".into()).is_none());
+    post_bond(&mut c, "creator.testnet", 5_000_000);
+    let q = Q::new(1_000_000, 1_000_000); // signed for bob
+    // a solver paying the same quote on behalf of carol
+    assert_eq!(solver_pays(&mut c, "carol.testnet", "r1", &ff, &q, 0).as_deref(), Some("invalid quote signature"));
+    assert_eq!(bal(&c, "carol.testnet"), 750_000);
+    // carol paying directly with bob's quote
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| pay_quoted(&mut c, "carol.testnet", "r2", &q, 0))).is_err());
+    // bob can still use it (rejections don't consume the quote)
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r3", &ff, &q, 0), None);
+}
+
+#[test]
+fn quote_is_bound_to_inputs_hash() {
+    let mut c = setup();
+    post_bond(&mut c, "creator.testnet", 5_000_000);
+    let q = Q::new(1_000_000, 1_000_000); // signed for inputs "ff…"
+    let other_inputs = "ee".repeat(32);
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &other_inputs, &q, 0).as_deref(), Some("invalid quote signature"));
+    let q2 = Q { inputs_hash: other_inputs.clone(), ..q };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &other_inputs, &q2, 0), None);
+}
+
+#[test]
+fn abort_does_not_count_as_failure() {
+    let mut c = setup();
+    post_bond(&mut c, "creator.testnet", 5_000_000);
+    pay_quoted(&mut c, "bob.testnet", "r1", &Q::new(2_000_000, 2_000_000), 0);
+    report(&mut c, "r1", "abort", 0);
+    let r = c.get_recipe("CLNP".into()).unwrap();
+    assert_eq!((r.runs, r.failed, r.aborted), (0, 0, 1));
+    assert_eq!((r.bond_available.0, r.bond_locked.0), (5_000_000, 0));
     assert_eq!(bal(&c, "bob.testnet"), 750_000);
-    assert_eq!(bal(&c, "solver.testnet"), 0);
-    pay_quoted(&mut c, "bob.testnet", "r2", quote_json(&signing_key(), JOB, 1, 10), 11, true);
-    assert_eq!(bal(&c, "bob.testnet"), 1_500_000, "expired quote also credited to buyer");
+    assert_eq!(c.get_run("r1".into()).unwrap().status, RunStatus::Refunded);
+    // unquoted runs can be aborted too
+    pay_run(&mut c, "bob.testnet", "r2", 750_000, 0);
+    report(&mut c, "r2", "abort", 0);
+    assert_eq!(c.get_recipe("CLNP".into()).unwrap().aborted, 2);
+}
+
+#[test]
+#[should_panic(expected = "invalid outcome")]
+fn unknown_outcome_rejected() {
+    let mut c = setup();
+    pay_run(&mut c, "bob.testnet", "r1", 750_000, 0);
+    let m = run_report_message(CONTRACT, "r1", "CLNP", "success", OUT, 0, &[]);
+    let sig = Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec());
+    ctx("relayer.testnet", 1);
+    c.report_run("r1".into(), "success".into(), vec![], OUT.into(), U128(0), sig);
+}
+
+#[test]
+#[should_panic(expected = "invalid runner signature")]
+fn report_outcome_is_signed() {
+    let mut c = setup();
+    pay_run(&mut c, "bob.testnet", "r1", 750_000, 0);
+    // signed as a failure, submitted as an abort
+    let m = run_report_message(CONTRACT, "r1", "CLNP", "fail", OUT, 0, &[]);
+    let sig = Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec());
+    ctx("relayer.testnet", 1);
+    c.report_run("r1".into(), "abort".into(), vec![], OUT.into(), U128(0), sig);
 }
 
 #[test]
@@ -967,7 +1196,7 @@ fn bond_from_unknown_recipe_with_on_behalf_of_credited() {
 fn withdraw_bond_limits() {
     let mut c = setup();
     post_bond(&mut c, "creator.testnet", 10_000_000);
-    pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&signing_key(), JOB, 6_000_000, 10_000), 0, false);
+    pay_quoted(&mut c, "bob.testnet", "r1", &Q::new(6_000_000, 6_000_000), 0);
     let r = c.get_recipe("CLNP".into()).unwrap();
     assert_eq!((r.bond_available.0, r.bond_locked.0), (4_000_000, 6_000_000));
     // non-creator
@@ -986,28 +1215,30 @@ fn withdraw_bond_limits() {
 fn reclaim_releases_cover_and_counts_failure() {
     let mut c = setup();
     post_bond(&mut c, "creator.testnet", 10_000_000);
-    pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&signing_key(), JOB, 6_000_000, u64::MAX), 0, false);
+    pay_quoted(&mut c, "bob.testnet", "r1", &Q { expires_ns: u64::MAX, ..Q::new(6_000_000, 6_000_000) }, 0);
     ctx("bob.testnet", RUN_TIMEOUT_NS);
     c.reclaim_run("r1".into());
     let r = c.get_recipe("CLNP".into()).unwrap();
-    assert_eq!((r.bond_available.0, r.bond_locked.0, r.failed), (10_000_000, 0, 1));
+    assert_eq!((r.bond_available.0, r.bond_locked.0, r.failed, r.aborted), (10_000_000, 0, 1, 0));
+    assert_eq!(last_event()["data"][0]["reason"], "timeout");
 }
 
 #[test]
 fn track_record_counts_only_successful_quoted_runs() {
     let mut c = setup();
     post_bond(&mut c, "creator.testnet", 25_000_000);
-    pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&signing_key(), JOB, 27_500_000, 10_000), 0, false);
-    report_v2(&mut c, "r1", true, 28_000_000);
-    pay_quoted(&mut c, "bob.testnet", "r2", quote_json(&signing_key(), JOB, 10_000_000, 10_000), 0, false);
-    report_v2(&mut c, "r2", true, 7_000_000);
-    pay_quoted(&mut c, "bob.testnet", "r3", quote_json(&signing_key(), JOB, 5_000_000, 10_000), 0, false);
-    report_v2(&mut c, "r3", false, 0);
-    pay_run(&mut c, "bob.testnet", "r4", 750_000, 0);
-    report_v2(&mut c, "r4", true, 99_000_000); // unquoted: excluded from promise stats
+    pay_quoted(&mut c, "bob.testnet", "r1", &Q { job_hash: "c1".repeat(32), ..Q::new(27_500_000, 25_000_000) }, 0);
+    report(&mut c, "r1", "ok", 28_000_000);
+    pay_quoted(&mut c, "bob.testnet", "r2", &Q { job_hash: "c2".repeat(32), ..Q::new(10_000_000, 10_000_000) }, 0);
+    report(&mut c, "r2", "ok", 7_000_000);
+    pay_quoted(&mut c, "bob.testnet", "r3", &Q { job_hash: "c3".repeat(32), ..Q::new(5_000_000, 5_000_000) }, 0);
+    report(&mut c, "r3", "fail", 0);
+    pay_quoted(&mut c, "bob.testnet", "r4", &Q { job_hash: "c4".repeat(32), ..Q::new(5_000_000, 5_000_000) }, 0);
+    report(&mut c, "r4", "abort", 0);
+    pay_run(&mut c, "bob.testnet", "r5", 750_000, 0);
+    report(&mut c, "r5", "ok", 99_000_000); // unquoted: excluded from promise stats
     let r = c.get_recipe("CLNP".into()).unwrap();
-    assert_eq!(r.runs, 3);
-    assert_eq!(r.failed, 1);
+    assert_eq!((r.runs, r.failed, r.aborted), (3, 1, 1));
     assert_eq!(r.promised_total.0, 37_500_000);
     assert_eq!(r.delivered_total.0, 35_000_000);
     assert_eq!(r.compensated_total.0, 3_000_000);
@@ -1020,10 +1251,10 @@ fn payout_roles_name_parts() {
     let mut c = setup();
     pay_run(&mut c, "bob.testnet", "r1", 750_000, 0);
     let parts = all_parts();
-    let m = run_report_message(CONTRACT, "r1", "CLNP", true, OUT, 0, &parts);
+    let m = run_report_message(CONTRACT, "r1", "CLNP", "ok", OUT, 0, &parts);
     let sig = Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec());
     ctx("relayer.testnet", 1);
-    let payouts = c.report_run("r1".into(), true, parts, OUT.into(), U128(0), sig);
+    let payouts = c.report_run("r1".into(), "ok".into(), parts, OUT.into(), U128(0), sig);
     let roles: Vec<String> = payouts.iter().map(|p| p.role.clone()).collect();
     assert_eq!(roles[0], "protocol");
     assert_eq!(roles[1], "runner");
@@ -1037,8 +1268,31 @@ fn report_signed_with_wrong_delivered_rejected() {
     let mut c = setup();
     pay_run(&mut c, "bob.testnet", "r1", 750_000, 0);
     let parts = all_parts();
-    let m = run_report_message(CONTRACT, "r1", "CLNP", true, OUT, 1, &parts);
+    let m = run_report_message(CONTRACT, "r1", "CLNP", "ok", OUT, 1, &parts);
     let sig = Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec());
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, parts, OUT.into(), U128(2), sig);
+    c.report_run("r1".into(), "ok".into(), parts, OUT.into(), U128(2), sig);
+}
+
+#[test]
+fn recipe_published_event_includes_aborted() {
+    let _c = setup();
+    let ev = last_event();
+    assert_eq!(ev["event"], "recipe_published");
+    assert_eq!(ev["data"][0]["aborted"], 0);
+    assert_eq!(ev["data"][0]["failed"], 0);
+}
+
+#[test]
+fn run_requested_event_includes_expected() {
+    let mut c = setup();
+    post_bond(&mut c, "creator.testnet", 5_000_000);
+    let q = Q::new(1_000_000, 1_000_000);
+    pay_quoted(&mut c, "bob.testnet", "r1", &q, 0);
+    let ev = last_event();
+    assert_eq!(ev["event"], "run_requested");
+    let d = &ev["data"][0];
+    assert_eq!(d["expected"], q.expected.to_string());
+    assert_eq!(d["promised"], "1000000");
+    assert_eq!(d["covered"], "1000000");
 }

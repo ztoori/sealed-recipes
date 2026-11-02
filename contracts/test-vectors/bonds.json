@@ -1,11 +1,12 @@
 {
- "spec": "docs/CONTRACT_SPEC.md#bonds-quotes-backed-by-money",
+ "spec": "docs/CONTRACT_SPEC.md#v3-changes-hardened-quotes-and-bonds-after-independent-review",
  "cases": [
   {
    "name": "delivered-more-than-promised",
    "input": {
     "bond_available": "25000000",
     "promised": "27500000",
+    "cover": "25000000",
     "delivered": "28024900",
     "outcome": "ok"
    },
@@ -21,6 +22,7 @@
    "input": {
     "bond_available": "25000000",
     "promised": "10000000",
+    "cover": "10000000",
     "delivered": "10000000",
     "outcome": "ok"
    },
@@ -35,44 +37,47 @@
    "name": "shortfall-fully-covered",
    "input": {
     "bond_available": "25000000",
-    "promised": "27500000",
-    "delivered": "20000000",
+    "promised": "20000000",
+    "cover": "20000000",
+    "delivered": "15000000",
     "outcome": "ok"
    },
    "expected": {
-    "covered": "25000000",
-    "compensation": "7500000",
-    "bond_available_after": "17500000",
+    "covered": "20000000",
+    "compensation": "5000000",
+    "bond_available_after": "20000000",
     "bond_locked_after": "0"
    }
   },
   {
-   "name": "shortfall-capped-by-bond",
+   "name": "shortfall-capped-by-cover",
    "input": {
-    "bond_available": "5000000",
+    "bond_available": "25000000",
     "promised": "27500000",
+    "cover": "25000000",
     "delivered": "0",
+    "outcome": "ok"
+   },
+   "expected": {
+    "covered": "25000000",
+    "compensation": "25000000",
+    "bond_available_after": "0",
+    "bond_locked_after": "0"
+   }
+  },
+  {
+   "name": "partial-cover",
+   "input": {
+    "bond_available": "8000000",
+    "promised": "27500000",
+    "cover": "5000000",
+    "delivered": "20000000",
     "outcome": "ok"
    },
    "expected": {
     "covered": "5000000",
     "compensation": "5000000",
-    "bond_available_after": "0",
-    "bond_locked_after": "0"
-   }
-  },
-  {
-   "name": "no-bond",
-   "input": {
-    "bond_available": "0",
-    "promised": "27500000",
-    "delivered": "1000000",
-    "outcome": "ok"
-   },
-   "expected": {
-    "covered": "0",
-    "compensation": "0",
-    "bond_available_after": "0",
+    "bond_available_after": "3000000",
     "bond_locked_after": "0"
    }
   },
@@ -81,6 +86,7 @@
    "input": {
     "bond_available": "25000000",
     "promised": "27500000",
+    "cover": "25000000",
     "delivered": "0",
     "outcome": "fail"
    },
@@ -92,15 +98,16 @@
    }
   },
   {
-   "name": "unquoted-run",
+   "name": "aborted-run-releases-cover",
    "input": {
     "bond_available": "25000000",
-    "promised": "0",
+    "promised": "27500000",
+    "cover": "25000000",
     "delivered": "0",
-    "outcome": "ok"
+    "outcome": "abort"
    },
    "expected": {
-    "covered": "0",
+    "covered": "25000000",
     "compensation": "0",
     "bond_available_after": "25000000",
     "bond_locked_after": "0"

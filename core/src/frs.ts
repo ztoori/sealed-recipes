@@ -276,6 +276,24 @@ export interface PublicListing {
   privacy: 'confidential' | 'public' | 'n/a';
 }
 
+/**
+ * The trust labels a buyer sees, derived from part ids alone (never from what a creator says about the recipe).
+ * The marketplace recomputes these from the on-chain `parts`, and the runner refuses to execute a sealed recipe
+ * whose parts differ from the on-chain list, so a creator cannot make a closed-model recipe look low-risk.
+ */
+export function labelsFromParts(partIds: string[], catalog: Catalog): Pick<PublicListing, 'risk' | 'disclosures' | 'privacy'> & { capabilities: string[] } {
+  const parts = partIndex(catalog);
+  const ids = [...new Set(partIds)];
+  const ms = ids.map((id) => { const m = parts.get(id); if (!m) throw new Error(`unknown part ${id}`); return m; });
+  const capabilities = [...new Set(ms.flatMap((m) => m.capabilities ?? []))].sort();
+  return {
+    risk: maxRisk(ms.map((m) => withdrawalRisk(m.disclosure))),
+    disclosures: ms.map((m) => ({ part: m.id, model: m.disclosure.model, runtime: m.disclosure.runtime, risk: withdrawalRisk(m.disclosure) })),
+    privacy: capabilities.includes('wallet:approve') ? (ids.some((b) => b.startsWith('intents.confidential-swap')) ? 'confidential' : 'public') : 'n/a',
+    capabilities,
+  };
+}
+
 export function publicListing(recipe: Recipe, catalog: Catalog): PublicListing {
   const parts = partIndex(catalog);
   const v = validateRecipe(recipe, catalog);

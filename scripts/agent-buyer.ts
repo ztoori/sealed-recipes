@@ -5,7 +5,7 @@
  *   npx tsx scripts/agent-buyer.ts [job-type] [policy-json]
  */
 import { open, USDC_NEAR, type SealedEnvelope } from '../core/src/index.js';
-import { api, BASE, freshImplicitAccount, verifiedRunner, postJob, pickQuote } from './lib/client.js';
+import { api, BASE, freshImplicitAccount, verifiedRunner, postJob, pickQuote, signedQuote } from './lib/client.js';
 
 const jobType = process.argv[2] ?? 'job.wallet-cleanup@1.0.0';
 const policy = JSON.parse(process.argv[3] ?? '{"requirePrivacy":"confidential","maxRisk":"medium","sort":"net","maxPriceUsd":1,"maxApprovalUsd":100}');
@@ -17,13 +17,13 @@ const all: Record<string, unknown> = { wallet: 'carol.testnet', threshold_usd: 3
 const jt = (await api<{ id: string; inputs: Record<string, unknown> }[]>('/api/jobs')).find((j) => j.id === jobType);
 if (!jt) throw new Error('unknown job type ' + jobType);
 const inputs = Object.fromEntries(Object.keys(jt.inputs).map((k) => [k, all[k]]));
-const job = await postJob(jobType, inputs, runner.onchain.enc_pk_hex);
+const job = await postJob(jobType, inputs, runner.onchain, 'carol.testnet');
 if (job.open_demand) { console.log(`[agent] no recipe implements ${jobType} yet: recorded as open demand`); process.exit(0); }
 for (const q of job.quotes) console.log(`[agent] quote ${q.listing.ticker}: ${q.ok ? `expects ${usd(q.expected)}, promises ${usd(q.promised)}, price ${usd(q.listing.price_per_run)}, ${q.listing.privacy}, risk ${q.listing.risk}` : 'failed: ' + q.error}`);
 const pick = pickQuote(job.quotes.filter((q) => Number(q.listing.price_per_run) <= policy.maxPriceUsd * 1e6), policy);
 if (!pick) { console.log('[agent] no quote meets my policy; not buying'); process.exit(0); }
 console.log(`[agent] policy picks ${pick.listing.ticker}`);
-const r = await api<{ run_id: string; run_token: string }>('/api/runs/quote', { recipe_id: pick.listing.ticker, buyer: 'carol.testnet', pay_asset: 'nep141:wrap.near', refund_to: 'carol.testnet', sealed_inputs: job.sealed_job, signed_quote: { job_hash: pick.job_hash, promised: pick.promised, expires_ns: pick.expires_ns, signature: pick.signature } });
+const r = await api<{ run_id: string; run_token: string }>('/api/runs/quote', { recipe_id: pick.listing.ticker, buyer: 'carol.testnet', pay_asset: 'nep141:wrap.near', refund_to: 'carol.testnet', sealed_inputs: job.sealed_job, signed_quote: signedQuote(pick) });
 await api(`/api/runs/${r.run_id}/pay?token=${r.run_token}`, {});
 const res = await fetch(`${BASE}/api/runs/${r.run_id}/events?token=${r.run_token}`);
 const reader = res.body!.getReader(); const dec = new TextDecoder(); let buf = ''; let result: any; let settled: any;

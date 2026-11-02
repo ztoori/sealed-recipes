@@ -43,7 +43,6 @@
         "holdings": "scan.holdings"
       },
       "params": {
-        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
         "policy": "Flag SCAM tokens (URLs in symbol, reward bait, impersonation). Answer JSON only."
       },
       "ui": {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 function useNow(ms = 250) { const [n, setN] = useState(Date.now()); useEffect(() => { const t = setInterval(() => setN(Date.now()), ms); return () => clearInterval(t); }, [ms]); return n; }
 import { api, compact, money, pct, px, short, usd, usePoll } from '../api';
@@ -170,7 +170,9 @@ function Ticket({ ticker, last, batch, onDone }: { ticker: string; last: number;
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [price, setPrice] = useState('');
   const [qty, setQty] = useState('1000');
-  useEffect(() => { if (last) setPrice(last.toFixed(5)); }, [ticker]);
+  // prefill once per ticker, as soon as a last price is known (it may arrive after the ticker changes)
+  const filledFor = useRef('');
+  useEffect(() => { if (last && filledFor.current !== ticker) { filledFor.current = ticker; setPrice(last.toFixed(5)); } }, [ticker, last]);
   const units = Math.round(Number(price) * 1e6);
   const submit = async () => {
     try {

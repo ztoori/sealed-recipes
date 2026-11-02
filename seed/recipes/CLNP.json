@@ -59,7 +59,6 @@
         "holdings": "scan.holdings"
       },
       "params": {
-        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
         "policy": "You are a token-safety classifier for a NEAR wallet. Flag a token as SCAM if its symbol or name contains a URL, a claim/reward call-to-action, impersonates a major asset with a different contract, or has no liquidity. Otherwise OK. Answer JSON only."
       },
       "ui": {

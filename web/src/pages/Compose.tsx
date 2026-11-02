@@ -105,7 +105,7 @@ function ComposeInner() {
   }, [manifests]);
 
   const addPart = (m: PartManifest, pos?: { x: number; y: number }) => {
-    const base = m.id.split('@')[0].split('.').pop()!.replace(/[^a-z]/g, '').slice(0, 8) || 'node';
+    const base = m.id.split('@')[0].split('.').pop()!.replace(/[^a-z]/g, '').slice(0, 16) || 'node';
     let id = base, i = 2; while (recipe.nodes.some((n) => n.id === id) || id === 'form') id = base + i++;
     const params = Object.fromEntries(Object.entries(m.params).map(([k, s]) => [k, s.default ?? '']));
     setRecipe((r) => ({ ...r, nodes: [...r.nodes, { id, part: m.id, inputs: {}, params, ui: pos ?? { x: 120 + r.nodes.length * 60, y: 60 + r.nodes.length * 40 } }] }));

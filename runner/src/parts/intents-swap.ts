@@ -68,6 +68,7 @@ export const intentsSwap: PartHandler = async (inputs, ctx) => {
   const pending = new Map(quotes.map((x, i) => [x.q.quote.depositAddress!, { ...x, i }]));
   const last = new Map<string, string>();
   const started = Date.now();
+  let delay = 750;
   while (pending.size && Date.now() - started < 8 * 60_000) {
     for (const [addr, x] of pending) {
       const s = (await ctx.http(`${ctx.endpoints.oneclick}/v0/status?depositAddress=${addr}`, { headers }).then((r) => r.json())) as StatusResponse;
@@ -77,7 +78,8 @@ export const intentsSwap: PartHandler = async (inputs, ctx) => {
         receipts.push({ symbol: x.h.symbol, assetIn: x.h.assetId, assetOut: target, minAmountOutUnits: x.q.quote.minAmountOut ?? '0', amountIn: x.q.quote.amountInFormatted, amountOut: s.swapDetails.amountOutFormatted ?? '0', amountOutUnits: s.swapDetails.amountOut ?? '0', status: s.status, depositAddress: addr, originTx: s.swapDetails.originChainTxHashes[0]?.hash, destinationTx: s.swapDetails.destinationChainTxHashes[0]?.hash, confidentiality: confidential ? 'basic' : 'public' });
       }
     }
-    if (pending.size) await new Promise((r) => setTimeout(r, 500));
+    // back off between status rounds (0.75 s growing to 10 s) so a long settlement stays inside max_http_calls
+    if (pending.size) { await new Promise((r) => setTimeout(r, delay)); delay = Math.min(10_000, Math.round(delay * 1.5)); }
   }
   if (pending.size) throw new Error(`${pending.size} swap(s) did not reach a terminal status in time`);
   const ok = receipts.filter((r) => r.status === 'SUCCESS');

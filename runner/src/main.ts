@@ -7,7 +7,9 @@
  *  - anything derived from the buyer's data (part logs, approval requests, the output)
  *    is sealed to the buyer's one-time reply key before it leaves this process; the
  *    marketplace relays ciphertext plus coarse progress (part started / finished)
- *  - the only durable output is a signed report (run_id, ok, output_hash, parts_used)
+ *  - the only durable output is a signed report (run_id, outcome ok|fail|abort, output_hash, delivered, parts_used);
+ *    once a run is verified as paid, pending and ours, every exit path signs a report, so the buyer is never
+ *    left waiting for the reclaim timeout
  *  - job endpoints require RUNNER_TOKEN (shared with the marketplace only)
  */
 import express from 'express';
@@ -17,13 +19,13 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { utf8ToBytes } from '@noble/hashes/utils.js';
 import { open, seal, sealedHash, base64, type SealedEnvelope } from '../../core/src/seal.js';
-import { runReportMessage, quoteMessage } from '../../core/src/ledger.js';
+import { runReportMessage, quoteMessage, type Outcome } from '../../core/src/ledger.js';
 import { jobHash, type JobPayload } from '../../core/src/jobs.js';
 import { measure, fetchPrices } from './metrics.js';
 import { hashObject, sha256Hex } from '../../core/src/canonical.js';
 import { reportData, type RunnerAttestation } from '../../core/src/attestation.js';
 import { computeCodehash, loadCatalog } from '../../core/src/codehash.js';
-import type { Catalog, Recipe } from '../../core/src/frs.js';
+import { validateRecipe, type Recipe } from '../../core/src/frs.js';
 import { execute, parseRewrites } from './executor.js';
 import { loadKeys } from './keys.js';
 import type { ApprovalRequest, ApprovalResult } from './types.js';
@@ -39,6 +41,9 @@ const CONTRACT_ID = env.CONTRACT_ID ?? 'fungible-recipes.testnet';
 const rewrites = parseRewrites(env.FRS_REWRITE);
 const ONECLICK = rewrites.get('1click.chaindefuser.com') ?? 'https://1click.chaindefuser.com';
 const QUOTE_TTL_NS = 10n * 60n * 1_000_000_000n;
+/** a quoted run is re-priced right before execution; below this share of the quoted promise the runner aborts
+ *  (refund, bond untouched) instead of executing into a shortfall the buyer engineered by emptying the wallet */
+const RECHECK_MIN_BPS = 9800n;
 const catalog = loadCatalog(ROOT);
 const composeHash = sha256Hex(readFileSync(resolve(ROOT, 'runner/docker-compose.yml'), 'utf8').replace(/\r\n/g, '\n'));
 const { codehash } = computeCodehash(ROOT);
@@ -84,26 +89,47 @@ async function attestation(nonce: string): Promise<RunnerAttestation> {
 
 async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: SealedEnvelope) {
   let replyTo = '';
+  let reportable = false; // true once the run is verified as paid, pending and assigned to this runner
+  let reported = false;
   // buyer-derived data leaves the runner only sealed to the buyer's one-time reply key
   const priv = (type: string, data: Record<string, unknown>) => { if (replyTo) emit(job, 'sealed', { node: data.node ?? null, envelope: seal({ type, data }, replyTo, 'output') }); };
+  const report = async (outcome: Outcome, outputHash: string, delivered: bigint, partsUsed: string[]) => {
+    const msg = runReportMessage(CONTRACT_ID, job.runId, job.recipeId, outcome, outputHash, delivered.toString(), partsUsed);
+    const signature = base64.enc(nacl.sign.detached(utf8ToBytes(msg), keys.sign.secretKey));
+    emit(job, 'signed', { message: msg, signature, signing_pk: keys.signingPk });
+    const rep = await fetch(`${CHAIN}/report_run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ run_id: job.runId, outcome, parts_used: partsUsed, output_hash: outputHash, delivered: delivered.toString(), signature }) });
+    const settlement = await rep.json();
+    if (!rep.ok) throw new Error('report_run rejected: ' + JSON.stringify(settlement));
+    reported = true;
+    return settlement;
+  };
+  const ZERO = '0'.repeat(64);
   try {
     // the run (what was paid for) is the source of truth; the recipe is taken from it, not from the request
-    const run = await chainView<{ status: string; inputs_hash: string; recipe_id: string; buyer: string; sealed_hash?: string; job_hash?: string }>(`runs/${job.runId}`);
+    const run = await chainView<{ status: string; inputs_hash: string; recipe_id: string; buyer: string; sealed_hash?: string; job_hash?: string; promised?: string }>(`runs/${job.runId}`);
     if (run.recipe_id !== job.recipeId) throw new Error(`run ${job.runId} paid for ${run.recipe_id}, not ${job.recipeId}`);
     const recipeOnChain = await chainView<{ sealed_hash: string; runner_id: string; parts: string[] }>(`recipes/${run.recipe_id}`);
     if (run.status !== 'Pending') throw new Error(`run is ${run.status}, not Pending (was it paid?)`);
     if (recipeOnChain.runner_id !== RUNNER_ID) throw new Error('recipe is assigned to a different runner');
+    reportable = true;
     const committed = run.sealed_hash ?? recipeOnChain.sealed_hash; // snapshot taken when the run was paid
     const rh = sealedHash(sealedRecipe), ih = sealedHash(sealedInputs);
-    emit(job, 'verified', { checks: [
+    const checks = [
       { label: `Run is paid and pending on-chain, for ${run.recipe_id}`, ok: true },
       { label: 'sha256(sealed recipe) == sealed_hash committed in the paid run', ok: rh === committed, value: rh },
       { label: 'sha256(sealed inputs) == on-chain inputs_hash', ok: ih === run.inputs_hash, value: ih },
-    ] });
-    if (rh !== committed) throw new Error('sealed recipe does not match the on-chain commitment');
-    if (ih !== run.inputs_hash) throw new Error('sealed inputs do not match the on-chain commitment');
+    ];
+    if (rh !== committed) { emit(job, 'verified', { checks }); throw new Error('sealed recipe does not match the on-chain commitment'); }
+    if (ih !== run.inputs_hash) { emit(job, 'verified', { checks }); throw new Error('sealed inputs do not match the on-chain commitment'); }
 
     let recipe: Recipe | undefined = open<Recipe>(sealedRecipe, keys.box.secretKey);
+    // the public labels (risk, privacy, disclosures) are computed from the on-chain parts; refuse a sealed recipe
+    // that uses anything else, so the labels a buyer chose on are the parts that actually run
+    const v = validateRecipe(recipe, catalog);
+    const sameParts = [...new Set(v.partsUsed)].sort().join(',') === [...new Set(recipeOnChain.parts)].sort().join(',');
+    checks.push({ label: 'decrypted recipe uses exactly the parts listed on-chain', ok: v.ok && sameParts });
+    emit(job, 'verified', { checks });
+    if (!v.ok || !sameParts) throw new Error('sealed recipe parts differ from the on-chain parts list');
     const opened = open<JobPayload>(sealedInputs, keys.box.secretKey);
     if (!/^[0-9a-f]{64}$/.test(opened?.reply_to ?? '')) throw new Error('sealed inputs must include a reply_to key');
     // a quoted run must execute exactly the job that was quoted (and that the bond backs)
@@ -111,12 +137,30 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
     let inputs: Record<string, unknown> | undefined = opened.inputs;
     replyTo = opened.reply_to;
     emit(job, 'decrypted', { nodes: recipe.nodes.length, note: 'recipe + inputs decrypted inside the runner; plaintext never leaves this process' });
+    const jobType = catalog.jobs?.find((j) => j.id === recipe?.implements);
+    const secrets = { nearAiKey: env.NEAR_AI_API_KEY, oneClickJwt: env.ONECLICK_JWT };
+
+    // bonded runs: re-price the job right before executing. If the wallet no longer holds what was quoted
+    // (e.g. the buyer moved funds out after paying), abort with a refund instead of paying out the bond.
+    const quotedPromise = BigInt(run.promised ?? '0');
+    if (run.job_hash && quotedPromise > 0n && jobType) {
+      const dry = await execute(`recheck-${job.runId}`, recipe, inputs, { catalog, rewrites, mode: 'quote', emit: () => {}, secrets, requestApproval: async () => ({ approved: false, txHashes: [] }) });
+      const fresh = dry.ok ? measure(jobType, dry.output, await fetchPrices(ONECLICK)).promised : 0n;
+      const okToRun = fresh * 10_000n >= quotedPromise * RECHECK_MIN_BPS;
+      emit(job, 'rechecked', { ok: okToRun, threshold_bps: Number(RECHECK_MIN_BPS) });
+      priv('recheck', { fresh_promised: fresh.toString(), quoted_promised: quotedPromise.toString() });
+      if (!okToRun) {
+        recipe = undefined; inputs = undefined;
+        const settlement = await report('abort', ZERO, 0n, []);
+        emit(job, 'completed', { ok: false, outcome: 'abort', reason: 'wallet changed since the quote: refunded, bond untouched', settlement });
+        return;
+      }
+    }
 
     const PUBLIC = new Set(['part_start', 'part_done']);
     const res = await execute(job.runId, recipe, inputs, {
-      catalog, rewrites,
+      catalog, rewrites, secrets,
       emit: (t, d) => (PUBLIC.has(t) ? emit(job, t, d) : priv(t, d)),
-      secrets: { nearAiKey: env.NEAR_AI_API_KEY, oneClickJwt: env.ONECLICK_JWT },
       requestApproval: (node, req) => new Promise<ApprovalResult>((resolveApproval) => {
         job.approval = { resolve: resolveApproval, req };
         emit(job, 'approval_pending', { node, transactions: req.transactions.length });
@@ -125,20 +169,19 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
       }),
     });
     const output = res.output;
-    const jobType = catalog.jobs?.find((j) => j.id === recipe?.implements);
     recipe = undefined; inputs = undefined; // drop plaintext
 
     const delivered = res.ok ? measure(jobType, output, await fetchPrices(ONECLICK).catch(() => new Map())).delivered : 0n;
-    const msg = runReportMessage(CONTRACT_ID, job.runId, job.recipeId, res.ok, res.outputHash, delivered.toString(), res.partsUsed);
-    const signature = base64.enc(nacl.sign.detached(utf8ToBytes(msg), keys.sign.secretKey));
-    emit(job, 'signed', { message: msg, signature, signing_pk: keys.signingPk });
-    const rep = await fetch(`${CHAIN}/report_run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ run_id: job.runId, success: res.ok, parts_used: res.partsUsed, output_hash: res.outputHash, delivered: delivered.toString(), signature }) });
-    const settlement = await rep.json();
-    if (!rep.ok) throw new Error('report_run rejected: ' + JSON.stringify(settlement));
+    const settlement = await report(res.ok ? 'ok' : 'fail', res.outputHash, delivered, res.ok ? res.partsUsed : []);
     priv('result', { ok: res.ok, error: res.error, output });
-    emit(job, 'completed', { ok: res.ok, output_hash: res.outputHash, output_commitment: hashObject({ run_id: job.runId, output }), settlement });
+    emit(job, 'completed', { ok: res.ok, outcome: res.ok ? 'ok' : 'fail', output_hash: res.outputHash, output_commitment: hashObject({ run_id: job.runId, output }), settlement });
   } catch (e) {
     emit(job, 'failed', { error: (e as Error).message });
+    // a verified run that cannot complete is refunded now (signed fail), not after the reclaim timeout
+    if (reportable && !reported) {
+      try { const settlement = await report('fail', ZERO, 0n, []); emit(job, 'refunded', { settlement }); }
+      catch (e2) { emit(job, 'failed', { error: 'could not report failure: ' + (e2 as Error).message + ' (buyer can reclaim_run after the timeout)' }); }
+    }
   } finally {
     job.done = true;
   }
@@ -171,14 +214,18 @@ app.post('/runs', auth, (req, res) => {
  * 1Click quotes and nothing is signed for the buyer. Everything describing the buyer's wallet is sealed to them.
  */
 app.post('/quotes', auth, async (req, res) => {
-  const { recipe_id, sealed_recipe, sealed_job, job_hash } = req.body ?? {};
-  const fail = (error: string) => res.json({ recipe_id, ok: false, error, expected: '0', promised: '0', expires_ns: '0', job_hash, signature: '' });
+  const { recipe_id, sealed_recipe, sealed_job, job_hash, buyer } = req.body ?? {};
+  const fail = (error: string) => res.json({ recipe_id, ok: false, error });
   try {
-    const onChain = await chainView<{ sealed_hash: string; runner_id: string }>(`recipes/${recipe_id}`);
+    if (typeof buyer !== 'string' || !buyer) return fail('buyer required: quotes are bound to the account that will pay');
+    const onChain = await chainView<{ sealed_hash: string; runner_id: string; parts: string[]; bond_available?: string }>(`recipes/${recipe_id}`);
     if (onChain.runner_id !== RUNNER_ID) return fail('recipe is assigned to a different runner');
     if (sealedHash(sealed_recipe) !== onChain.sealed_hash) return fail('sealed recipe does not match the on-chain commitment');
     let recipe: Recipe | undefined = open<Recipe>(sealed_recipe, keys.box.secretKey);
+    const v = validateRecipe(recipe, catalog);
+    if (!v.ok || [...new Set(v.partsUsed)].sort().join(',') !== [...new Set(onChain.parts)].sort().join(',')) return fail('sealed recipe parts differ from the on-chain parts list');
     const p = open<JobPayload>(sealed_job, keys.box.secretKey);
+    if (!/^[0-9a-f]{64}$/.test(p?.reply_to ?? '')) return fail('sealed job must include a reply_to key');
     if (jobHash(p.inputs, p.salt) !== job_hash) return fail('job_hash does not match the sealed job');
     const jobType = catalog.jobs?.find((j) => j.id === recipe!.implements);
     if (!jobType) return fail('recipe does not implement a job type');
@@ -186,9 +233,16 @@ app.post('/quotes', auth, async (req, res) => {
     recipe = undefined;
     if (!dry.ok) return fail(dry.error ?? 'dry run failed');
     const m = measure(jobType, dry.output, await fetchPrices(ONECLICK));
-    const expires_ns = (BigInt(Date.now()) * 1_000_000n + QUOTE_TTL_NS).toString();
-    const signature = base64.enc(nacl.sign.detached(utf8ToBytes(quoteMessage(CONTRACT_ID, recipe_id, job_hash, m.promised.toString(), expires_ns)), keys.sign.secretKey));
-    res.json({ recipe_id, ok: true, expected: m.expected.toString(), promised: m.promised.toString(), expires_ns, job_hash, signature, details: seal({ output: dry.output }, p.reply_to, 'output') });
+    // the bond backs the promise up to what is free right now; the contract re-checks bond >= cover at payment
+    const free = BigInt(onChain.bond_available ?? '0');
+    const fields = {
+      sealed_hash: onChain.sealed_hash, job_hash, expected: m.expected.toString(), promised: m.promised.toString(),
+      cover: (m.promised < free ? m.promised : free).toString(), expires_ns: (BigInt(Date.now()) * 1_000_000n + QUOTE_TTL_NS).toString(),
+    };
+    const inputs_hash = sealedHash(sealed_job); // the buyer pays with this same envelope as sealed_inputs
+    const signature = base64.enc(nacl.sign.detached(utf8ToBytes(quoteMessage(CONTRACT_ID, recipe_id, inputs_hash, buyer, fields)), keys.sign.secretKey));
+    // values describe the buyer's wallet, so the whole quote is sealed to the buyer; the marketplace relays ciphertext
+    res.json({ recipe_id, ok: true, sealed_quote: seal({ ...fields, signature, recipe_id, buyer, inputs_hash, details: { output: dry.output } }, p.reply_to, 'output') });
   } catch (e) { fail((e as Error).message); }
 });
 
