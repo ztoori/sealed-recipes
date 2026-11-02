@@ -1,8 +1,8 @@
 # FRS-1: Fungible Recipe Standard (v1.0)
 
-FRS-1 is the no-code / low-code format for composing apps and bots into workflows that can be **sealed, priced and settled**. It has three documents: a **block manifest** (published by a builder), a **recipe** (written by a creator, sealed) and a **public listing** (derived from the recipe, which is all the market sees).
+FRS-1 is the no-code / low-code format for composing **parts** (code, specialist agents or data sources) into workflows that can be **sealed, priced and settled**. It has four documents: a **part manifest** (published by a builder), a **job type** (a standard request buyers can post), a **recipe** (written by a creator, sealed) and a **public listing** (derived from the recipe, which is all the market sees).
 
-Reference implementation: [`core/src/frs.ts`](../core/src/frs.ts). Catalog: [`standard/blocks.json`](../standard/blocks.json).
+Reference implementation: [`core/src/frs.ts`](../core/src/frs.ts). Catalogs: [`standard/parts.json`](../standard/parts.json), [`standard/jobs.json`](../standard/jobs.json).
 
 ## 1. Types
 
@@ -14,9 +14,9 @@ Ports are typed with named types. A type may `extend` one parent (nominal subtyp
 ```
 
 A value of type `A` may be wired into a port of type `B` iff `A == B` or `A` transitively extends `B`.
-This is what makes swaps safe. A swap block that needs a *proven-fresh* address (`address.near.fresh`) cannot be fed a raw form field, but a block that accepts any `address.near` can take a fresh one.
+This is what makes swaps safe. A swap part that needs a *proven-fresh* address (`address.near.fresh`) cannot be fed a raw form field, but a part that accepts any `address.near` can take a fresh one.
 
-## 2. Block manifest
+## 2. Part manifest
 
 ```json
 {
@@ -33,9 +33,53 @@ This is what makes swaps safe. A swap block that needs a *proven-fresh* address 
 ```
 
 - `id` is `<name>@<semver>` and is registered on-chain with `manifest_hash = sha256(canonical(manifest))`.
-- `capabilities` are **enforced**. The runner gives each block a `fetch` that rejects hosts not declared as `net:<host>` (see `guardedFetch`). `wallet:approve` means the block may ask the buyer to sign transactions. It can never sign them itself.
+- `capabilities` are **enforced**. The runner gives each part a `fetch` that rejects hosts not declared as `net:<host>` (see `guardedFetch`). `wallet:approve` means the part may ask the buyer to sign transactions. It can never sign them itself.
 - `params.secret: true` marks the creator's edge (prompts, thresholds, routing choices). These values are only present in the sealed recipe.
-- `fee_per_call` is paid to `author` in every settlement in which the block ran.
+- `fee_per_call` is paid to `author` in every settlement in which the part ran.
+
+### 2.1 Disclosure and withdrawal risk
+
+Every part declares where its value lives, in four layers, plus where it runs:
+
+```json
+"disclosure": {
+  "model":        { "kind": "open-weights", "name": "Qwen/Qwen3-30B-A3B-Instruct-2507", "host": "NEAR AI Cloud (private, TEE)" },
+  "instructions": "sealed",
+  "harness":      "open",
+  "verification": "open",
+  "runtime":      "bundled"
+}
+```
+
+- `model.kind` is `none` (plain code), `open-weights` or `closed`.
+- `instructions` covers prompts and settings. `harness` covers tools, data lookups and retry logic. `verification` is how the part checks its own result. Each is `open` (published), `sealed` (escrowed to the TEE runner, so it can be rebuilt without anyone seeing it) or `closed` (held only by the supplier).
+- `runtime` is `bundled` (the code ships inside the attested runner image, pinned by hash) or `remote` (the supplier operates it as a service).
+
+**Clause.** Parts must disclose their model. Parts on open-weights models carry low withdrawal risk, because anyone can re-host the weights. Parts on closed models carry high withdrawal risk, because the provider can retire, change or reprice the model at any time. A part is only truly rebuildable if every layer is open or sealed.
+
+`withdrawalRisk()` derives the label:
+
+| Risk | Rule |
+|---|---|
+| **high** | closed model, or a remote part with a closed harness or closed verification |
+| **medium** | remote part whose layers are all open or sealed (rebuildable, but the operator can stop the service) |
+| **low** | bundled part with no model or an open-weights model |
+
+A recipe's risk is the highest risk of its parts. The validator warns (`part.closed-model`) when a recipe uses a closed model, and the risk is shown on every listing and quote.
+
+### 2.2 Per-run resource limits
+
+```json
+"limits": { "max_ms": 20000, "max_http_calls": 12, "max_model_calls": 2, "max_output_bytes": 32000 }
+```
+
+The runner enforces these for every part (`runner/src/limits.ts`):
+- wall time, excluding time spent waiting for the buyer's wallet approval;
+- HTTP calls;
+- calls to model endpoints (`/chat/completions` on NEAR AI Cloud);
+- output size.
+
+A part that goes over fails the run, and the contract refunds the buyer. The buyer's price is fixed before the run, so a runaway part can never produce a surprise bill.
 
 ## 3. Recipe
 
@@ -45,8 +89,8 @@ This is what makes swaps safe. A swap block that needs a *proven-fresh* address 
   "meta":   { "ticker": "CLNP", "name": "Clean up and protect", "creator": "chef.testnet", "description": "…" },
   "form":   [ { "id": "wallet", "label": "Wallet to clean", "type": "near.account", "required": true },
               { "id": "recipient", "label": "Fresh address", "type": "address.near", "generator": "fresh-implicit" } ],
-  "nodes":  [ { "id": "scan", "block": "near.wallet-scanner@1.0.0", "inputs": { "account": "form.wallet" }, "params": {} },
-              { "id": "fresh", "block": "addr.fresh-check@1.0.0",  "inputs": { "recipient": "form.recipient" } }, "…" ],
+  "nodes":  [ { "id": "scan", "part": "near.wallet-scanner@1.0.0", "inputs": { "account": "form.wallet" }, "params": {} },
+              { "id": "fresh", "part": "addr.fresh-check@1.0.0",  "inputs": { "recipient": "form.recipient" } }, "…" ],
   "consts": { "usdc": { "type": "asset.id", "value": "nep141:…" } },
   "output": "swap.receipts",
   "listing": { "price_per_run": "750000", "royalty_bps": 1000, "total_shares": "1000000" }
@@ -63,28 +107,28 @@ References are `form.<field>`, `const.<name>` or `<node>.<output port>`.
 | `meta.ticker` | `^[A-Z0-9]{3,6}$` (also the on-chain recipe id) |
 | `form.type` / `form.duplicate` | form fields have known types and unique ids |
 | `form.long` (warning) | at most 6 form fields: *one short form, no chat* |
-| `node.block` | every node uses a block in the catalog |
-| `port.unwired` | every block input is connected |
+| `node.part` | every node uses a part in the catalog |
+| `port.unwired` | every part input is connected |
 | `port.ref` | references resolve |
 | `port.type` | the wired type is assignable to the input type |
 | `graph.cycle` | the graph is a DAG; execution order is a stable topological sort |
 | `recipe.output` | the output reference resolves |
 | `node.deadend` (warning) | a node whose output nobody uses is still billed |
 
-The validator also returns `blocksUsed` (the billable list, in execution order), the union of `capabilities`, and `blockFees`.
+The validator also returns `partsUsed` (the billable list, in execution order), the union of `capabilities`, and `partFees`.
 
 ### Drop-in swaps
 
-`compatibleSwaps(recipe, nodeId)` returns every catalog block that can replace a node **without rewiring**:
+`compatibleSwaps(recipe, nodeId)` returns every catalog part that can replace a node **without rewiring**:
 - every existing input wire must be assignable to the candidate's input type (contravariant), and
 - every output consumed downstream must exist on the candidate with a type each consumer accepts (covariant).
 
-`swapBlock` carries over matching params and fills the new block's defaults.
+`swapPart` carries over matching params and fills the new part's defaults.
 
 ## 4. Public listing
 
 `publicListing(recipe)` is the only recipe-derived data the marketplace and the chain receive:
-`ticker, name, creator, description, form, blocks, capabilities, output_type, price_per_run, royalty_bps, total_shares, interface_hash`.
+`ticker, name, creator, description, form, parts, capabilities, output_type, price_per_run, royalty_bps, total_shares, interface_hash`.
 Wiring, params and consts are **not** included, so the listing shows what a buyer must provide and which builders get paid, but not how the recipe works.
 
 ## 5. Sealing
@@ -98,7 +142,31 @@ The runner takes the recipe id from the paid run and refuses to execute unless `
 It executes nodes in topological order, then signs:
 
 ```
-frs-run-v1|<contract>|<run_id>|<recipe_id>|<ok|fail>|<output_hash>|<blocks_used,…>
+frs-run-v2|<contract>|<run_id>|<recipe_id>|<ok|fail>|<output_hash>|<delivered>|<parts_used,…>
 ```
 
-`report_run` verifies this with `env::ed25519_verify` and settles. `blocks_used` must be a sub-multiset of the recipe's registered blocks, so a runner cannot bill blocks the recipe doesn't contain.
+`report_run` verifies this with `env::ed25519_verify` and settles. `parts_used` must be a sub-multiset of the recipe's registered parts, so a runner cannot bill parts the recipe doesn't contain.
+
+## 7. Recipe intents: job types, quotes and bonds
+
+A **job type** is a standard request that recipes compete to fulfil:
+
+```json
+{ "id": "job.wallet-cleanup@1.0.0", "name": "Clean up my wallet",
+  "inputs": { "wallet": {"type": "near.account"}, "threshold_usd": {"type": "usd"}, "target": {"type": "asset.id"}, "recipient": {"type": "address.near"} },
+  "output": "swap.receipts",
+  "metric": { "name": "value_delivered", "unit": "payment-token" } }
+```
+
+A recipe opts in with `"implements": "job.wallet-cleanup@1.0.0"`. The validator requires its form fields to be exactly the job's inputs (types assignable) and its output type to match (`job.input`, `job.output`).
+
+1. **Post.** The buyer seals `{inputs, salt, reply_to}` once to the attested runner and posts it with
+   `job_hash = sha256(canonical({inputs, salt}))`. The random salt means the on-chain hash can't be brute-forced back to the wallet.
+2. **Quote.** For each listed recipe implementing the type (capped), the runner checks the recipe against its on-chain hash and the job against `job_hash`. It then runs the recipe in **quote mode**: read-only, swaps priced with dry 1Click quotes, no approvals. The output is measured with the job's metric (value in payment-token units): `expected` from expected outputs, and `promised` from the post-slippage minimums. The runner signs
+   `frs-quote-v1|<contract>|<recipe>|<job_hash>|<promised>|<expires_ns>`.
+   Everything describing the buyer's wallet in the quote is sealed to `reply_to`.
+3. **Choose.** The buyer, or an agent's policy, compares expected value, promise, price, privacy, withdrawal risk and the on-chain track record.
+4. **Pay.** The signed quote rides in the run payment's `customRecipientMsg`. The contract verifies it and locks `min(promised, bond)` from the recipe's bond.
+5. **Settle.** The runner measures `delivered` and signs `frs-run-v2|…|<delivered>|…`. The contract pays any shortfall to the buyer from the locked bond, updates the recipe's track record and releases the rest.
+
+A job with no implementing recipe is recorded as **open demand**, a signal for builders.

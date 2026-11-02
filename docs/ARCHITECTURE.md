@@ -9,6 +9,15 @@
 | TEE runner | `runner/` | X25519 sealing key, ed25519 report key (from dstack `getKey` in production) | contract (views + relayed report), FastNEAR, NEAR RPC, 1Click, NEAR AI Cloud |
 | Contract | `contracts/fungible-recipes` (mirror: `core/src/ledger.ts`) | none | payment token (NEP-141), 1Click solver deliveries |
 
+## Recipe intents: from job to quotes
+
+A buyer, or an agent acting for one, seals a job once to the attested runner (`{inputs, salt, reply_to}`) and posts it with `job_hash`. The marketplace fans it out, capped and rate-limited, to every listed recipe that implements the job type. For each one the runner:
+1. checks the sealed recipe against its on-chain hash;
+2. runs it in quote mode (read-only; swaps priced with dry 1Click quotes);
+3. measures the job's value metric and signs `frs-quote-v1` with the same key that later signs run reports.
+
+The buyer compares expected value, the signed promise, price, privacy, withdrawal risk and track record, then pays the chosen recipe with the quote attached. The contract verifies the signature and expiry and locks bond cover. At settlement it compares `delivered` with `promised` and pays any shortfall from the bond.
+
 ## Lifecycle of one run
 
 ```mermaid
@@ -35,7 +44,7 @@ sequenceDiagram
   B->>I: signed deposits
   R->>I: poll /v0/status → SUCCESS
   R->>K: report_run(…, ed25519 signature)
-  K->>K: verify signature, split: protocol, runner, block authors, creator, acc_per_share += …
+  K->>K: verify signature, split: protocol, runner, part authors, creator, acc_per_share += …
 ```
 
 ## Money flow (CLNP, $0.75 per run)
@@ -44,11 +53,11 @@ sequenceDiagram
 |---|---|---|
 | Protocol | 2% of price (+ rounding dust) | $0.0150 |
 | TEE runner | fixed `fee_per_run` | $0.0300 |
-| Block authors | each block's `fee_per_call`, for blocks actually used | $0.1400 (5 authors) |
+| Part authors | each part's `fee_per_call`, for parts actually used | $0.1400 (5 authors) |
 | Creator | royalty 10% of the remainder | $0.0565 |
 | Shareholders | the rest, pro rata through `acc_per_share` | $0.5085 |
 
-Publishing is rejected unless `price ≥ protocol + runner + Σ block fees`. Fees cannot be changed after a recipe is published, so a published recipe can never go under water.
+Publishing is rejected unless `price ≥ protocol + runner + Σ part fees`. Fees cannot be changed after a recipe is published, so a published recipe can never go under water.
 
 ## Why shares make the price "fair"
 
@@ -60,7 +69,7 @@ Shares trade in **frequent batch auctions** rather than on a continuous order bo
 
 `scripts/demo.mjs` starts the runner with
 `FRS_REWRITE=api.fastnear.com=…/mock/fastnear,rpc.mainnet.fastnear.com=…/mock/rpc,1click.chaindefuser.com=…/mock/1click,cloud-api.near.ai=…/mock/nearai`.
-Blocks always build real URLs. The capability guard checks the **real** host, then the rewrite swaps in the mock base URL. When a 1Click mock delivery targets the contract with a `customRecipientMsg`, the mock behaves like the solver and calls `ft_on_transfer` on the ledger mirror.
+Parts always build real URLs. The capability guard checks the **real** host, then the rewrite swaps in the mock base URL. When a 1Click mock delivery targets the contract with a `customRecipientMsg`, the mock behaves like the solver and calls `ft_on_transfer` on the ledger mirror.
 
 ## Production deployment
 

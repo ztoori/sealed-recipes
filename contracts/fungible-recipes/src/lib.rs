@@ -1,6 +1,6 @@
 //! # Fungible Recipes
 //!
-//! Sealed no-code workflows ("recipes") composed from third-party blocks, sold
+//! Sealed no-code workflows ("recipes") composed from third-party parts, sold
 //! pay-per-run through NEAR Intents and executed by an attested TEE runner.
 //! Each recipe is also a fungible share class: shareholders earn a pro-rata
 //! dividend from every run and can trade shares in frequent uniform-price
@@ -31,7 +31,8 @@ pub const MAX_PROTOCOL_FEE_BPS: u16 = 1_000;
 pub const MAX_ROYALTY_BPS: u16 = 5_000;
 pub const EVENT_STANDARD: &str = "fungible-recipes";
 pub const EVENT_VERSION: &str = "1.0.0";
-pub const SIGNED_MESSAGE_PREFIX: &str = "frs-run-v1";
+pub const SIGNED_MESSAGE_PREFIX: &str = "frs-run-v2";
+pub const QUOTE_MESSAGE_PREFIX: &str = "frs-quote-v1";
 const GAS_FT_TRANSFER: Gas = Gas::from_tgas(10);
 const GAS_ON_WITHDRAW: Gas = Gas::from_tgas(10);
 /// Upper bound on resting orders per recipe book; bounds `clear_batch` gas and storage spam.
@@ -40,7 +41,7 @@ pub const MAX_ORDERS_PER_BOOK: usize = 200;
 #[derive(BorshStorageKey)]
 #[near]
 enum StorageKey {
-    Blocks,
+    Parts,
     Runners,
     Recipes,
     Runs,
@@ -53,7 +54,7 @@ enum StorageKey {
 
 #[near(serializers = [json, borsh])]
 #[derive(Clone, Debug)]
-pub struct Block {
+pub struct Part {
     pub id: String,
     pub version: String,
     pub author: AccountId,
@@ -85,14 +86,28 @@ pub struct Recipe {
     pub creator: AccountId,
     pub sealed_hash: String,
     pub runner_id: AccountId,
-    pub blocks: Vec<String>,
+    pub parts: Vec<String>,
     pub price_per_run: U128,
     pub royalty_bps: u16,
     pub total_shares: U128,
     pub acc_per_share: U128,
+    /// Successful runs.
     pub runs: u64,
     pub revenue: U128,
     pub listed: bool,
+    // ---- public track record (v2) ----
+    /// Refunded runs: reported failures and timeouts.
+    pub failed: u64,
+    /// Sum of `promised` over successful quoted runs.
+    pub promised_total: U128,
+    /// Sum of `delivered` over successful quoted runs.
+    pub delivered_total: U128,
+    /// Total paid to buyers from the bond for shortfalls.
+    pub compensated_total: U128,
+    /// Bond that can still back new quotes or be withdrawn by the creator.
+    pub bond_available: U128,
+    /// Bond set aside for pending quoted runs.
+    pub bond_locked: U128,
 }
 
 #[near(serializers = [json, borsh])]
@@ -116,6 +131,12 @@ pub struct Run {
     pub sealed_hash: String,
     pub status: RunStatus,
     pub created_ns: U64,
+    /// sha256 of the canonical job inputs the quote was made for; `""` for unquoted runs.
+    pub job_hash: String,
+    /// Value the signed quote promised to deliver, in payment-token units (0 when unquoted).
+    pub promised: U128,
+    /// Part of the recipe's bond set aside for this run: `min(promised, bond_available)` at payment.
+    pub covered: U128,
 }
 
 #[near(serializers = [json, borsh])]
@@ -217,7 +238,7 @@ pub struct SplitView {
     pub price: U128,
     pub protocol: U128,
     pub runner: U128,
-    pub blocks: Vec<U128>,
+    pub parts: Vec<U128>,
     pub remainder: U128,
     pub creator: U128,
     pub pool: U128,
@@ -243,6 +264,17 @@ pub struct ConfigView {
     pub batch_interval_ns: U64,
 }
 
+/// A runner-signed quote attached to a run payment (recipe intents).
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct QuoteMsg {
+    pub job_hash: String,
+    pub promised: U128,
+    pub expires_ns: U64,
+    /// base64 ed25519 signature over `quote_message(...)` by the recipe's runner.
+    pub signature: Base64VecU8,
+}
+
 /// `msg` accepted by `ft_on_transfer`.
 #[near(serializers = [json])]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -255,12 +287,21 @@ pub enum TransferMsg {
         /// solver, not the buyer, is the `sender_id` of the ft_transfer_call.
         #[serde(default)]
         on_behalf_of: Option<AccountId>,
+        /// Optional signed quote; when present the run is backed by the recipe's bond.
+        #[serde(default)]
+        quote: Option<QuoteMsg>,
     },
     Bid {
         recipe_id: String,
         price: U128,
         qty: U128,
         /// Account that owns the bid and receives the shares (see `Run::on_behalf_of`).
+        #[serde(default)]
+        on_behalf_of: Option<AccountId>,
+    },
+    /// Adds to a recipe's bond, which backs its quotes.
+    Bond {
+        recipe_id: String,
         #[serde(default)]
         on_behalf_of: Option<AccountId>,
     },
@@ -273,7 +314,7 @@ pub struct Contract {
     payment_token: AccountId,
     protocol_account: AccountId,
     protocol_fee_bps: u16,
-    blocks: IterableMap<String, Block>,
+    parts: IterableMap<String, Part>,
     runners: IterableMap<AccountId, Runner>,
     recipes: IterableMap<String, Recipe>,
     runs: LookupMap<String, Run>,
@@ -296,8 +337,8 @@ fn emit(event: &str, data: serde_json::Value) {
     env::log_str(&format!("EVENT_JSON:{}", log));
 }
 
-/// Block ids end up inside the `|`/`,`-delimited signed report, so they are restricted.
-fn valid_block_id(id: &str) -> bool {
+/// Part ids end up inside the `|`/`,`-delimited signed report, so they are restricted.
+fn valid_part_id(id: &str) -> bool {
     (1..=64).contains(&id.len())
         && id.bytes().all(|b| {
             b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'@' | b'-')
@@ -336,25 +377,49 @@ fn parse_ed25519(pk: &str) -> [u8; 32] {
     out
 }
 
-/// The exact UTF-8 message a runner signs for `report_run`.
+/// The exact UTF-8 message a runner signs for `report_run` (v2).
 pub fn run_report_message(
     contract_id: &str,
     run_id: &str,
     recipe_id: &str,
     success: bool,
     output_hash: &str,
-    blocks_used: &[String],
+    delivered: u128,
+    parts_used: &[String],
 ) -> String {
     format!(
-        "{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}",
         SIGNED_MESSAGE_PREFIX,
         contract_id,
         run_id,
         recipe_id,
         if success { "ok" } else { "fail" },
         output_hash,
-        blocks_used.join(",")
+        delivered,
+        parts_used.join(",")
     )
+}
+
+/// The exact UTF-8 message a runner signs for a quote.
+pub fn quote_message(
+    contract_id: &str,
+    recipe_id: &str,
+    job_hash: &str,
+    promised: u128,
+    expires_ns: u64,
+) -> String {
+    format!(
+        "{}|{}|{}|{}|{}|{}",
+        QUOTE_MESSAGE_PREFIX, contract_id, recipe_id, job_hash, promised, expires_ns
+    )
+}
+
+fn verify_ed25519(signature: &[u8], message: &str, signing_pk: &str) -> bool {
+    let sig: [u8; 64] = match signature.try_into() {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    env::ed25519_verify(&sig, message.as_bytes(), &parse_ed25519(signing_pk))
 }
 
 fn is_sub_multiset(used: &[String], allowed: &[String]) -> bool {
@@ -392,7 +457,7 @@ impl Contract {
             payment_token,
             protocol_account,
             protocol_fee_bps,
-            blocks: IterableMap::new(StorageKey::Blocks),
+            parts: IterableMap::new(StorageKey::Parts),
             runners: IterableMap::new(StorageKey::Runners),
             recipes: IterableMap::new(StorageKey::Recipes),
             runs: LookupMap::new(StorageKey::Runs),
@@ -451,16 +516,16 @@ impl Contract {
 
     // ---------------------------------------------------- builders & creators
 
-    pub fn register_block(
+    pub fn register_part(
         &mut self,
         id: String,
         version: String,
         fee_per_call: U128,
         manifest_hash: String,
     ) {
-        require!(valid_block_id(&id), "block id must match ^[a-z0-9._@-]{1,64}$");
-        require!(!self.blocks.contains_key(&id), "block exists");
-        let block = Block {
+        require!(valid_part_id(&id), "part id must match ^[a-z0-9._@-]{1,64}$");
+        require!(!self.parts.contains_key(&id), "part exists");
+        let part = Part {
             id: id.clone(),
             version,
             author: env::predecessor_account_id(),
@@ -468,8 +533,8 @@ impl Contract {
             manifest_hash,
             active: true,
         };
-        emit("block_registered", json!(block));
-        self.blocks.insert(id, block);
+        emit("part_registered", json!(part));
+        self.parts.insert(id, part);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -479,7 +544,7 @@ impl Contract {
         name: String,
         sealed_hash: String,
         runner_id: AccountId,
-        blocks: Vec<String>,
+        parts: Vec<String>,
         price_per_run: U128,
         royalty_bps: u16,
         total_shares: U128,
@@ -489,25 +554,25 @@ impl Contract {
         require!(royalty_bps <= MAX_ROYALTY_BPS, "royalty too high");
         require!(total_shares.0 > 0, "total_shares must be > 0");
         require!(!sealed_hash.is_empty(), "sealed_hash required");
-        require!(!blocks.is_empty(), "recipe needs at least one block");
+        require!(!parts.is_empty(), "recipe needs at least one part");
         let runner = self
             .runners
             .get(&runner_id)
             .unwrap_or_else(|| env::panic_str("unknown runner"));
         require!(runner.active, "runner inactive");
         let mut fixed = protocol_fee(price_per_run.0, self.protocol_fee_bps) + runner.fee_per_run.0;
-        for b in &blocks {
+        for b in &parts {
             let blk = self
-                .blocks
+                .parts
                 .get(b)
-                .unwrap_or_else(|| env::panic_str(&format!("unknown block {}", b)));
-            require!(blk.active, "block inactive");
+                .unwrap_or_else(|| env::panic_str(&format!("unknown part {}", b)));
+            require!(blk.active, "part inactive");
             fixed += blk.fee_per_call.0;
         }
         require!(
             price_per_run.0 >= fixed,
             format!(
-                "price_per_run below minimum viable price {} (protocol + runner + block fees)",
+                "price_per_run below minimum viable price {} (protocol + runner + part fees)",
                 fixed
             )
         );
@@ -518,7 +583,7 @@ impl Contract {
             creator: creator.clone(),
             sealed_hash,
             runner_id,
-            blocks,
+            parts,
             price_per_run,
             royalty_bps,
             total_shares,
@@ -526,6 +591,12 @@ impl Contract {
             runs: 0,
             revenue: U128(0),
             listed: true,
+            failed: 0,
+            promised_total: U128(0),
+            delivered_total: U128(0),
+            compensated_total: U128(0),
+            bond_available: U128(0),
+            bond_locked: U128(0),
         };
         emit("recipe_published", json!(recipe));
         self.recipes.insert(id.clone(), recipe);
@@ -573,12 +644,20 @@ impl Contract {
                 run_id,
                 inputs_hash,
                 on_behalf_of,
+                quote,
             } => {
                 let owner = on_behalf_of.clone().unwrap_or_else(|| sender_id.clone());
                 (
                     on_behalf_of,
-                    self.internal_request_run(owner, amount.0, recipe_id, run_id, inputs_hash),
+                    self.internal_request_run(owner, amount.0, recipe_id, run_id, inputs_hash, quote),
                 )
+            }
+            TransferMsg::Bond {
+                recipe_id,
+                on_behalf_of,
+            } => {
+                let from = on_behalf_of.clone().unwrap_or_else(|| sender_id.clone());
+                (on_behalf_of, self.internal_post_bond(from, amount.0, recipe_id))
             }
             TransferMsg::Bid {
                 recipe_id,
@@ -618,6 +697,7 @@ impl Contract {
         recipe_id: String,
         run_id: String,
         inputs_hash: String,
+        quote: Option<QuoteMsg>,
     ) -> Result<(), String> {
         // All checks happen before any state change, so a rejection leaves no partial state.
         if !valid_run_id(&run_id) {
@@ -629,7 +709,7 @@ impl Contract {
         if self.runs.contains_key(&run_id) {
             return Err("run exists".into());
         }
-        let recipe = self.recipes.get(&recipe_id).ok_or("unknown recipe")?;
+        let recipe = self.recipes.get(&recipe_id).cloned().ok_or("unknown recipe")?;
         if !recipe.listed {
             return Err("recipe not listed".into());
         }
@@ -638,8 +718,38 @@ impl Contract {
         if amount < price {
             return Err("payment below price_per_run".into());
         }
+        // signed quote (recipe intents): checked after the plain run checks, before any state change
+        let (job_hash, promised, covered) = match &quote {
+            None => (String::new(), 0u128, 0u128),
+            Some(q) => {
+                if !valid_hash(&q.job_hash) {
+                    return Err("job_hash must be 64 lowercase hex".into());
+                }
+                let runner = self.runners.get(&recipe.runner_id).ok_or("unknown runner")?;
+                let msg = quote_message(
+                    env::current_account_id().as_str(),
+                    &recipe.id,
+                    &q.job_hash,
+                    q.promised.0,
+                    q.expires_ns.0,
+                );
+                if !verify_ed25519(&q.signature.0, &msg, &runner.signing_pk) {
+                    return Err("invalid quote signature".into());
+                }
+                if env::block_timestamp() > q.expires_ns.0 {
+                    return Err("quote expired".into());
+                }
+                let covered = q.promised.0.min(recipe.bond_available.0);
+                (q.job_hash.clone(), q.promised.0, covered)
+            }
+        };
         if amount > price {
             self.credit(&buyer, amount - price);
+        }
+        if covered > 0 {
+            let r = self.recipes.get_mut(&recipe_id).unwrap();
+            r.bond_available = U128(r.bond_available.0 - covered);
+            r.bond_locked = U128(r.bond_locked.0 + covered);
         }
         let run = Run {
             run_id: run_id.clone(),
@@ -650,18 +760,60 @@ impl Contract {
             sealed_hash,
             status: RunStatus::Pending,
             created_ns: U64(env::block_timestamp()),
+            job_hash,
+            promised: U128(promised),
+            covered: U128(covered),
         };
         emit("run_requested", json!(run));
         self.runs.insert(run_id, run);
         Ok(())
     }
 
+    fn internal_post_bond(&mut self, from: AccountId, amount: u128, recipe_id: String) -> Result<(), String> {
+        let r = self.recipes.get_mut(&recipe_id).ok_or("unknown recipe")?;
+        r.bond_available = U128(r.bond_available.0 + amount);
+        let available = r.bond_available;
+        emit(
+            "bond_posted",
+            json!({"recipe_id": recipe_id, "from": from, "amount": U128(amount), "bond_available": available}),
+        );
+        Ok(())
+    }
+
+    /// Creator takes unlocked bond back into their withdrawable balance.
+    pub fn withdraw_bond(&mut self, recipe_id: String, amount: U128) {
+        let creator = env::predecessor_account_id();
+        let r = self
+            .recipes
+            .get_mut(&recipe_id)
+            .unwrap_or_else(|| env::panic_str("unknown recipe"));
+        require!(r.creator == creator, "creator only");
+        require!(amount.0 > 0, "amount must be > 0");
+        require!(amount.0 <= r.bond_available.0, "amount exceeds bond_available");
+        r.bond_available = U128(r.bond_available.0 - amount.0);
+        let available = r.bond_available;
+        self.credit(&creator, amount.0);
+        emit(
+            "bond_withdrawn",
+            json!({"recipe_id": recipe_id, "amount": amount, "bond_available": available}),
+        );
+    }
+
+    /// Returns a refunded run's cover to the bond and counts the failure.
+    fn release_on_refund(&mut self, run: &Run) {
+        let r = self.recipes.get_mut(&run.recipe_id).unwrap();
+        r.bond_locked = U128(r.bond_locked.0 - run.covered.0);
+        r.bond_available = U128(r.bond_available.0 + run.covered.0);
+        r.failed += 1;
+    }
+
     pub fn report_run(
         &mut self,
         run_id: String,
         success: bool,
-        blocks_used: Vec<String>,
+        parts_used: Vec<String>,
         output_hash: String,
+        delivered: U128,
         signature: Base64VecU8,
     ) -> Vec<Payout> {
         let run = self
@@ -689,7 +841,8 @@ impl Contract {
             &recipe.id,
             success,
             &output_hash,
-            &blocks_used,
+            delivered.0,
+            &parts_used,
         );
         let sig: [u8; 64] = signature
             .0
@@ -704,6 +857,7 @@ impl Contract {
 
         if !success {
             self.credit(&run.buyer, run.amount.0);
+            self.release_on_refund(&run);
             self.set_run_status(&run_id, RunStatus::Refunded);
             emit(
                 "run_refunded",
@@ -713,14 +867,14 @@ impl Contract {
         }
 
         require!(
-            is_sub_multiset(&blocks_used, &recipe.blocks),
-            "blocks_used not part of recipe"
+            is_sub_multiset(&parts_used, &recipe.parts),
+            "parts_used not part of recipe"
         );
-        let block_infos: Vec<Block> = blocks_used
+        let part_infos: Vec<Part> = parts_used
             .iter()
-            .map(|b| self.blocks.get(b).cloned().unwrap())
+            .map(|b| self.parts.get(b).cloned().unwrap())
             .collect();
-        let fees: Vec<u128> = block_infos.iter().map(|b| b.fee_per_call.0).collect();
+        let fees: Vec<u128> = part_infos.iter().map(|b| b.fee_per_call.0).collect();
         let split = settlement_split(
             run.amount.0,
             self.protocol_fee_bps,
@@ -745,15 +899,28 @@ impl Contract {
         let protocol_account = self.protocol_account.clone();
         pay(self, &protocol_account, "protocol", split.protocol_total());
         pay(self, &runner.id, "runner", split.runner);
-        for (blk, fee) in block_infos.iter().zip(fees.iter()) {
-            pay(self, &blk.author, &format!("block:{}", blk.id), *fee);
+        for (blk, fee) in part_infos.iter().zip(fees.iter()) {
+            pay(self, &blk.author, &format!("part:{}", blk.id), *fee);
         }
         pay(self, &recipe.creator, "creator_royalty", split.creator);
 
+        // bonded quote: pay any shortfall to the buyer from the cover set aside at payment
+        let shortfall = run.promised.0.saturating_sub(delivered.0);
+        let compensation = shortfall.min(run.covered.0);
         let r = self.recipes.get_mut(&recipe.id).unwrap();
         r.acc_per_share = U128(r.acc_per_share.0 + split.acc_increment);
         r.runs += 1;
         r.revenue = U128(r.revenue.0 + run.amount.0);
+        r.bond_locked = U128(r.bond_locked.0 - run.covered.0);
+        r.bond_available = U128(r.bond_available.0 + run.covered.0 - compensation);
+        if !run.job_hash.is_empty() {
+            r.promised_total = U128(r.promised_total.0 + run.promised.0);
+            r.delivered_total = U128(r.delivered_total.0 + delivered.0);
+        }
+        r.compensated_total = U128(r.compensated_total.0 + compensation);
+        if compensation > 0 {
+            self.credit(&run.buyer, compensation);
+        }
         self.set_run_status(&run_id, RunStatus::Settled);
 
         emit(
@@ -767,6 +934,8 @@ impl Contract {
                 "payouts": payouts,
                 "shareholder_pool": U128(split.distributed),
                 "acc_increment": U128(split.acc_increment),
+                "delivered": delivered,
+                "compensation": U128(compensation),
             }),
         );
         payouts
@@ -785,6 +954,7 @@ impl Contract {
             "run not timed out"
         );
         self.credit(&run.buyer, run.amount.0);
+        self.release_on_refund(&run);
         self.set_run_status(&run_id, RunStatus::Refunded);
         emit(
             "run_refunded",
@@ -1136,12 +1306,12 @@ impl Contract {
             .collect()
     }
 
-    pub fn get_block(&self, block_id: String) -> Option<Block> {
-        self.blocks.get(&block_id).cloned()
+    pub fn get_part(&self, part_id: String) -> Option<Part> {
+        self.parts.get(&part_id).cloned()
     }
 
-    pub fn list_blocks(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<Block> {
-        self.blocks
+    pub fn list_parts(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<Part> {
+        self.parts
             .values()
             .skip(from_index.unwrap_or(0) as usize)
             .take(limit.unwrap_or(50) as usize)
@@ -1199,16 +1369,16 @@ impl Contract {
         U128(self.balances.get(&account_id).copied().unwrap_or(0))
     }
 
-    pub fn quote_settlement(&self, recipe_id: String, blocks_used: Option<Vec<String>>) -> SplitView {
+    pub fn quote_settlement(&self, recipe_id: String, parts_used: Option<Vec<String>>) -> SplitView {
         let recipe = self
             .recipes
             .get(&recipe_id)
             .unwrap_or_else(|| env::panic_str("unknown recipe"));
-        let used = blocks_used.unwrap_or_else(|| recipe.blocks.clone());
-        require!(is_sub_multiset(&used, &recipe.blocks), "blocks_used not part of recipe");
+        let used = parts_used.unwrap_or_else(|| recipe.parts.clone());
+        require!(is_sub_multiset(&used, &recipe.parts), "parts_used not part of recipe");
         let fees: Vec<u128> = used
             .iter()
-            .map(|b| self.blocks.get(b).unwrap().fee_per_call.0)
+            .map(|b| self.parts.get(b).unwrap().fee_per_call.0)
             .collect();
         let runner_fee = self.runners.get(&recipe.runner_id).unwrap().fee_per_run.0;
         let s = settlement_split(
@@ -1224,7 +1394,7 @@ impl Contract {
             price: recipe.price_per_run,
             protocol: U128(s.protocol),
             runner: U128(s.runner),
-            blocks: s.blocks.iter().map(|b| U128(*b)).collect(),
+            parts: s.parts.iter().map(|b| U128(*b)).collect(),
             remainder: U128(s.remainder),
             creator: U128(s.creator),
             pool: U128(s.pool),

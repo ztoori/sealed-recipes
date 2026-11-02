@@ -1,0 +1,110 @@
+{
+  "frs": "1.0",
+  "kind": "job-catalog",
+  "jobs": [
+    {
+      "id": "job.wallet-cleanup@1.0.0",
+      "name": "Clean up my wallet",
+      "description": "Sweep small balances into one asset at a recipient address, without touching scam airdrops.",
+      "inputs": {
+        "wallet": {
+          "type": "near.account",
+          "label": "Wallet",
+          "placeholder": "bob.testnet",
+          "required": true
+        },
+        "threshold_usd": {
+          "type": "usd",
+          "label": "Treat balances under this as dust (USD)",
+          "default": 25
+        },
+        "target": {
+          "type": "asset.id",
+          "label": "Consolidate into",
+          "default": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+          "options": [
+            "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+            "nep141:wrap.near"
+          ]
+        },
+        "recipient": {
+          "type": "address.near",
+          "label": "Send to a fresh address (generated in your browser)",
+          "generator": "fresh-implicit",
+          "required": true
+        }
+      },
+      "output": "swap.receipts",
+      "metric": {
+        "name": "value_delivered",
+        "unit": "payment-token",
+        "description": "Value delivered to the recipient, in USDC units (6 decimals)"
+      }
+    },
+    {
+      "id": "job.wallet-exit@1.0.0",
+      "name": "Move everything to stables",
+      "description": "Convert every non-scam token to USDC at a recipient address.",
+      "inputs": {
+        "wallet": {
+          "type": "near.account",
+          "label": "Wallet",
+          "placeholder": "bob.testnet",
+          "required": true
+        },
+        "recipient": {
+          "type": "address.near",
+          "label": "Send to a fresh address (generated in your browser)",
+          "generator": "fresh-implicit",
+          "required": true
+        }
+      },
+      "output": "swap.receipts",
+      "metric": {
+        "name": "value_delivered",
+        "unit": "payment-token",
+        "description": "USDC delivered to the recipient"
+      }
+    },
+    {
+      "id": "job.wallet-audit@1.0.0",
+      "name": "Audit my wallet for scam tokens",
+      "description": "Read-only: list tokens you should never interact with.",
+      "inputs": {
+        "wallet": {
+          "type": "near.account",
+          "label": "Wallet",
+          "placeholder": "bob.testnet",
+          "required": true
+        }
+      },
+      "output": "report",
+      "metric": null
+    },
+    {
+      "id": "job.airdrop-claim@1.0.0",
+      "name": "Claim my eligible airdrops",
+      "description": "Find airdrops this wallet qualifies for and claim them to a fresh address. No recipe serves this yet: posting it records open demand for builders.",
+      "inputs": {
+        "wallet": {
+          "type": "near.account",
+          "label": "Wallet",
+          "placeholder": "bob.testnet",
+          "required": true
+        },
+        "recipient": {
+          "type": "address.near",
+          "label": "Send to a fresh address (generated in your browser)",
+          "generator": "fresh-implicit",
+          "required": true
+        }
+      },
+      "output": "swap.receipts",
+      "metric": {
+        "name": "value_delivered",
+        "unit": "payment-token",
+        "description": "Value of claimed tokens, in USDC units"
+      }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
-import type { BlockHandler, Holding } from '../types.js';
+import type { PartHandler, Holding } from '../types.js';
 
-export const dustFilter: BlockHandler = async (inputs, ctx) => {
+export const dustFilter: PartHandler = async (inputs, ctx) => {
   const holdings = inputs.holdings as Holding[];
   const threshold = Number(inputs.threshold_usd ?? 1);
   const min = Number(ctx.params.min_swap_usd ?? 0.1);

@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+import { loadCatalog } from '../core/src/codehash.js';
 /**
  * Seeds the local market with three published recipes (SWPR, EXIT, SAFE) exactly the way
  * a creator's client would: verify the runner attestation, seal in the client, publish
@@ -9,7 +11,7 @@ import { api, publish, verifiedRunner } from './lib/client.js';
 import type { Catalog, Recipe } from '../core/src/index.js';
 
 const root = new URL('..', import.meta.url);
-const catalog = JSON.parse(readFileSync(new URL('standard/blocks.json', root), 'utf8')) as Catalog;
+const catalog = loadCatalog(fileURLToPath(root));
 const load = (t: string) => JSON.parse(readFileSync(new URL(`seed/recipes/${t}.json`, root), 'utf8')) as Recipe;
 
 const { onchain, checks } = await verifiedRunner();

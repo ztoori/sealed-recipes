@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { verifyChat, checkReportDataBinding, checkNras, type ChatSignature, type Check } from '../../../core/src/nearai.js';
 import { tdxReportDataFromQuote } from '../../../core/src/attestation.js';
-import type { BlockHandler, Flag, Holding } from '../types.js';
+import type { PartHandler, Flag, Holding } from '../types.js';
 
 /**
  * Private AI guard on NEAR AI Cloud. The creator's classifier prompt (`policy`) is a
@@ -9,9 +9,9 @@ import type { BlockHandler, Flag, Holding } from '../types.js';
  * over TLS that terminates inside NEAR AI Cloud's gateway TEE.
  * Every verdict is verified: chat signature → attested signing_address → TDX/NVIDIA.
  */
-export const spamShield: BlockHandler = async (inputs, ctx) => {
+export const spamShield: PartHandler = async (inputs, ctx) => {
   const holdings = inputs.holdings as Holding[];
-  const model = String(ctx.params.model ?? 'Qwen/Qwen3-30B-A3B-Instruct-2507');
+  const model = String(ctx.params.model ?? ctx.manifest.disclosure?.model.name ?? 'Qwen/Qwen3-30B-A3B-Instruct-2507');
   const policy = String(ctx.params.policy ?? 'Flag scam tokens. Answer JSON only.');
   const headers = { 'content-type': 'application/json', authorization: `Bearer ${ctx.secrets.nearAiKey ?? ''}` };
 
@@ -50,7 +50,7 @@ export const spamShield: BlockHandler = async (inputs, ctx) => {
   const node = nodes.find((n) => n.signing_address.toLowerCase() === sig!.signing_address.toLowerCase()) ?? nodes[0];
   const v = verifyChat(requestBody, responseBody, sig, gateway ? sig.signing_address : node.signing_address);
   checks.push({ id: 'chat.hash', label: 'Signed text = sha256(request):sha256(response)', status: v.signedTextMatches ? 'pass' : 'fail', detail: `${v.requestHash.slice(0, 12)}…:${v.responseHash.slice(0, 12)}…` });
-  if (gateway) checks.push({ id: 'chat.signer', label: 'Signed by the NEAR AI gateway TEE: gateway attestation not verified by this block', status: 'skip', detail: v.recovered });
+  if (gateway) checks.push({ id: 'chat.signer', label: 'Signed by the NEAR AI gateway TEE: gateway attestation not verified by this part', status: 'skip', detail: v.recovered });
   else checks.push({ id: 'chat.signer', label: 'Signature recovers to an attested model TEE address', status: v.signerMatchesAttestation ? 'pass' : 'fail', detail: v.recovered });
   // TDX binding: report_data (from the quote itself when present) must carry signing address + our nonce
   const rd = node.intel_quote ? (() => { try { return tdxReportDataFromQuote(node.intel_quote!); } catch { return ''; } })() : node.report_data;
@@ -62,7 +62,7 @@ export const spamShield: BlockHandler = async (inputs, ctx) => {
       checks.push(...checkNras(nras, nonce));
     } catch (e) { checks.push({ id: 'nras', label: 'NVIDIA NRAS GPU attestation', status: 'fail', detail: (e as Error).message }); }
   } else checks.push({ id: 'nras', label: 'NVIDIA NRAS GPU attestation', status: 'skip', detail: 'no nvidia_payload (local mock of NEAR AI Cloud)' });
-  checks.push({ id: 'tdx', label: 'Intel TDX quote signature chain (dcap-qvl)', status: 'skip', detail: node.intel_quote ? 'quote present; Intel chain verification is done by scripts/live-check / dcap-qvl, not inside this block' : 'no intel_quote (local mock of NEAR AI Cloud)' });
+  checks.push({ id: 'tdx', label: 'Intel TDX quote signature chain (dcap-qvl)', status: 'skip', detail: node.intel_quote ? 'quote present; Intel chain verification is done by scripts/live-check / dcap-qvl, not inside this part' : 'no intel_quote (local mock of NEAR AI Cloud)' });
   if (checks.some((c) => c.status === 'fail')) throw new Error('NEAR AI Cloud verification failed: ' + checks.filter((c) => c.status === 'fail').map((c) => c.label).join(', '));
   ctx.log(`AI verdict signature verified: ${checks.filter((c) => c.status === 'pass').length} checks passed, ${checks.filter((c) => c.status === 'skip').length} not checked here`, { checks, chat_id: completion.id, signing_address: node.signing_address, mock: node.tee === 'mock' });
 

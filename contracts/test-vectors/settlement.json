@@ -8,7 +8,7 @@
         "price": "750000",
         "protocol_fee_bps": 200,
         "runner_fee": "30000",
-        "block_fees": [
+        "part_fees": [
           "20000",
           "50000",
           "10000",
@@ -21,7 +21,7 @@
       "expected": {
         "protocol": "15000",
         "runner": "30000",
-        "blocks": [
+        "parts": [
           "20000",
           "50000",
           "10000",
@@ -43,7 +43,7 @@
         "price": "1000003",
         "protocol_fee_bps": 250,
         "runner_fee": "12345",
-        "block_fees": [
+        "part_fees": [
           "7",
           "11",
           "13"
@@ -54,7 +54,7 @@
       "expected": {
         "protocol": "25000",
         "runner": "12345",
-        "blocks": [
+        "parts": [
           "7",
           "11",
           "13"
@@ -74,14 +74,14 @@
         "price": "500000",
         "protocol_fee_bps": 1000,
         "runner_fee": "0",
-        "block_fees": [],
+        "part_fees": [],
         "royalty_bps": 5000,
         "total_shares": "7"
       },
       "expected": {
         "protocol": "50000",
         "runner": "0",
-        "blocks": [],
+        "parts": [],
         "remainder": "450000",
         "creator": "225000",
         "pool": "225000",
@@ -97,7 +97,7 @@
         "price": "100000",
         "protocol_fee_bps": 0,
         "runner_fee": "40000",
-        "block_fees": [
+        "part_fees": [
           "30000",
           "30000"
         ],
@@ -107,7 +107,7 @@
       "expected": {
         "protocol": "0",
         "runner": "40000",
-        "blocks": [
+        "parts": [
           "30000",
           "30000"
         ],
@@ -126,7 +126,7 @@
         "price": "2500000",
         "protocol_fee_bps": 150,
         "runner_fee": "50000",
-        "block_fees": [
+        "part_fees": [
           "100000",
           "100000",
           "100000"
@@ -137,7 +137,7 @@
       "expected": {
         "protocol": "37500",
         "runner": "50000",
-        "blocks": [
+        "parts": [
           "100000",
           "100000",
           "100000"
@@ -157,7 +157,7 @@
         "price": "123456789012345",
         "protocol_fee_bps": 300,
         "runner_fee": "1000000",
-        "block_fees": [
+        "part_fees": [
           "999999",
           "1"
         ],
@@ -167,7 +167,7 @@
       "expected": {
         "protocol": "3703703670370",
         "runner": "1000000",
-        "blocks": [
+        "parts": [
           "999999",
           "1"
         ],

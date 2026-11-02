@@ -40,9 +40,9 @@ export const PAY_ASSETS = [
 export const ACCOUNTS = [
   { id: 'chef.testnet', role: 'Creator' },
   { id: 'bob.testnet', role: 'Buyer' },
-  { id: 'veil.testnet', role: 'Block author' },
-  { id: 'sentinel.testnet', role: 'Block author' },
-  { id: 'scanlabs.testnet', role: 'Block author' },
+  { id: 'veil.testnet', role: 'Part author' },
+  { id: 'sentinel.testnet', role: 'Part author' },
+  { id: 'scanlabs.testnet', role: 'Part author' },
   { id: 'dana.testnet', role: 'Trader' },
   { id: 'tee-runner-1.testnet', role: 'TEE runner' },
   { id: 'frs-treasury.testnet', role: 'Protocol' },

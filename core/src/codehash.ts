@@ -8,7 +8,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { sha256Hex } from './canonical.js';
 
-export const CODEHASH_ROOTS = ['runner/src', 'core/src', 'standard/blocks.json'];
+export const CODEHASH_ROOTS = ['runner/src', 'core/src', 'standard/parts.json', 'standard/jobs.json'];
 
 function walk(p: string, out: string[]) {
   const st = statSync(p);
@@ -23,4 +23,11 @@ export function computeCodehash(repoRoot: string): { codehash: string; files: { 
     .map((f) => ({ path: relative(repoRoot, f).split(sep).join('/'), sha256: sha256Hex(readFileSync(f, 'utf8').replace(/\r\n/g, '\n')) }))
     .sort((a, b) => (a.path < b.path ? -1 : 1));
   return { codehash: sha256Hex(entries.map((e) => `${e.sha256}  ${e.path}`).join('\n')), files: entries };
+}
+
+/** FRS-1 catalog = parts + job types (Node only). */
+export function loadCatalog(repoRoot: string): import('./frs.js').Catalog {
+  const parts = JSON.parse(readFileSync(join(repoRoot, 'standard/parts.json'), 'utf8'));
+  const jobs = JSON.parse(readFileSync(join(repoRoot, 'standard/jobs.json'), 'utf8'));
+  return { ...parts, jobs: jobs.jobs };
 }

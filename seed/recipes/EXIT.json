@@ -26,7 +26,7 @@
   "nodes": [
     {
       "id": "scan",
-      "block": "near.wallet-scanner@1.0.0",
+      "part": "near.wallet-scanner@1.0.0",
       "inputs": {
         "account": "form.wallet"
       },
@@ -38,7 +38,7 @@
     },
     {
       "id": "shield",
-      "block": "ai.spam-shield@1.1.0",
+      "part": "ai.spam-shield@1.1.0",
       "inputs": {
         "holdings": "scan.holdings"
       },
@@ -53,7 +53,7 @@
     },
     {
       "id": "fresh",
-      "block": "addr.fresh-check@1.0.0",
+      "part": "addr.fresh-check@1.0.0",
       "inputs": {
         "recipient": "form.recipient"
       },
@@ -65,7 +65,7 @@
     },
     {
       "id": "swap",
-      "block": "intents.confidential-swap@1.0.0",
+      "part": "intents.confidential-swap@1.0.0",
       "inputs": {
         "tokens": "shield.clean",
         "to": "fresh.fresh",
@@ -91,6 +91,8 @@
   "listing": {
     "price_per_run": "1500000",
     "royalty_bps": 1500,
-    "total_shares": "500000"
-  }
+    "total_shares": "500000",
+    "bond": "40000000"
+  },
+  "implements": "job.wallet-exit@1.0.0"
 }

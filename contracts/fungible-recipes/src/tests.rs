@@ -39,7 +39,7 @@ fn ctx_yocto(predecessor: &str) {
     testing_env!(b.build());
 }
 
-const BLOCKS: [(&str, &str, u128); 5] = [
+const PARTS: [(&str, &str, u128); 5] = [
     ("wallet-scanner", "scanlabs.testnet", 20_000),
     ("spam-shield", "shieldai.testnet", 50_000),
     ("dust-filter", "dustco.testnet", 10_000),
@@ -58,9 +58,9 @@ fn setup() -> Contract {
         "sha256:compose".into(),
         U128(30_000),
     );
-    for (id, author, fee) in BLOCKS {
+    for (id, author, fee) in PARTS {
         ctx(author, 0);
-        c.register_block(id.into(), "1.0.0".into(), U128(fee), format!("sha256:{id}"));
+        c.register_part(id.into(), "1.0.0".into(), U128(fee), format!("sha256:{id}"));
     }
     ctx("creator.testnet", 0);
     c.publish_recipe(
@@ -68,7 +68,7 @@ fn setup() -> Contract {
         "Clean up and protect".into(),
         "sha256:sealed".into(),
         acct("runner.testnet"),
-        BLOCKS.iter().map(|b| b.0.to_string()).collect(),
+        PARTS.iter().map(|b| b.0.to_string()).collect(),
         U128(750_000),
         1000,
         U128(1_000_000),
@@ -82,13 +82,13 @@ fn pay_run(c: &mut Contract, buyer: &str, run_id: &str, amount: u128, ts: u64) {
     let _ = c.ft_on_transfer(acct(buyer), U128(amount), msg);
 }
 
-fn sign(run_id: &str, recipe: &str, ok: bool, out: &str, blocks: &[String]) -> Base64VecU8 {
-    let m = run_report_message(CONTRACT, run_id, recipe, ok, out, blocks);
+fn sign(run_id: &str, recipe: &str, ok: bool, out: &str, parts: &[String]) -> Base64VecU8 {
+    let m = run_report_message(CONTRACT, run_id, recipe, ok, out, 0, parts);
     Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec())
 }
 
-fn all_blocks() -> Vec<String> {
-    BLOCKS.iter().map(|b| b.0.to_string()).collect()
+fn all_parts() -> Vec<String> {
+    PARTS.iter().map(|b| b.0.to_string()).collect()
 }
 
 fn bal(c: &Contract, a: &str) -> u128 {
@@ -107,7 +107,7 @@ fn settlement_vectors_match_spec() {
     for case in cases {
         let i = &case["input"];
         let e = &case["expected"];
-        let fees: Vec<u128> = i["block_fees"].as_array().unwrap().iter().map(p).collect();
+        let fees: Vec<u128> = i["part_fees"].as_array().unwrap().iter().map(p).collect();
         let s = settlement_split(
             p(&i["price"]),
             i["protocol_fee_bps"].as_u64().unwrap() as u16,
@@ -120,7 +120,7 @@ fn settlement_vectors_match_spec() {
         let name = case["name"].as_str().unwrap();
         assert_eq!(s.protocol, p(&e["protocol"]), "{name} protocol");
         assert_eq!(s.runner, p(&e["runner"]), "{name} runner");
-        assert_eq!(s.blocks, e["blocks"].as_array().unwrap().iter().map(p).collect::<Vec<_>>());
+        assert_eq!(s.parts, e["parts"].as_array().unwrap().iter().map(p).collect::<Vec<_>>());
         assert_eq!(s.remainder, p(&e["remainder"]), "{name} remainder");
         assert_eq!(s.creator, p(&e["creator"]), "{name} creator");
         assert_eq!(s.pool, p(&e["pool"]), "{name} pool");
@@ -129,7 +129,7 @@ fn settlement_vectors_match_spec() {
         assert_eq!(s.dust_to_protocol, p(&e["dust_to_protocol"]), "{name} dust");
         assert_eq!(s.protocol_total(), p(&e["protocol_total"]), "{name} protocol_total");
         // conservation
-        let total = s.protocol_total() + s.runner + s.blocks.iter().sum::<u128>() + s.creator + s.distributed;
+        let total = s.protocol_total() + s.runner + s.parts.iter().sum::<u128>() + s.creator + s.distributed;
         assert_eq!(total, p(&i["price"]), "{name} conservation");
     }
 }
@@ -150,7 +150,7 @@ fn dividends_vector_harvest_before_transfer() {
     let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), r["protocol_fee_bps"].as_u64().unwrap() as u16, U64(INTERVAL));
     c.add_runner(acct("runner.testnet"), runner_pk_string(), "00".repeat(32), "x".into(), U128(p(&r["runner_fee"])));
     ctx("author", 0);
-    c.register_block("noop".into(), "1".into(), U128(0), "h".into());
+    c.register_part("noop".into(), "1".into(), U128(0), "h".into());
     ctx("creator", 0);
     c.publish_recipe("DIVS".into(), "d".into(), "h".into(), acct("runner.testnet"), vec!["noop".into()], U128(p(&r["price"])), r["royalty_bps"].as_u64().unwrap() as u16, U128(p(&r["total_shares"])));
     let mut n = 0;
@@ -162,7 +162,7 @@ fn dividends_vector_harvest_before_transfer() {
                 ctx(USDC, 0);
                 let _ = c.ft_on_transfer(acct("buyer"), U128(p(&r["price"])), json!({"action":"run","recipe_id":"DIVS","run_id":id,"inputs_hash":"aa".repeat(32)}).to_string());
                 ctx("relayer", 0);
-                c.report_run(id.clone(), true, vec!["noop".into()], OUT.into(), sign(&id, "DIVS", true, OUT, &["noop".to_string()]));
+                c.report_run(id.clone(), true, vec!["noop".into()], OUT.into(), U128(0), sign(&id, "DIVS", true, OUT, &["noop".to_string()]));
             }
             "transfer_shares" => {
                 ctx(step["from"].as_str().unwrap(), 0);
@@ -184,8 +184,8 @@ fn dividends_vector_harvest_before_transfer() {
 fn publish_rejects_price_below_fees() {
     let mut c = setup();
     ctx("creator.testnet", 0);
-    // fees: protocol 2% + runner 30_000 + blocks 140_000 => 170_000 > 150_000
-    c.publish_recipe("CHEAP".into(), "x".into(), "h".into(), acct("runner.testnet"), all_blocks(), U128(150_000), 0, U128(10));
+    // fees: protocol 2% + runner 30_000 + parts 140_000 => 170_000 > 150_000
+    c.publish_recipe("CHEAP".into(), "x".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(150_000), 0, U128(10));
 }
 
 #[test]
@@ -197,8 +197,8 @@ fn publish_rejects_bad_ticker() {
 }
 
 #[test]
-#[should_panic(expected = "unknown block")]
-fn publish_rejects_unknown_block() {
+#[should_panic(expected = "unknown part")]
+fn publish_rejects_unknown_part() {
     let mut c = setup();
     ctx("creator.testnet", 0);
     c.publish_recipe("NOPE".into(), "x".into(), "h".into(), acct("runner.testnet"), vec!["ghost".into()], U128(1_000_000), 0, U128(10));
@@ -245,14 +245,14 @@ fn run_and_signed_report_pays_every_party_in_one_settlement() {
     assert_eq!(c.get_run("r1".into()).unwrap().status, RunStatus::Pending);
 
     ctx("anyone-relayer.testnet", 1);
-    let blocks = all_blocks();
-    let payouts = c.report_run("r1".into(), true, blocks.clone(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(), sign("r1", "CLNP", true, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", &blocks));
-    assert_eq!(payouts.len(), 2 + BLOCKS.len() + 1);
+    let parts = all_parts();
+    let payouts = c.report_run("r1".into(), true, parts.clone(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(), U128(0), sign("r1", "CLNP", true, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", &parts));
+    assert_eq!(payouts.len(), 2 + PARTS.len() + 1);
     assert_eq!(c.get_run("r1".into()).unwrap().status, RunStatus::Settled);
 
     assert_eq!(bal(&c, "protocol.testnet"), 15_000);
     assert_eq!(bal(&c, "runner.testnet"), 30_000);
-    for (_, author, fee) in BLOCKS {
+    for (_, author, fee) in PARTS {
         assert_eq!(bal(&c, author), fee);
     }
     assert_eq!(bal(&c, "creator.testnet"), 56_500);
@@ -268,12 +268,12 @@ fn run_and_signed_report_pays_every_party_in_one_settlement() {
 }
 
 #[test]
-fn partial_block_usage_bills_only_used_blocks() {
+fn partial_part_usage_bills_only_used_parts() {
     let mut c = setup();
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     let used = vec!["wallet-scanner".to_string(), "dust-filter".to_string()];
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, used.clone(), OUT.into(), sign("r1", "CLNP", true, OUT, &used));
+    c.report_run("r1".into(), true, used.clone(), OUT.into(), U128(0), sign("r1", "CLNP", true, OUT, &used));
     assert_eq!(bal(&c, "shieldai.testnet"), 0);
     assert_eq!(bal(&c, "scanlabs.testnet"), 20_000);
 }
@@ -283,11 +283,11 @@ fn partial_block_usage_bills_only_used_blocks() {
 fn report_with_bad_signature_rejected() {
     let mut c = setup();
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
-    let blocks = all_blocks();
+    let parts = all_parts();
     // signed for a different output hash
-    let sig = sign("r1", "CLNP", true, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", &blocks);
+    let sig = sign("r1", "CLNP", true, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", &parts);
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, blocks, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(), sig);
+    c.report_run("r1".into(), true, parts, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(), U128(0), sig);
 }
 
 #[test]
@@ -295,22 +295,22 @@ fn report_with_bad_signature_rejected() {
 fn report_signed_by_other_key_rejected() {
     let mut c = setup();
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
-    let blocks = all_blocks();
-    let m = run_report_message(CONTRACT, "r1", "CLNP", true, OUT, &blocks);
+    let parts = all_parts();
+    let m = run_report_message(CONTRACT, "r1", "CLNP", true, OUT, 0, &parts);
     let sig = Base64VecU8(SigningKey::from_bytes(&[9u8; 32]).sign(m.as_bytes()).to_bytes().to_vec());
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, blocks, OUT.into(), sig);
+    c.report_run("r1".into(), true, parts, OUT.into(), U128(0), sig);
 }
 
 #[test]
-#[should_panic(expected = "blocks_used not part of recipe")]
-fn report_cannot_bill_extra_blocks() {
+#[should_panic(expected = "parts_used not part of recipe")]
+fn report_cannot_bill_extra_parts() {
     let mut c = setup();
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
-    let mut blocks = all_blocks();
-    blocks.push("spam-shield".into()); // billed twice but recipe has it once
+    let mut parts = all_parts();
+    parts.push("spam-shield".into()); // billed twice but recipe has it once
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, blocks.clone(), OUT.into(), sign("r1", "CLNP", true, OUT, &blocks));
+    c.report_run("r1".into(), true, parts.clone(), OUT.into(), U128(0), sign("r1", "CLNP", true, OUT, &parts));
 }
 
 #[test]
@@ -318,10 +318,10 @@ fn report_cannot_bill_extra_blocks() {
 fn report_cannot_settle_twice() {
     let mut c = setup();
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
-    let b = all_blocks();
+    let b = all_parts();
     ctx("relayer.testnet", 1);
-    c.report_run("r1".into(), true, b.clone(), OUT.into(), sign("r1", "CLNP", true, OUT, &b));
-    c.report_run("r1".into(), true, b.clone(), OUT.into(), sign("r1", "CLNP", true, OUT, &b));
+    c.report_run("r1".into(), true, b.clone(), OUT.into(), U128(0), sign("r1", "CLNP", true, OUT, &b));
+    c.report_run("r1".into(), true, b.clone(), OUT.into(), U128(0), sign("r1", "CLNP", true, OUT, &b));
 }
 
 #[test]
@@ -329,7 +329,7 @@ fn failed_run_refunds_buyer() {
     let mut c = setup();
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     ctx("relayer.testnet", 1);
-    let payouts = c.report_run("r1".into(), false, vec![], OUT.into(), sign("r1", "CLNP", false, OUT, &[]));
+    let payouts = c.report_run("r1".into(), false, vec![], OUT.into(), U128(0), sign("r1", "CLNP", false, OUT, &[]));
     assert!(payouts.is_empty());
     assert_eq!(bal(&c, "buyer.testnet"), 750_000);
     assert_eq!(bal(&c, "creator.testnet"), 0);
@@ -496,24 +496,24 @@ fn direct_transfer_failure_still_panics() {
 }
 
 #[test]
-#[should_panic(expected = "block id must match")]
-fn block_id_cannot_contain_report_delimiters() {
+#[should_panic(expected = "part id must match")]
+fn part_id_cannot_contain_report_delimiters() {
     let mut c = setup();
     ctx("evil.testnet", 0);
-    c.register_block("a,b".into(), "1".into(), U128(1), "h".into());
+    c.register_part("a,b".into(), "1".into(), U128(1), "h".into());
 }
 
 #[test]
-#[should_panic(expected = "block id must match")]
-fn block_id_cannot_contain_pipe() {
+#[should_panic(expected = "part id must match")]
+fn part_id_cannot_contain_pipe() {
     let mut c = setup();
     ctx("evil.testnet", 0);
-    c.register_block("a|b".into(), "1".into(), U128(1), "h".into());
+    c.register_part("a|b".into(), "1".into(), U128(1), "h".into());
 }
 
 #[test]
-#[should_panic(expected = "recipe needs at least one block")]
-fn publish_rejects_empty_blocks() {
+#[should_panic(expected = "recipe needs at least one part")]
+fn publish_rejects_empty_parts() {
     let mut c = setup();
     ctx("creator.testnet", 0);
     c.publish_recipe("EMPTY".into(), "e".into(), "h".into(), acct("runner.testnet"), vec![], U128(100_000), 0, U128(10));
@@ -524,9 +524,9 @@ fn publish_rejects_empty_blocks() {
 fn report_rejects_malformed_output_hash() {
     let mut c = setup();
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
-    let blocks = all_blocks();
+    let parts = all_parts();
     ctx("relayer.testnet", 0);
-    c.report_run("r1".into(), true, blocks.clone(), "sha256:out".into(), sign("r1", "CLNP", true, "sha256:out", &blocks));
+    c.report_run("r1".into(), true, parts.clone(), "sha256:out".into(), U128(0), sign("r1", "CLNP", true, "sha256:out", &parts));
 }
 
 // ------------------------------------------------------ batch auctions
@@ -793,25 +793,25 @@ fn book_full_rejects_asks() {
 #[test]
 fn trading_shares_harvests_dividends_correctly() {
     let mut c = setup();
-    let b = all_blocks();
+    let b = all_parts();
     // run 1: creator owns 100%
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     ctx("relayer.testnet", 0);
-    c.report_run("r1".into(), true, b.clone(), OUT.into(), sign("r1", "CLNP", true, OUT, &b));
+    c.report_run("r1".into(), true, b.clone(), OUT.into(), U128(0), sign("r1", "CLNP", true, OUT, &b));
 
     // creator offers 25% in the batch; locked shares keep earning through run 2
     ask(&mut c, "creator.testnet", 1, 250_000, 0);
     bid(&mut c, "alice.testnet", 1, 250_000, 250_000);
     pay_run(&mut c, "buyer.testnet", "r2", 750_000, 0);
     ctx("relayer.testnet", 0);
-    c.report_run("r2".into(), true, b.clone(), OUT.into(), sign("r2", "CLNP", true, OUT, &b));
+    c.report_run("r2".into(), true, b.clone(), OUT.into(), U128(0), sign("r2", "CLNP", true, OUT, &b));
     let s = clear(&mut c, INTERVAL);
     assert_eq!((s.price.unwrap().0, s.volume.0), (1, 250_000));
 
     // run 3: 75/25 split
     pay_run(&mut c, "buyer.testnet", "r3", 750_000, INTERVAL);
     ctx("relayer.testnet", INTERVAL);
-    c.report_run("r3".into(), true, b.clone(), OUT.into(), sign("r3", "CLNP", true, OUT, &b));
+    c.report_run("r3".into(), true, b.clone(), OUT.into(), U128(0), sign("r3", "CLNP", true, OUT, &b));
 
     let pool = 508_500u128;
     let creator_div = bal(&c, "creator.testnet") - 3 * 56_500 - 250_000
@@ -823,8 +823,10 @@ fn trading_shares_harvests_dividends_correctly() {
 
 #[test]
 fn signed_message_format_is_stable() {
-    let m = run_report_message("frs.testnet", "r-1", "CLNP", true, "sha256:ab", &["a".into(), "b".into()]);
-    assert_eq!(m, "frs-run-v1|frs.testnet|r-1|CLNP|ok|sha256:ab|a,b");
+    let m = run_report_message("frs.testnet", "r-1", "CLNP", true, "sha256:ab", 28_024_900, &["a".into(), "b".into()]);
+    assert_eq!(m, "frs-run-v2|frs.testnet|r-1|CLNP|ok|sha256:ab|28024900|a,b");
+    let q = quote_message("frs.testnet", "CLNP", &"ab".repeat(32), 27_500_000, 1_000);
+    assert_eq!(q, format!("frs-quote-v1|frs.testnet|CLNP|{}|27500000|1000", "ab".repeat(32)));
 }
 
 #[test]
@@ -837,4 +839,206 @@ fn intents_solver_pays_on_behalf_of_buyer() {
     assert_eq!(run.buyer.as_str(), "bob.testnet");
     assert_eq!(bal(&c, "bob.testnet"), 50_000);
     assert_eq!(bal(&c, "solver.testnet"), 0);
+}
+
+// ------------------------------------------------------- v2: quotes & bonds
+
+const JOB: &str = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+
+fn quote_json(key: &SigningKey, job: &str, promised: u128, expires_ns: u64) -> serde_json::Value {
+    let m = quote_message(CONTRACT, "CLNP", job, promised, expires_ns);
+    let sig = near_sdk::base64::Engine::encode(&near_sdk::base64::engine::general_purpose::STANDARD, key.sign(m.as_bytes()).to_bytes());
+    json!({"job_hash": job, "promised": U128(promised), "expires_ns": U64(expires_ns), "signature": sig})
+}
+
+fn post_bond(c: &mut Contract, from: &str, amount: u128) {
+    if amount == 0 {
+        return;
+    }
+    ctx(USDC, 0);
+    let msg = json!({"action":"bond","recipe_id":"CLNP"}).to_string();
+    let _ = c.ft_on_transfer(acct(from), U128(amount), msg);
+}
+
+fn pay_quoted(c: &mut Contract, buyer: &str, run_id: &str, quote: serde_json::Value, ts: u64, on_behalf: bool) {
+    ctx(USDC, ts);
+    let mut msg = json!({"action":"run","recipe_id":"CLNP","run_id":run_id,"inputs_hash":"ff".repeat(32),"quote":quote});
+    if on_behalf {
+        msg["on_behalf_of"] = json!(buyer);
+        let _ = c.ft_on_transfer(acct("solver.testnet"), U128(750_000), msg.to_string());
+    } else {
+        let _ = c.ft_on_transfer(acct(buyer), U128(750_000), msg.to_string());
+    }
+}
+
+fn report_v2(c: &mut Contract, run_id: &str, ok: bool, delivered: u128) {
+    let parts = if ok { all_parts() } else { vec![] };
+    let m = run_report_message(CONTRACT, run_id, "CLNP", ok, OUT, delivered, &parts);
+    let sig = Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec());
+    ctx("relayer.testnet", 1);
+    c.report_run(run_id.into(), ok, parts, OUT.into(), U128(delivered), sig);
+}
+
+#[test]
+fn bond_vectors_end_to_end() {
+    let v: serde_json::Value = serde_json::from_str(include_str!("../../test-vectors/bonds.json")).unwrap();
+    for case in v["cases"].as_array().unwrap().clone() {
+        // fresh mocked blockchain (thread-local storage) per case
+        std::thread::spawn(move || bond_case(&case)).join().expect("bond case failed");
+    }
+}
+
+fn bond_case(case: &serde_json::Value) {
+    let p = |x: &serde_json::Value| x.as_str().unwrap().parse::<u128>().unwrap();
+    {
+        let name = case["name"].as_str().unwrap();
+        let i = &case["input"];
+        let e = &case["expected"];
+        let mut c = setup();
+        post_bond(&mut c, "creator.testnet", p(&i["bond_available"]));
+        let promised = p(&i["promised"]);
+        if promised > 0 {
+            pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&signing_key(), JOB, promised, 10_000), 0, false);
+        } else {
+            pay_run(&mut c, "bob.testnet", "r1", 750_000, 0);
+        }
+        let run = c.get_run("r1".into()).unwrap();
+        assert_eq!(run.covered.0, p(&e["covered"]), "{name}: covered");
+        assert_eq!(run.promised.0, promised, "{name}: promised");
+        let before = bal(&c, "bob.testnet");
+        let ok = i["outcome"].as_str().unwrap() == "ok";
+        report_v2(&mut c, "r1", ok, p(&i["delivered"]));
+        let refund = if ok { 0 } else { 750_000 };
+        assert_eq!(bal(&c, "bob.testnet") - before, p(&e["compensation"]) + refund, "{name}: buyer credit");
+        let r = c.get_recipe("CLNP".into()).unwrap();
+        assert_eq!(r.bond_available.0, p(&e["bond_available_after"]), "{name}: bond_available");
+        assert_eq!(r.bond_locked.0, p(&e["bond_locked_after"]), "{name}: bond_locked");
+        assert_eq!(r.compensated_total.0, p(&e["compensation"]), "{name}: compensated_total");
+    }
+}
+
+#[test]
+fn quote_signed_by_other_key_rejected() {
+    let mut c = setup();
+    let other = SigningKey::from_bytes(&[9u8; 32]);
+    ctx(USDC, 0);
+    let msg = json!({"action":"run","recipe_id":"CLNP","run_id":"r1","inputs_hash":"ff".repeat(32),"quote":quote_json(&other, JOB, 1, 10_000)}).to_string();
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.ft_on_transfer(acct("bob.testnet"), U128(750_000), msg)));
+    assert!(r.is_err());
+    assert!(c.get_run("r1".into()).is_none());
+}
+
+#[test]
+#[should_panic(expected = "quote expired")]
+fn expired_quote_rejected() {
+    let mut c = setup();
+    pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&signing_key(), JOB, 1, 500), 501, false);
+}
+
+#[test]
+#[should_panic(expected = "job_hash must be 64 lowercase hex")]
+fn bad_job_hash_rejected() {
+    let mut c = setup();
+    pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&signing_key(), "XYZ", 1, 500), 0, false);
+}
+
+#[test]
+fn quote_failure_with_on_behalf_of_credits_buyer() {
+    let mut c = setup();
+    let other = SigningKey::from_bytes(&[9u8; 32]);
+    pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&other, JOB, 1, 10_000), 0, true);
+    assert!(c.get_run("r1".into()).is_none());
+    assert_eq!(bal(&c, "bob.testnet"), 750_000);
+    assert_eq!(bal(&c, "solver.testnet"), 0);
+    pay_quoted(&mut c, "bob.testnet", "r2", quote_json(&signing_key(), JOB, 1, 10), 11, true);
+    assert_eq!(bal(&c, "bob.testnet"), 1_500_000, "expired quote also credited to buyer");
+}
+
+#[test]
+fn bond_from_unknown_recipe_with_on_behalf_of_credited() {
+    let mut c = setup();
+    ctx(USDC, 0);
+    let msg = json!({"action":"bond","recipe_id":"NOPE","on_behalf_of":"creator.testnet"}).to_string();
+    let _ = c.ft_on_transfer(acct("solver.testnet"), U128(5), msg);
+    assert_eq!(bal(&c, "creator.testnet"), 5);
+}
+
+#[test]
+fn withdraw_bond_limits() {
+    let mut c = setup();
+    post_bond(&mut c, "creator.testnet", 10_000_000);
+    pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&signing_key(), JOB, 6_000_000, 10_000), 0, false);
+    let r = c.get_recipe("CLNP".into()).unwrap();
+    assert_eq!((r.bond_available.0, r.bond_locked.0), (4_000_000, 6_000_000));
+    // non-creator
+    ctx("bob.testnet", 0);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.withdraw_bond("CLNP".into(), U128(1)))).is_err());
+    // locked part not withdrawable
+    ctx("creator.testnet", 0);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.withdraw_bond("CLNP".into(), U128(4_000_001)))).is_err());
+    ctx("creator.testnet", 0);
+    c.withdraw_bond("CLNP".into(), U128(4_000_000));
+    assert_eq!(bal(&c, "creator.testnet"), 4_000_000);
+    assert_eq!(c.get_recipe("CLNP".into()).unwrap().bond_available.0, 0);
+}
+
+#[test]
+fn reclaim_releases_cover_and_counts_failure() {
+    let mut c = setup();
+    post_bond(&mut c, "creator.testnet", 10_000_000);
+    pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&signing_key(), JOB, 6_000_000, u64::MAX), 0, false);
+    ctx("bob.testnet", RUN_TIMEOUT_NS);
+    c.reclaim_run("r1".into());
+    let r = c.get_recipe("CLNP".into()).unwrap();
+    assert_eq!((r.bond_available.0, r.bond_locked.0, r.failed), (10_000_000, 0, 1));
+}
+
+#[test]
+fn track_record_counts_only_successful_quoted_runs() {
+    let mut c = setup();
+    post_bond(&mut c, "creator.testnet", 25_000_000);
+    pay_quoted(&mut c, "bob.testnet", "r1", quote_json(&signing_key(), JOB, 27_500_000, 10_000), 0, false);
+    report_v2(&mut c, "r1", true, 28_000_000);
+    pay_quoted(&mut c, "bob.testnet", "r2", quote_json(&signing_key(), JOB, 10_000_000, 10_000), 0, false);
+    report_v2(&mut c, "r2", true, 7_000_000);
+    pay_quoted(&mut c, "bob.testnet", "r3", quote_json(&signing_key(), JOB, 5_000_000, 10_000), 0, false);
+    report_v2(&mut c, "r3", false, 0);
+    pay_run(&mut c, "bob.testnet", "r4", 750_000, 0);
+    report_v2(&mut c, "r4", true, 99_000_000); // unquoted: excluded from promise stats
+    let r = c.get_recipe("CLNP".into()).unwrap();
+    assert_eq!(r.runs, 3);
+    assert_eq!(r.failed, 1);
+    assert_eq!(r.promised_total.0, 37_500_000);
+    assert_eq!(r.delivered_total.0, 35_000_000);
+    assert_eq!(r.compensated_total.0, 3_000_000);
+    assert_eq!(r.bond_available.0, 22_000_000);
+    assert_eq!(r.bond_locked.0, 0);
+}
+
+#[test]
+fn payout_roles_name_parts() {
+    let mut c = setup();
+    pay_run(&mut c, "bob.testnet", "r1", 750_000, 0);
+    let parts = all_parts();
+    let m = run_report_message(CONTRACT, "r1", "CLNP", true, OUT, 0, &parts);
+    let sig = Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec());
+    ctx("relayer.testnet", 1);
+    let payouts = c.report_run("r1".into(), true, parts, OUT.into(), U128(0), sig);
+    let roles: Vec<String> = payouts.iter().map(|p| p.role.clone()).collect();
+    assert_eq!(roles[0], "protocol");
+    assert_eq!(roles[1], "runner");
+    assert_eq!(roles[2], "part:wallet-scanner");
+    assert_eq!(roles.last().unwrap(), "creator_royalty");
+}
+
+#[test]
+#[should_panic(expected = "invalid runner signature")]
+fn report_signed_with_wrong_delivered_rejected() {
+    let mut c = setup();
+    pay_run(&mut c, "bob.testnet", "r1", 750_000, 0);
+    let parts = all_parts();
+    let m = run_report_message(CONTRACT, "r1", "CLNP", true, OUT, 1, &parts);
+    let sig = Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec());
+    ctx("relayer.testnet", 1);
+    c.report_run("r1".into(), true, parts, OUT.into(), U128(2), sig);
 }

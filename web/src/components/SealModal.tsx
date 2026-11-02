@@ -13,7 +13,7 @@ export function SealModal({ recipe, catalog, ipo, auto, onClose }: { recipe: Rec
   const [checks, setChecks] = useState<Check[]>([]);
   const [env, setEnv] = useState<SealedEnvelope>();
   const [encPk, setEncPk] = useState('');
-  const [tx, setTx] = useState<{ tx: string; block: number; sealed_hash: string }>();
+  const [tx, setTx] = useState<{ tx: string; height: number; sealed_hash: string }>();
   const [err, setErr] = useState('');
   const started = useRef(false);
 
@@ -30,7 +30,7 @@ export function SealModal({ recipe, catalog, ipo, auto, onClose }: { recipe: Rec
   const publish = async (e: SealedEnvelope) => {
     try {
       const listing = publicListing(recipe, catalog);
-      const r = await api('/api/publish', { listing, sealed: e, ipo });
+      const r = await api('/api/publish', { listing, sealed: e, ipo, bond: recipe.listing.bond ?? '0' });
       setTx(r); setStage(3); return true;
     } catch (x) { setErr((x as Error).message); return false; }
   };
@@ -47,7 +47,7 @@ export function SealModal({ recipe, catalog, ipo, auto, onClose }: { recipe: Rec
     })();
   }, []);
 
-  const plaintext = JSON.stringify({ nodes: recipe.nodes.map((n) => ({ id: n.id, block: n.block, inputs: n.inputs, params: n.params })) }, null, 1);
+  const plaintext = JSON.stringify({ nodes: recipe.nodes.map((n) => ({ id: n.id, part: n.part, inputs: n.inputs, params: n.params })) }, null, 1);
   const listItems = ['Verify the runner attestation', 'Seal the recipe in this browser', 'Publish listing and commitment', 'Listed on the exchange'];
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Seal and publish">
@@ -67,7 +67,7 @@ export function SealModal({ recipe, catalog, ipo, auto, onClose }: { recipe: Rec
             {checks.map((c) => <div key={c.id} className={'check ' + c.status}><span className="i">{c.status === 'pass' ? '✓' : c.status === 'skip' ? '○' : '✕'}</span><span>{c.label}</span>{c.status === 'skip' && <span className="d">{c.detail}</span>}</div>)}
           </div>}
           {env && <div className="small"><span className="muted">on-chain commitment</span><div className="hash">{sealedHash(env)}</div></div>}
-          {tx && <div className="small"><span className="muted">publish_recipe</span><div className="hash">tx {tx.tx} · block {tx.block}</div></div>}
+          {tx && <div className="small"><span className="muted">publish_recipe</span><div className="hash">tx {tx.tx} · block {tx.height}</div></div>}
           {err && <div className="diag error">{err}</div>}
           <div className="row wrap">
             {stage === 1 && !auto && <button className="btn seal" onClick={() => doSeal(encPk)}>Seal in this browser</button>}

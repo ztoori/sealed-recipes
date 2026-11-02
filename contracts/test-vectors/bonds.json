@@ -1,0 +1,110 @@
+{
+ "spec": "docs/CONTRACT_SPEC.md#bonds-quotes-backed-by-money",
+ "cases": [
+  {
+   "name": "delivered-more-than-promised",
+   "input": {
+    "bond_available": "25000000",
+    "promised": "27500000",
+    "delivered": "28024900",
+    "outcome": "ok"
+   },
+   "expected": {
+    "covered": "25000000",
+    "compensation": "0",
+    "bond_available_after": "25000000",
+    "bond_locked_after": "0"
+   }
+  },
+  {
+   "name": "exact-delivery",
+   "input": {
+    "bond_available": "25000000",
+    "promised": "10000000",
+    "delivered": "10000000",
+    "outcome": "ok"
+   },
+   "expected": {
+    "covered": "10000000",
+    "compensation": "0",
+    "bond_available_after": "25000000",
+    "bond_locked_after": "0"
+   }
+  },
+  {
+   "name": "shortfall-fully-covered",
+   "input": {
+    "bond_available": "25000000",
+    "promised": "27500000",
+    "delivered": "20000000",
+    "outcome": "ok"
+   },
+   "expected": {
+    "covered": "25000000",
+    "compensation": "7500000",
+    "bond_available_after": "17500000",
+    "bond_locked_after": "0"
+   }
+  },
+  {
+   "name": "shortfall-capped-by-bond",
+   "input": {
+    "bond_available": "5000000",
+    "promised": "27500000",
+    "delivered": "0",
+    "outcome": "ok"
+   },
+   "expected": {
+    "covered": "5000000",
+    "compensation": "5000000",
+    "bond_available_after": "0",
+    "bond_locked_after": "0"
+   }
+  },
+  {
+   "name": "no-bond",
+   "input": {
+    "bond_available": "0",
+    "promised": "27500000",
+    "delivered": "1000000",
+    "outcome": "ok"
+   },
+   "expected": {
+    "covered": "0",
+    "compensation": "0",
+    "bond_available_after": "0",
+    "bond_locked_after": "0"
+   }
+  },
+  {
+   "name": "failed-run-releases-cover",
+   "input": {
+    "bond_available": "25000000",
+    "promised": "27500000",
+    "delivered": "0",
+    "outcome": "fail"
+   },
+   "expected": {
+    "covered": "25000000",
+    "compensation": "0",
+    "bond_available_after": "25000000",
+    "bond_locked_after": "0"
+   }
+  },
+  {
+   "name": "unquoted-run",
+   "input": {
+    "bond_available": "25000000",
+    "promised": "0",
+    "delivered": "0",
+    "outcome": "ok"
+   },
+   "expected": {
+    "covered": "0",
+    "compensation": "0",
+    "bond_available_after": "25000000",
+    "bond_locked_after": "0"
+   }
+  }
+ ]
+}

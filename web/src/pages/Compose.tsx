@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ReactFlow, Background, Controls, Handle, Position, applyNodeChanges, type Connection, type Edge, type Node, type NodeChange, type NodeProps, type EdgeChange, ReactFlowProvider, useReactFlow } from '@xyflow/react';
-import { compatibleSwaps, swapBlock, validateRecipe, type BlockManifest, type Catalog, type Recipe, type FormField } from '../../../core/src/frs';
+import { compatibleSwaps, swapPart, validateRecipe, withdrawalRisk, type PartManifest, type Catalog, type Recipe, type FormField } from '../../../core/src/frs';
 import { api, money, usd, usePoll } from '../api';
 import { useApp } from '../App';
 import { SealModal } from '../components/SealModal';
@@ -17,8 +17,8 @@ function blank(): Recipe {
   return { frs: '1.0', kind: 'recipe', meta: { ticker: '', name: 'Untitled recipe', creator: 'chef.testnet', description: '' }, form: [], nodes: [], output: '', listing: { price_per_run: '500000', royalty_bps: 1000, total_shares: '1000000' } };
 }
 
-type BlockData = { manifest: BlockManifest; label: string; errors: number };
-function BlockNode({ data, selected }: NodeProps<Node<BlockData>>) {
+type PartData = { manifest: PartManifest; label: string; errors: number };
+function PartNode({ data, selected }: NodeProps<Node<PartData>>) {
   const m = data.manifest;
   const ins = Object.entries(m.inputs), outs = Object.entries(m.outputs);
   return (
@@ -43,7 +43,7 @@ function FormNode({ data, selected }: NodeProps<Node<{ fields: FormField[]; cons
     </div>
   );
 }
-const nodeTypes = { block: BlockNode, form: FormNode };
+const nodeTypes = { part: PartNode, form: FormNode };
 
 export function Compose() { return <ReactFlowProvider><ComposeInner /></ReactFlowProvider>; }
 
@@ -60,20 +60,20 @@ function ComposeInner() {
   const storyRan = useRef(false);
 
   const catalog = cat as Catalog | undefined;
-  const manifests = useMemo(() => new Map((catalog?.blocks ?? []).map((b) => [b.id, b])), [catalog]);
+  const manifests = useMemo(() => new Map((catalog?.parts ?? []).map((b) => [b.id, b])), [catalog]);
   const v = useMemo(() => (catalog ? validateRecipe(recipe, catalog) : null), [recipe, catalog]);
 
   // ---------- recipe <-> flow ----------
   const nodes: Node[] = useMemo(() => [
     { id: 'form', type: 'form', position: formPos, measured: dims.form, data: { fields: recipe.form, consts: Object.entries(recipe.consts ?? {}) }, selected: sel === 'form', deletable: false },
-    ...recipe.nodes.filter((n) => manifests.has(n.block)).map((n) => ({ id: n.id, type: 'block', position: n.ui ?? { x: 0, y: 0 }, measured: dims[n.id], selected: sel === n.id, data: { manifest: manifests.get(n.block)!, label: n.id, errors: v?.diagnostics.filter((d) => d.node === n.id && d.severity === 'error').length ?? 0 } })),
+    ...recipe.nodes.filter((n) => manifests.has(n.part)).map((n) => ({ id: n.id, type: 'part', position: n.ui ?? { x: 0, y: 0 }, measured: dims[n.id], selected: sel === n.id, data: { manifest: manifests.get(n.part)!, label: n.id, errors: v?.diagnostics.filter((d) => d.node === n.id && d.severity === 'error').length ?? 0 } })),
   ], [recipe, manifests, sel, v, formPos, dims]);
   const edges: Edge[] = useMemo(() => recipe.nodes.flatMap((n) => Object.entries(n.inputs).map(([port, ref]) => {
     const [src, ...rest] = ref.split('.'); const p = rest.join('.');
     const bad = v?.diagnostics.some((d) => d.node === n.id && d.port === port && d.severity === 'error');
     const sourceHandle = src === 'const' ? 'const:' + p : p;
     const source = src === 'const' ? 'form' : src;
-    const t = src === 'form' ? recipe.form.find((f) => f.id === p)?.type : src === 'const' ? recipe.consts?.[p]?.type : manifests.get(recipe.nodes.find((x) => x.id === src)?.block ?? '')?.outputs[p]?.type;
+    const t = src === 'form' ? recipe.form.find((f) => f.id === p)?.type : src === 'const' ? recipe.consts?.[p]?.type : manifests.get(recipe.nodes.find((x) => x.id === src)?.part ?? '')?.outputs[p]?.type;
     return { id: `${n.id}:${port}`, source, sourceHandle, target: n.id, targetHandle: port, ariaLabel: t, animated: story.step === 1, style: { stroke: bad ? '#b8364a' : '#15233f', strokeWidth: 1.5 }, labelStyle: { fontSize: 10, fill: '#5b6b84' }, labelBgStyle: { fill: '#edf0f3' } } as Edge;
   })), [recipe, v, manifests, story.step]);
 
@@ -98,23 +98,23 @@ function ComposeInner() {
       const nodes2 = r.nodes.map((n) => (n.id === c.target ? { ...n, inputs: { ...n.inputs, [c.targetHandle!]: ref } } : n));
       // the last node in the graph becomes the recipe output if none is set
       const target = nodes2.find((n) => n.id === c.target)!;
-      const m = manifests.get(target.block);
+      const m = manifests.get(target.part);
       const output = r.output || (m ? `${target.id}.${Object.keys(m.outputs)[0]}` : '');
       return { ...r, nodes: nodes2, output };
     });
   }, [manifests]);
 
-  const addBlock = (m: BlockManifest, pos?: { x: number; y: number }) => {
+  const addPart = (m: PartManifest, pos?: { x: number; y: number }) => {
     const base = m.id.split('@')[0].split('.').pop()!.replace(/[^a-z]/g, '').slice(0, 8) || 'node';
     let id = base, i = 2; while (recipe.nodes.some((n) => n.id === id) || id === 'form') id = base + i++;
     const params = Object.fromEntries(Object.entries(m.params).map(([k, s]) => [k, s.default ?? '']));
-    setRecipe((r) => ({ ...r, nodes: [...r.nodes, { id, block: m.id, inputs: {}, params, ui: pos ?? { x: 120 + r.nodes.length * 60, y: 60 + r.nodes.length * 40 } }] }));
+    setRecipe((r) => ({ ...r, nodes: [...r.nodes, { id, part: m.id, inputs: {}, params, ui: pos ?? { x: 120 + r.nodes.length * 60, y: 60 + r.nodes.length * 40 } }] }));
     setSel(id);
   };
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    const id = e.dataTransfer.getData('application/frs-block'); const m = manifests.get(id); if (!m) return;
-    addBlock(m, rf.screenToFlowPosition({ x: e.clientX, y: e.clientY }));
+    const id = e.dataTransfer.getData('application/frs-part'); const m = manifests.get(id); if (!m) return;
+    addPart(m, rf.screenToFlowPosition({ x: e.clientX, y: e.clientY }));
   };
 
   const loadTemplate = (t: string) => { const r = structuredClone(TEMPLATES[t]); r.meta.creator = acting; setRecipe(r); setSel(null); setFormPos({ x: -260, y: 110 }); setTimeout(() => rf.fitView({ padding: 0.08 }), 120); };
@@ -144,9 +144,9 @@ function ComposeInner() {
   }, [story.step, catalog]);
 
   const selNode = recipe.nodes.find((n) => n.id === sel);
-  const selManifest = selNode ? manifests.get(selNode.block) : undefined;
+  const selManifest = selNode ? manifests.get(selNode.part) : undefined;
   const swaps = selNode && catalog ? compatibleSwaps(recipe, selNode.id, catalog) : [];
-  const fees = v?.blockFees ?? 0n;
+  const fees = v?.partFees ?? 0n;
   const price = BigInt(recipe.listing.price_per_run || '0');
   const protocol = (price * PROTOCOL_BPS) / 10000n;
   const minOk = price >= fees + RUNNER_FEE + protocol;
@@ -158,18 +158,19 @@ function ComposeInner() {
 
   return (
     <div className="grid composer">
-      <aside className="panel palette" aria-label="Block palette">
-        <header><h2>Blocks</h2><span className="small muted">drag onto the canvas</span></header>
+      <aside className="panel palette" aria-label="Part palette">
+        <header><h2>Parts</h2><span className="small muted">drag onto the canvas</span></header>
         {CAT_ORDER.map((c) => (
           <div key={c}>
             <div className="cat">{CAT_LABEL[c]}</div>
-            {(catalog?.blocks ?? []).filter((b) => b.category === c).map((b) => (
-              <div key={b.id} className="item" draggable onDragStart={(e) => e.dataTransfer.setData('application/frs-block', b.id)} onDoubleClick={() => addBlock(b)} title={b.summary} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && addBlock(b)}>
+            {(catalog?.parts ?? []).filter((b) => b.category === c).map((b) => (
+              <div key={b.id} className="item" draggable onDragStart={(e) => e.dataTransfer.setData('application/frs-part', b.id)} onDoubleClick={() => addPart(b)} title={b.summary} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && addPart(b)}>
                 <b>{b.name}</b><span>{b.author} · {usd(b.fee_per_call, 2)} per call</span>
               </div>
             ))}
           </div>
         ))}
+        <div style={{ padding: 10 }}><OpenDemand /></div>
       </aside>
 
       <section className="panel canvas" onDragOver={(e) => e.preventDefault()} onDrop={onDrop} aria-label="Recipe canvas">
@@ -191,6 +192,7 @@ function ComposeInner() {
             <div className="body grid" style={{ gap: 10 }}>
               <div className="small muted">{selManifest.summary}</div>
               <div className="small">Can reach: {selManifest.capabilities.length ? selManifest.capabilities.join(', ') : 'nothing (pure)'}</div>
+              {selManifest.disclosure && <Disclosure m={selManifest} />}
               {Object.entries(selManifest.params).map(([k, s]) => (
                 <div className="field" key={k}>
                   <label htmlFor={'p-' + k}>{k} {s.secret && <span className="pill sealed">sealed</span>}</label>
@@ -202,17 +204,17 @@ function ComposeInner() {
                 <div className="small muted">Drop-in replacements (same ports, type-checked)</div>
                 {swaps.map((b) => (
                   <div className="swap-opt" key={b.id}>
-                    <div className="row between"><b className="small">{b.name}</b><span className="small">{usd(b.fee_per_call, 2)} vs {usd(selManifest.fee_per_call, 2)}</span></div>
+                    <div className="row between"><b className="small">{b.name} <RiskPill risk={withdrawalRisk(b.disclosure)} /></b><span className="small">{usd(b.fee_per_call, 2)} vs {usd(selManifest.fee_per_call, 2)}</span></div>
                     <div className="small muted">{b.summary}</div>
-                    <button className="btn ghost sm" onClick={() => catalog && setRecipe(swapBlock(recipe, selNode.id, b.id, catalog))}>Swap in</button>
+                    <button className="btn ghost sm" onClick={() => catalog && setRecipe(swapPart(recipe, selNode.id, b.id, catalog))}>Swap in</button>
                   </div>
                 ))}
               </div>}
-              <label className="row small"><input type="radio" checked={recipe.output.startsWith(selNode.id + '.')} onChange={() => setRecipe((r) => ({ ...r, output: `${selNode.id}.${Object.keys(selManifest.outputs)[0]}` }))} /> This block's output is the recipe result</label>
+              <label className="row small"><input type="radio" checked={recipe.output.startsWith(selNode.id + '.')} onChange={() => setRecipe((r) => ({ ...r, output: `${selNode.id}.${Object.keys(selManifest.outputs)[0]}` }))} /> This part's output is the recipe result</label>
             </div>
           </div>
         ) : (
-          <div className="panel"><div className="body small muted">Select a block to edit its parameters or swap it for a compatible one. Select “Buyer form” to edit the fields buyers fill in.</div></div>
+          <div className="panel"><div className="body small muted">Select a part to edit its parameters or swap it for a compatible one. Select “Buyer form” to edit the fields buyers fill in.</div></div>
         )}
 
         <div className="panel">
@@ -225,16 +227,23 @@ function ComposeInner() {
             <div className="field"><label htmlFor="sh">Shares</label><input id="sh" value={recipe.listing.total_shares} onChange={(e) => setListing('total_shares', e.target.value.replace(/\D/g, ''))} /></div>
             <div className="field"><label htmlFor="ip">IPO price per share</label><input id="ip" value={ipo.price} onChange={(e) => setIpo({ ...ipo, price: Number(e.target.value) })} /></div>
             <div className="field"><label htmlFor="fl">Float offered %</label><input id="fl" value={ipo.float_pct} onChange={(e) => setIpo({ ...ipo, float_pct: Number(e.target.value) })} /></div>
+            <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="jb">Competes for job</label>
+              <select id="jb" value={recipe.implements ?? ''} onChange={(e) => setRecipe((r) => ({ ...r, implements: e.target.value || undefined }))}>
+                <option value="">none (direct runs only)</option>
+                {(catalog?.jobs ?? []).map((j) => <option key={j.id} value={j.id}>{j.name}</option>)}
+              </select></div>
+            <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="bd">Bond backing your quotes (USDC)</label><input id="bd" value={Number(recipe.listing.bond ?? '0') / 1e6} onChange={(e) => setListing('bond', String(Math.round(Number(e.target.value) * 1e6)))} inputMode="decimal" /></div>
+            <div className="small muted" style={{ gridColumn: '1 / 3' }}>Shares are optional funding: sell part of the recipe's future run revenue in batch auctions. The bond pays buyers if a run delivers less than its signed quote.</div>
           </div>
         </div>
 
         <div className="panel">
-          <header><h2>Checks</h2>{v && <span className={'pill ' + (v.ok && minOk ? 'ok' : 'bad')}>{v.ok && minOk ? 'ready to publish' : 'needs fixes'}</span>}</header>
+          <header><h2>Checks</h2>{v && <span className={'pill ' + (v.ok && minOk ? 'ok' : 'bad')}>{v.ok && minOk ? 'ready to publish' : 'needs fixes'}</span>}{v && <RiskPill risk={v.risk} label />}</header>
           <div className="body">
             {v?.diagnostics.map((d, i) => <div key={i} className={'diag ' + d.severity}>{d.node ? `${d.node}: ` : ''}{d.message}</div>)}
             {!minOk && <div className="diag error">Price per run must cover fees: at least {usd(fees + RUNNER_FEE + protocol)}</div>}
             <dl className="kv" style={{ marginTop: 8 }}>
-              <dt>Block fees</dt><dd>{usd(fees)}</dd>
+              <dt>Part fees</dt><dd>{usd(fees)}</dd>
               <dt>TEE runner</dt><dd>{usd(RUNNER_FEE)}</dd>
               <dt>Protocol (2%)</dt><dd>{usd(protocol)}</dd>
               <dt>Left for you and shareholders</dt><dd>{usd(price - fees - RUNNER_FEE - protocol > 0n ? price - fees - RUNNER_FEE - protocol : 0n)}</dd>
@@ -265,6 +274,39 @@ function FormInspector({ recipe, setRecipe, types }: { recipe: Recipe; setRecipe
         <div className="field"><label htmlFor="fty">Type</label><select id="fty" value={type} onChange={(e) => setType(e.target.value)}>{types.map((t) => <option key={t}>{t}</option>)}</select></div>
         <button className="btn ghost sm" disabled={!id || !label} onClick={() => { setRecipe((r) => ({ ...r, form: [...r.form, { id, label, type, required: true, ...(type === 'address.near' ? { generator: 'fresh-implicit' as const } : {}) }] })); setId(''); setLabel(''); }}>Add field</button>
       </div>
+    </div>
+  );
+}
+
+function RiskPill({ risk, label }: { risk: 'low' | 'medium' | 'high'; label?: boolean }) {
+  return <span className={'pill ' + (risk === 'low' ? 'ok' : risk === 'high' ? 'bad' : 'warn')} title="Withdrawal risk: can this be rebuilt if its supplier disappears? Open-weights or bundled code: low. Remote services: medium. Closed models or closed harnesses: high.">{label ? `${risk} withdrawal risk` : risk}</span>;
+}
+
+function Disclosure({ m }: { m: PartManifest }) {
+  const d = m.disclosure, l = m.limits;
+  return (
+    <div className="swap-opt">
+      <div className="row between"><b className="small">Disclosure</b><RiskPill risk={withdrawalRisk(d)} label /></div>
+      <dl className="disc">
+        <dt>Model</dt><dd>{d.model.kind === 'none' ? 'none (code)' : `${d.model.kind}${d.model.name ? ': ' + d.model.name : ''}`}</dd>
+        <dt>Instructions</dt><dd>{d.instructions}</dd>
+        <dt>Harness</dt><dd>{d.harness}</dd>
+        <dt>Verification</dt><dd>{d.verification}</dd>
+        <dt>Runs</dt><dd>{d.runtime === 'bundled' ? 'bundled in the attested runner (pinned by hash)' : 'remote, operated by the supplier'}</dd>
+        {l && <><dt>Limits</dt><dd>{(l.max_ms / 1000).toFixed(0)} s, {l.max_http_calls} HTTP{l.max_model_calls ? `, ${l.max_model_calls} model` : ''} calls, {(l.max_output_bytes / 1000).toFixed(0)} kB out</dd></>}
+      </dl>
+    </div>
+  );
+}
+
+export function OpenDemand() {
+  const [d] = usePoll<{ job_type: string; at: string }[]>('/api/demand', 5000);
+  if (!d?.length) return null;
+  const counts = d.reduce<Record<string, number>>((m, x) => ({ ...m, [x.job_type]: (m[x.job_type] ?? 0) + 1 }), {});
+  return (
+    <div className="panel">
+      <header><h2>Open demand</h2><span className="small muted">jobs nobody serves yet</span></header>
+      <div className="body small">{Object.entries(counts).map(([k, n]) => <div key={k}>{k}: {n} request{n > 1 ? 's' : ''}</div>)}</div>
     </div>
   );
 }

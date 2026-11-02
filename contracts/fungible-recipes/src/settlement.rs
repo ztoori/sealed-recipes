@@ -10,7 +10,7 @@ pub const BPS_DENOM: u128 = 10_000;
 pub struct Split {
     pub protocol: u128,
     pub runner: u128,
-    pub blocks: Vec<u128>,
+    pub parts: Vec<u128>,
     pub remainder: u128,
     pub creator: u128,
     pub pool: u128,
@@ -38,7 +38,7 @@ pub fn settlement_split(
     price: u128,
     protocol_fee_bps: u16,
     runner_fee: u128,
-    block_fees: &[u128],
+    part_fees: &[u128],
     royalty_bps: u16,
     total_shares: u128,
 ) -> Option<Split> {
@@ -46,13 +46,13 @@ pub fn settlement_split(
         return None;
     }
     let protocol = protocol_fee(price, protocol_fee_bps);
-    let block_sum = block_fees
+    let part_sum = part_fees
         .iter()
         .try_fold(0u128, |acc, f| acc.checked_add(*f))?;
     let remainder = price
         .checked_sub(protocol)?
         .checked_sub(runner_fee)?
-        .checked_sub(block_sum)?;
+        .checked_sub(part_sum)?;
     let creator = remainder * royalty_bps as u128 / BPS_DENOM;
     let pool = remainder - creator;
     let acc_increment = pool.checked_mul(ACC_SCALE)? / total_shares;
@@ -61,7 +61,7 @@ pub fn settlement_split(
     Some(Split {
         protocol,
         runner: runner_fee,
-        blocks: block_fees.to_vec(),
+        parts: part_fees.to_vec(),
         remainder,
         creator,
         pool,

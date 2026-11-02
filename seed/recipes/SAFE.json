@@ -8,13 +8,62 @@
     "description": "Read-only: a private AI pass over your wallet that lists every token you should never interact with, and why."
   },
   "form": [
-    { "id": "wallet", "label": "Wallet to audit", "type": "near.account", "required": true, "placeholder": "bob.testnet" }
+    {
+      "id": "wallet",
+      "label": "Wallet to audit",
+      "type": "near.account",
+      "required": true,
+      "placeholder": "bob.testnet"
+    }
   ],
   "nodes": [
-    { "id": "scan", "block": "near.wallet-scanner@1.0.0", "inputs": { "account": "form.wallet" }, "params": {}, "ui": { "x": 0, "y": 120 } },
-    { "id": "shield", "block": "ai.spam-shield@1.1.0", "inputs": { "holdings": "scan.holdings" }, "params": { "model": "Qwen/Qwen3-30B-A3B-Instruct-2507", "policy": "Flag SCAM tokens and explain the red flag in under 12 words. Answer JSON only." }, "ui": { "x": 280, "y": 120 } },
-    { "id": "report", "block": "report.summary@1.0.0", "inputs": { "flags": "shield.flags", "holdings": "scan.holdings" }, "params": {}, "ui": { "x": 560, "y": 120 } }
+    {
+      "id": "scan",
+      "part": "near.wallet-scanner@1.0.0",
+      "inputs": {
+        "account": "form.wallet"
+      },
+      "params": {},
+      "ui": {
+        "x": 0,
+        "y": 120
+      }
+    },
+    {
+      "id": "shield",
+      "part": "ai.spam-shield@1.1.0",
+      "inputs": {
+        "holdings": "scan.holdings"
+      },
+      "params": {
+        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "policy": "Flag SCAM tokens and explain the red flag in under 12 words. Answer JSON only."
+      },
+      "ui": {
+        "x": 280,
+        "y": 120
+      }
+    },
+    {
+      "id": "report",
+      "part": "report.summary@1.0.0",
+      "inputs": {
+        "flags": "shield.flags",
+        "holdings": "scan.holdings"
+      },
+      "params": {},
+      "ui": {
+        "x": 560,
+        "y": 120
+      }
+    }
   ],
   "output": "report.report",
-  "listing": { "price_per_run": "150000", "royalty_bps": 2000, "total_shares": "250000" }
+  "listing": {
+    "price_per_run": "150000",
+    "royalty_bps": 2000,
+    "total_shares": "250000",
+    "bond": "0"
+  },
+  "implements": "job.wallet-audit@1.0.0"
 }

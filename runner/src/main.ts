@@ -4,10 +4,10 @@
  *
  * Privacy rules enforced in this file:
  *  - plaintext recipes / inputs exist only inside `runJob` and are never logged or stored
- *  - anything derived from the buyer's data (block logs, approval requests, the output)
+ *  - anything derived from the buyer's data (part logs, approval requests, the output)
  *    is sealed to the buyer's one-time reply key before it leaves this process; the
- *    marketplace relays ciphertext plus coarse progress (block started / finished)
- *  - the only durable output is a signed report (run_id, ok, output_hash, blocks_used)
+ *    marketplace relays ciphertext plus coarse progress (part started / finished)
+ *  - the only durable output is a signed report (run_id, ok, output_hash, parts_used)
  *  - job endpoints require RUNNER_TOKEN (shared with the marketplace only)
  */
 import express from 'express';
@@ -17,10 +17,12 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { utf8ToBytes } from '@noble/hashes/utils.js';
 import { open, seal, sealedHash, base64, type SealedEnvelope } from '../../core/src/seal.js';
-import { runReportMessage } from '../../core/src/ledger.js';
+import { runReportMessage, quoteMessage } from '../../core/src/ledger.js';
+import { jobHash, type JobPayload } from '../../core/src/jobs.js';
+import { measure, fetchPrices } from './metrics.js';
 import { hashObject, sha256Hex } from '../../core/src/canonical.js';
 import { reportData, type RunnerAttestation } from '../../core/src/attestation.js';
-import { computeCodehash } from '../../core/src/codehash.js';
+import { computeCodehash, loadCatalog } from '../../core/src/codehash.js';
 import type { Catalog, Recipe } from '../../core/src/frs.js';
 import { execute, parseRewrites } from './executor.js';
 import { loadKeys } from './keys.js';
@@ -35,7 +37,9 @@ const NEAR_RPC = env.NEAR_RPC_URL; // when set, views are read from the contract
 const TOKEN = env.RUNNER_TOKEN ?? '';
 const CONTRACT_ID = env.CONTRACT_ID ?? 'fungible-recipes.testnet';
 const rewrites = parseRewrites(env.FRS_REWRITE);
-const catalog = JSON.parse(readFileSync(resolve(ROOT, 'standard/blocks.json'), 'utf8')) as Catalog;
+const ONECLICK = rewrites.get('1click.chaindefuser.com') ?? 'https://1click.chaindefuser.com';
+const QUOTE_TTL_NS = 10n * 60n * 1_000_000_000n;
+const catalog = loadCatalog(ROOT);
 const composeHash = sha256Hex(readFileSync(resolve(ROOT, 'runner/docker-compose.yml'), 'utf8').replace(/\r\n/g, '\n'));
 const { codehash } = computeCodehash(ROOT);
 const keys = await loadKeys(env.TEE_MODE ?? 'local-dev', resolve(ROOT, '.data/runner-dev-keys.json'), composeHash);
@@ -84,9 +88,9 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
   const priv = (type: string, data: Record<string, unknown>) => { if (replyTo) emit(job, 'sealed', { node: data.node ?? null, envelope: seal({ type, data }, replyTo, 'output') }); };
   try {
     // the run (what was paid for) is the source of truth; the recipe is taken from it, not from the request
-    const run = await chainView<{ status: string; inputs_hash: string; recipe_id: string; buyer: string; sealed_hash?: string }>(`runs/${job.runId}`);
+    const run = await chainView<{ status: string; inputs_hash: string; recipe_id: string; buyer: string; sealed_hash?: string; job_hash?: string }>(`runs/${job.runId}`);
     if (run.recipe_id !== job.recipeId) throw new Error(`run ${job.runId} paid for ${run.recipe_id}, not ${job.recipeId}`);
-    const recipeOnChain = await chainView<{ sealed_hash: string; runner_id: string; blocks: string[] }>(`recipes/${run.recipe_id}`);
+    const recipeOnChain = await chainView<{ sealed_hash: string; runner_id: string; parts: string[] }>(`recipes/${run.recipe_id}`);
     if (run.status !== 'Pending') throw new Error(`run is ${run.status}, not Pending (was it paid?)`);
     if (recipeOnChain.runner_id !== RUNNER_ID) throw new Error('recipe is assigned to a different runner');
     const committed = run.sealed_hash ?? recipeOnChain.sealed_hash; // snapshot taken when the run was paid
@@ -100,13 +104,15 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
     if (ih !== run.inputs_hash) throw new Error('sealed inputs do not match the on-chain commitment');
 
     let recipe: Recipe | undefined = open<Recipe>(sealedRecipe, keys.box.secretKey);
-    const opened = open<{ inputs: Record<string, unknown>; reply_to: string }>(sealedInputs, keys.box.secretKey);
+    const opened = open<JobPayload>(sealedInputs, keys.box.secretKey);
     if (!/^[0-9a-f]{64}$/.test(opened?.reply_to ?? '')) throw new Error('sealed inputs must include a reply_to key');
+    // a quoted run must execute exactly the job that was quoted (and that the bond backs)
+    if (run.job_hash && jobHash(opened.inputs, String(opened.salt ?? '')) !== run.job_hash) throw new Error('inputs do not match the quoted job');
     let inputs: Record<string, unknown> | undefined = opened.inputs;
     replyTo = opened.reply_to;
     emit(job, 'decrypted', { nodes: recipe.nodes.length, note: 'recipe + inputs decrypted inside the runner; plaintext never leaves this process' });
 
-    const PUBLIC = new Set(['block_start', 'block_done']);
+    const PUBLIC = new Set(['part_start', 'part_done']);
     const res = await execute(job.runId, recipe, inputs, {
       catalog, rewrites,
       emit: (t, d) => (PUBLIC.has(t) ? emit(job, t, d) : priv(t, d)),
@@ -119,12 +125,14 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
       }),
     });
     const output = res.output;
+    const jobType = catalog.jobs?.find((j) => j.id === recipe?.implements);
     recipe = undefined; inputs = undefined; // drop plaintext
 
-    const msg = runReportMessage(CONTRACT_ID, job.runId, job.recipeId, res.ok, res.outputHash, res.blocksUsed);
+    const delivered = res.ok ? measure(jobType, output, await fetchPrices(ONECLICK).catch(() => new Map())).delivered : 0n;
+    const msg = runReportMessage(CONTRACT_ID, job.runId, job.recipeId, res.ok, res.outputHash, delivered.toString(), res.partsUsed);
     const signature = base64.enc(nacl.sign.detached(utf8ToBytes(msg), keys.sign.secretKey));
     emit(job, 'signed', { message: msg, signature, signing_pk: keys.signingPk });
-    const rep = await fetch(`${CHAIN}/report_run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ run_id: job.runId, success: res.ok, blocks_used: res.blocksUsed, output_hash: res.outputHash, signature }) });
+    const rep = await fetch(`${CHAIN}/report_run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ run_id: job.runId, success: res.ok, parts_used: res.partsUsed, output_hash: res.outputHash, delivered: delivered.toString(), signature }) });
     const settlement = await rep.json();
     if (!rep.ok) throw new Error('report_run rejected: ' + JSON.stringify(settlement));
     priv('result', { ok: res.ok, error: res.error, output });
@@ -158,6 +166,32 @@ app.post('/runs', auth, (req, res) => {
   void runJob(job, sealed_recipe, sealed_inputs);
   res.status(202).json({ ok: true });
 });
+/**
+ * Recipe intents: dry-run one recipe for a posted job and sign a quote. Read-only: swaps are priced with dry
+ * 1Click quotes and nothing is signed for the buyer. Everything describing the buyer's wallet is sealed to them.
+ */
+app.post('/quotes', auth, async (req, res) => {
+  const { recipe_id, sealed_recipe, sealed_job, job_hash } = req.body ?? {};
+  const fail = (error: string) => res.json({ recipe_id, ok: false, error, expected: '0', promised: '0', expires_ns: '0', job_hash, signature: '' });
+  try {
+    const onChain = await chainView<{ sealed_hash: string; runner_id: string }>(`recipes/${recipe_id}`);
+    if (onChain.runner_id !== RUNNER_ID) return fail('recipe is assigned to a different runner');
+    if (sealedHash(sealed_recipe) !== onChain.sealed_hash) return fail('sealed recipe does not match the on-chain commitment');
+    let recipe: Recipe | undefined = open<Recipe>(sealed_recipe, keys.box.secretKey);
+    const p = open<JobPayload>(sealed_job, keys.box.secretKey);
+    if (jobHash(p.inputs, p.salt) !== job_hash) return fail('job_hash does not match the sealed job');
+    const jobType = catalog.jobs?.find((j) => j.id === recipe!.implements);
+    if (!jobType) return fail('recipe does not implement a job type');
+    const dry = await execute(`quote-${recipe_id}`, recipe, p.inputs, { catalog, rewrites, mode: 'quote', emit: () => {}, secrets: { nearAiKey: env.NEAR_AI_API_KEY, oneClickJwt: env.ONECLICK_JWT }, requestApproval: async () => ({ approved: false, txHashes: [] }) });
+    recipe = undefined;
+    if (!dry.ok) return fail(dry.error ?? 'dry run failed');
+    const m = measure(jobType, dry.output, await fetchPrices(ONECLICK));
+    const expires_ns = (BigInt(Date.now()) * 1_000_000n + QUOTE_TTL_NS).toString();
+    const signature = base64.enc(nacl.sign.detached(utf8ToBytes(quoteMessage(CONTRACT_ID, recipe_id, job_hash, m.promised.toString(), expires_ns)), keys.sign.secretKey));
+    res.json({ recipe_id, ok: true, expected: m.expected.toString(), promised: m.promised.toString(), expires_ns, job_hash, signature, details: seal({ output: dry.output }, p.reply_to, 'output') });
+  } catch (e) { fail((e as Error).message); }
+});
+
 app.get('/runs/:id/events', auth, (req, res) => {
   const job = jobs.get(String(req.params.id));
   if (!job) { res.status(404).end(); return; }

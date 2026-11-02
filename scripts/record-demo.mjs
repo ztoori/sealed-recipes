@@ -39,26 +39,31 @@ const uncard = () => page.evaluate(() => document.getElementById('rec-card')?.re
 const shot = (n) => page.screenshot({ path: resolve(out, n) });
 
 await page.goto(BASE); await page.waitForTimeout(1200);
-await card('Fungible Recipes', 'Your workflow is the edge. Seal it, list it, and get paid every time it runs.<br/><span style="color:#f2c14e">Built at NEAR HACKATHON</span>');
+await card('Fungible Recipes', 'Intents for workflows: post a job, sealed workflows compete, every builder gets paid.<br/><span style="color:#f2c14e">Built at NEAR HACKATHON</span>');
 await page.waitForTimeout(3500); await uncard();
-await page.waitForTimeout(2500); await shot('01-exchange.png');
+await page.waitForTimeout(2500); await shot('01-post-a-job.png');
 await page.getByRole('button', { name: 'Play the demo story' }).click();
 const t0 = Date.now(); let shots = 0;
 while (Date.now() - t0 < 120_000) {
   await page.waitForTimeout(500);
   if (shots === 0 && await page.locator('.waxseal.on').count()) { await page.waitForTimeout(700); await shot('02-sealed.png'); shots++; }
-  if (shots === 1 && await page.locator('.wallet-modal').count()) { await shot('03-wallet-approval.png'); shots++; }
-  if (shots === 2 && await page.getByText('report_run verified').count()) { await page.waitForTimeout(800); await shot('04-execution.png'); shots++; }
-  if (shots === 3 && await page.locator('.sankey').count()) { await page.waitForTimeout(1500); await shot('05-settlement.png'); shots++; }
-  if (await page.getByText('That was one complete run').count()) break;
+  if (shots === 1 && await page.locator('#quotes').count()) { await page.waitForTimeout(1200); await shot('03-quotes.png'); shots++; }
+  if (shots === 2 && await page.locator('.wallet-modal').count()) { await shot('04-wallet-approval.png'); shots++; }
+  if (shots === 3 && await page.getByText('report_run verified').count()) { await page.waitForTimeout(800); await shot('05-execution.png'); shots++; }
+  if (shots === 4 && await page.locator('.sankey').count()) { await page.waitForTimeout(1500); await shot('06-settlement.png'); shots++; }
+  if (await page.getByText('That was one job, end to end').count()) break;
 }
 await page.waitForTimeout(2000);
-await page.getByRole('button', { name: 'Open CLNP' }).click(); await page.waitForTimeout(3500); await shot('06-exchange-clnp.png');
+await page.getByRole('button', { name: 'Open CLNP' }).click(); await page.waitForTimeout(3500); await shot('07-revenue-shares-clnp.png');
 await page.selectOption('select[aria-label="Acting as account"]', 'chef.testnet');
-await page.getByRole('button', { name: 'Wallet', exact: true }).click(); await page.waitForTimeout(2500); await shot('07-wallet-dividends.png');
-await page.getByRole('button', { name: 'Trust & privacy', exact: true }).click(); await page.waitForTimeout(3500); await shot('08-trust.png');
+await page.getByRole('button', { name: 'Wallet', exact: true }).click(); await page.waitForTimeout(2500); await shot('08-wallet.png');
+await page.getByRole('button', { name: 'Trust & privacy', exact: true }).click(); await page.waitForTimeout(3500); await shot('09-trust.png');
+await page.getByRole('button', { name: 'Compose', exact: true }).click(); await page.waitForTimeout(800);
+await page.getByText('Load “Dust sweeper”').click(); await page.waitForTimeout(1200);
+await page.locator('.react-flow__node').filter({ hasText: 'Allowlist Shield' }).click(); await page.waitForTimeout(1200);
+await shot('10-compose-disclosure.png');
 await page.mouse.wheel(0, 500); await page.waitForTimeout(2500);
-await card('Sealed recipes. Paid per run. Traded like stocks.', 'NEAR Intents for payment and confidential swaps · TEE runner with attestation · NEAR AI Cloud verified inference · one settlement pays everyone');
+await card('Intents for workflows.', 'Sealed recipes compete with signed, bonded quotes. NEAR Intents for payment and confidential swaps, an attested TEE runner, NEAR AI Cloud private models, and one settlement that pays every builder.');
 await page.waitForTimeout(4000);
 await ctx.close(); await browser.close();
 

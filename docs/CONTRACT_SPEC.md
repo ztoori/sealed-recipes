@@ -2,7 +2,7 @@
 
 This file is the single source of truth shared by the Rust contract
 (`contracts/fungible-recipes`) and the TypeScript local mirror
-(`packages/core/src/ledger.ts`). Both are tested against the same vectors in
+(`core/src/ledger.ts`). Both are tested against the same vectors in
 `contracts/test-vectors/*.json`.
 
 All token amounts are integers in the payment token's smallest unit
@@ -10,12 +10,72 @@ All token amounts are integers in the payment token's smallest unit
 on mainnet; any NEP-141 on testnet). JSON amounts are strings (`U128`).
 Shares are integer units (no decimals).
 
+## Changelog: v2 (recipe intents, bonded quotes, parts)
+
+The rest of this file is written in v2 terms; this section lists what changed from v1.
+
+### Blocks are now called parts
+A *part* is anything a recipe is built from: code, a specialist agent or a data source. Renames, with no
+change in behaviour:
+`Block`→`Part`, `register_block`→`register_part`, `get_block`/`list_blocks`→`get_part`/`list_parts`,
+`Recipe.blocks`→`Recipe.parts`, `publish_recipe(…, blocks, …)`→`publish_recipe(…, parts, …)`,
+`report_run(…, blocks_used, …)`→`report_run(…, parts_used, …)`, `quote_settlement(recipe_id, parts_used?)`,
+event `block_registered`→`part_registered`, payout role `block:<id>`→`part:<id>`, error strings
+`part id must match ^[a-z0-9._@-]{1,64}$`, `recipe needs at least one part`, `parts_used not part of recipe`.
+
+### Recipe intents: a buyer posts a job, recipes compete with signed quotes
+Off-chain, every listed recipe that implements the job's type does a **dry run** inside the TEE runner and
+returns a quote: the value it expects to deliver, in payment-token units (`promised`). The runner signs it:
+
+```
+frs-quote-v1|<contract_account_id>|<recipe_id>|<job_hash>|<promised>|<expires_ns>
+```
+
+`job_hash = sha256(canonical(job inputs))`, computed by the buyer; the runner checks it against the decrypted
+inputs before executing. The buyer picks a quote and pays with
+`{"action":"run", …, "quote": {"job_hash": "<64 hex>", "promised": "<U128>", "expires_ns": "<U64>", "signature": "<base64>"}}`.
+`quote` is optional (plain pay-per-run still works). When present, `ft_on_transfer` checks it, in this order,
+after the v1 run checks: `job_hash` must be 64 lowercase hex (`job_hash must be 64 lowercase hex`), the signature
+must verify against the recipe's runner key (`invalid quote signature`), and `now <= expires_ns` (`quote expired`).
+Failures follow the v1 `on_behalf_of` rules (credit and `transfer_rejected`, or panic).
+
+### Bonds: quotes backed by money
+- `ft_on_transfer` msg `{"action":"bond","recipe_id":"CLNP"}`. Anyone may add to a recipe's bond (usually the
+  creator). Errors: `unknown recipe` (credit `on_behalf_of` or panic, as in v1). Emits `bond_posted {recipe_id: string, from: AccountId, amount: U128, bond_available: U128}`.
+- When a quoted run is paid, the contract sets aside `covered = min(promised, bond_available)` from the bond
+  (`bond_available -= covered; bond_locked += covered`). Run stores `job_hash, promised, covered`.
+- `withdraw_bond(recipe_id, amount)`: creator only, `amount <= bond_available`, credits the creator's
+  withdrawable balance. Emits `bond_withdrawn {recipe_id: string, amount: U128, bond_available: U128}`.
+
+### Settlement with delivery
+`report_run(run_id, success, parts_used, output_hash, delivered: U128, signature)` where the signed message is now
+
+```
+frs-run-v2|<contract_account_id>|<run_id>|<recipe_id>|<ok|fail>|<output_hash>|<delivered>|<parts_used joined by ",">
+```
+
+On success, the v1 settlement runs unchanged, then:
+`shortfall = max(0, promised - delivered)`; `compensation = min(shortfall, covered)` is credited to the buyer
+from the bond; `bond_locked -= covered`; `bond_available += covered - compensation`.
+On failure or `reclaim_run`, the buyer is refunded as in v1 and `covered` goes back to `bond_available`.
+Unquoted runs have `promised = covered = 0`.
+
+### Track record (on the Recipe, public)
+`runs` (successful, as before), `failed: u64` (refunded runs, both reported failures and timeouts),
+`promised_total: U128`, `delivered_total: U128` (sums over successful **quoted** runs),
+`compensated_total: U128`, `bond_available: U128`, `bond_locked: U128`.
+
+### Events
+- `run_requested` carries the full Run, which now includes `job_hash` (string, `""` when unquoted), `promised` and `covered`.
+- `frs_settlement` adds `delivered: U128` and `compensation: U128`.
+- New: `bond_posted`, `bond_withdrawn` (fields above).
+
 ## Roles
 
 | Role | Who | What they do |
 |---|---|---|
 | owner | contract admin (DAO in production) | sets protocol fee, approves TEE runners |
-| block author | builder account | registers blocks with a per-call fee |
+| part author | builder account | registers parts (code, specialist agents, data sources) with a per-call fee |
 | creator | recipe author | publishes a sealed recipe, receives 100% of its shares + royalty |
 | buyer | anyone | pays per run via NEAR Intents (`ft_transfer_call` from 1Click) |
 | runner | TEE worker key | executes sealed recipes, signs run reports |
@@ -24,11 +84,13 @@ Shares are integer units (no decimals).
 ## State objects
 
 ```
-Block   { id, version, author, fee_per_call, manifest_hash, active }
+Part    { id, version, author, fee_per_call, manifest_hash, active }
 Runner  { id, signing_pk: ed25519 (base58 "ed25519:..."), enc_pk_hex (x25519), codehash, fee_per_run, active }
-Recipe  { id (ticker, ^[A-Z0-9]{3,6}$), name, creator, sealed_hash, runner_id, blocks: [block_id],
-          price_per_run, royalty_bps, total_shares, acc_per_share (u128, scaled 1e18), runs, revenue, listed }
-Run     { run_id, recipe_id, buyer, amount, inputs_hash, sealed_hash (snapshot at payment), status: Pending|Settled|Refunded, created_ns }
+Recipe  { id (ticker, ^[A-Z0-9]{3,6}$), name, creator, sealed_hash, runner_id, parts: [part_id],
+          price_per_run, royalty_bps, total_shares, acc_per_share (u128, scaled 1e18), runs, revenue, listed,
+          failed, promised_total, delivered_total, compensated_total, bond_available, bond_locked }
+Run     { run_id, recipe_id, buyer, amount, inputs_hash, sealed_hash (snapshot at payment), status: Pending|Settled|Refunded, created_ns,
+          job_hash ("" if unquoted), promised, covered }
 Order   { id (u64), recipe_id, owner, side: Bid|Ask, price (per share), qty (remaining shares), created_ns }
 Batch   { id (u64, 1 = opening auction), opened_ns }   (one per recipe; closes at opened_ns + batch_interval_ns)
 ```
@@ -41,12 +103,13 @@ Batch   { id (u64, 1 = opening auction), opened_ns }   (one per recipe; closes a
 - `set_runner_active(id, active)` — owner only.
 
 ### Builders & creators
-- `register_block(id, version, fee_per_call, manifest_hash)` — author = predecessor. Id unique and must match `^[a-z0-9._@-]{1,64}$` (no `,` or `|`, which delimit the signed report).
-- `publish_recipe(id, name, sealed_hash, runner_id, blocks, price_per_run, royalty_bps, total_shares)`
+- `register_part(id, version, fee_per_call, manifest_hash)` — author = predecessor. Id unique and must match `^[a-z0-9._@-]{1,64}$` (no `,` or `|`, which delimit the signed report).
+- `publish_recipe(id, name, sealed_hash, runner_id, parts, price_per_run, royalty_bps, total_shares)`
   - creator = predecessor; mints `total_shares` to creator.
-  - rejects if `price_per_run < protocol_fee(price) + runner.fee_per_run + Σ block.fee_per_call` (minimum viable price).
-  - `blocks` must be non-empty.
-  - `royalty_bps <= 5000`, `total_shares > 0`, every block exists & active, runner active.
+  - rejects if `price_per_run < protocol_fee(price) + runner.fee_per_run + Σ part.fee_per_call` (minimum viable price).
+  - `parts` must be non-empty.
+  - `royalty_bps <= 5000`, `total_shares > 0`, every part exists & active, runner active.
+- `withdraw_bond(recipe_id, amount)` — creator only, `amount <= bond_available`; credited to the creator's balance.
 - `update_sealed(id, sealed_hash)` — creator only (new version of the sealed graph, same interface).
 
 ### Pay-per-run (NEAR Intents)
@@ -55,41 +118,48 @@ The buyer's 1Click quote targets the payment token on NEAR with
 delivery arrives as `ft_transfer_call` → `ft_on_transfer(sender_id, amount, msg)`.
 
 `msg` is JSON:
-- `{"action":"run","recipe_id":"CLNP","run_id":"r-…","inputs_hash":"<hex sha256>"}`
+- `{"action":"run","recipe_id":"CLNP","run_id":"r-…","inputs_hash":"<hex sha256>","quote":{…}?}`
+  - optional `quote` = `{job_hash, promised, expires_ns, signature}` signed by the recipe's runner over
+    `frs-quote-v1|<contract>|<recipe_id>|<job_hash>|<promised>|<expires_ns>`; checked after the checks below
+    (`job_hash must be 64 lowercase hex`, `invalid quote signature`, `quote expired`). Sets aside
+    `covered = min(promised, bond_available)` from the recipe's bond.
   - `run_id` must match `^[A-Za-z0-9_-]{1,64}$`; `inputs_hash` must be 64 lowercase hex.
   - the run records the recipe's current `sealed_hash`; a later `update_sealed` only affects new runs.
   - `amount` must be `>= price_per_run`; excess is credited to the owner's (`on_behalf_of` or sender) withdrawable balance.
   - creates `Run{status:Pending}`. Returns `"0"` (nothing refunded to the token contract).
 - `{"action":"bid","recipe_id":"CLNP","price":"<per share>","qty":"<shares>"}`
   - escrows `price*qty`; excess credited to balance; then matches (see order book).
-- Both accept an optional `"on_behalf_of":"<account>"`. With NEAR Intents the
+- `{"action":"bond","recipe_id":"CLNP"}` — adds `amount` to the recipe's `bond_available` (`unknown recipe` otherwise). Event `bond_posted`.
+- All three accept an optional `"on_behalf_of":"<account>"`. With NEAR Intents the
   `sender_id` of `ft_transfer_call` is the solver, not the buyer, so the 1Click
   `customRecipientMsg` names the buyer here; the run (refunds, `reclaim_run`) or the
   bid (shares, refunds) belongs to `on_behalf_of`, defaulting to `sender_id`.
-- **Business-rule failures** (unknown/unlisted recipe, duplicate `run_id`, malformed `run_id`/`inputs_hash`, underpayment, bid price/qty 0, overflow, bid underpayment):
+- **Business-rule failures** (unknown/unlisted recipe, duplicate `run_id`, malformed `run_id`/`inputs_hash`, underpayment, quote checks, bid price/qty 0, overflow, bid underpayment, full book):
   - with `on_behalf_of`: **no panic**. The full `amount` is credited to `on_behalf_of`'s withdrawable balance, event `transfer_rejected {on_behalf_of, sender_id, amount, reason}`, returns `"0"`. (A panic would refund the Intents/solver side, not the buyer.)
   - without `on_behalf_of`: panics, so the token contract refunds `sender_id`.
 - Unparseable `msg` or unknown action → panics → token contract refunds the full amount.
 - Only calls from `payment_token` are accepted.
 
-`report_run(run_id, success, blocks_used, output_hash, signature)` — callable by anyone
+`report_run(run_id, success, parts_used, output_hash, delivered, signature)` — callable by anyone
 (usually the runner's relayer); authority comes from the signature, not the caller.
 - `signature` = base64 ed25519 signature by the recipe's runner `signing_pk` over the UTF-8 string
   ```
-  frs-run-v1|<contract_account_id>|<run_id>|<recipe_id>|<ok|fail>|<output_hash>|<blocks_used joined by ",">
+  frs-run-v2|<contract_account_id>|<run_id>|<recipe_id>|<ok|fail>|<output_hash>|<delivered>|<parts_used joined by ",">
   ```
-- `output_hash` must be 64 lowercase hex.
-- `blocks_used` must be a sub-multiset of the recipe's `blocks` (no unknown blocks can be billed).
-- On `success`: **settlement** (below), status → Settled. On fail: full refund to buyer balance, status → Refunded.
+- `output_hash` must be 64 lowercase hex. `delivered` is the value delivered, in payment-token units, as measured by the runner.
+- `parts_used` must be a sub-multiset of the recipe's `parts` (no unknown parts can be billed).
+- On `success`: **settlement** (below), then bond compensation `min(max(0, promised - delivered), covered)` to the buyer;
+  `covered` minus compensation returns to `bond_available`; track record updated; status → Settled.
+  On fail: full refund to buyer balance, `covered` returns to `bond_available`, `failed += 1`, status → Refunded.
 
-`reclaim_run(run_id)` — buyer only, after `RUN_TIMEOUT_NS = 15 min` with status Pending → Refunded.
+`reclaim_run(run_id)` — buyer only, after `RUN_TIMEOUT_NS = 15 min` with status Pending → Refunded (`covered` released, `failed += 1`).
 
 ### Settlement (one receipt, all parties)
-Given `P = run.amount_charged (= price_per_run)`, protocol bps `f`, runner fee `r`, block fees `b_i` for each entry of `blocks_used`:
+Given `P = run.amount_charged (= price_per_run)`, protocol bps `f`, runner fee `r`, part fees `b_i` for each entry of `parts_used`:
 ```
 protocol  = floor(P * f / 10000)
 runner    = r                         -> runner account (runner id is a NEAR account)
-blocks_i  = b_i                       -> block author
+parts_i   = b_i                       -> part author
 R         = P - protocol - r - Σ b_i  (guaranteed >= 0 by publish check)
 creator   = floor(R * royalty_bps / 10000)
 pool      = R - creator
@@ -148,12 +218,12 @@ Shared vectors: `contracts/test-vectors/batch-auction.json` (generated by `scrip
 an independent Python reference implementation).
 
 ### Views
-`get_config`, `get_recipe`, `list_recipes`, `get_block`, `list_blocks`, `get_runner`, `get_run`, `get_book(recipe_id)`,
+`get_config`, `get_recipe` (includes the track record and bond), `list_recipes`, `get_part`, `list_parts`, `get_runner`, `get_run`, `get_book(recipe_id)`,
 `get_batch(recipe_id) -> {id, opened_ns, closes_ns}`, `indicative_clearing(recipe_id) -> {price, volume, demand, supply}` (what would clear now),
 `shares_of(recipe_id, account_id)`, `pending_dividends(recipe_id, account_id)`, `balance_of(account_id)`,
-`quote_settlement(recipe_id, blocks_used)` (returns the split above without state change).
+`quote_settlement(recipe_id, parts_used?)` (returns the split above without state change).
 
 ### Events (NEP-297, standard `fungible-recipes`, version `1.0.0`)
 Exact field shapes and order-id rules: [CONTRACT_EVENTS.md](CONTRACT_EVENTS.md).
-`runner_added`, `block_registered`, `recipe_published`, `recipe_updated`, `run_requested`, `frs_settlement`, `run_refunded`,
-`order_placed`, `batch_cleared`, `order_cancelled`, `shares_transferred`, `dividends_claimed`, `withdrawn`, `withdraw_failed`, `transfer_rejected`.
+`runner_added`, `part_registered`, `recipe_published`, `recipe_updated`, `run_requested`, `frs_settlement`, `run_refunded`,
+`order_placed`, `batch_cleared`, `order_cancelled`, `shares_transferred`, `dividends_claimed`, `withdrawn`, `withdraw_failed`, `transfer_rejected`, `bond_posted`, `bond_withdrawn`.

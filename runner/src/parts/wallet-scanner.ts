@@ -1,7 +1,7 @@
-import type { BlockHandler, Holding } from '../types.js';
+import type { PartHandler, Holding } from '../types.js';
 
 /** FastNEAR: GET /v1/account/{id}/ft → { tokens: [{ contract_id, balance }] }; metadata via RPC ft_metadata; prices via 1Click /v0/tokens. */
-export const walletScanner: BlockHandler = async (inputs, ctx) => {
+export const walletScanner: PartHandler = async (inputs, ctx) => {
   const account = String(inputs.account);
   if (!/^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/.test(account) || account.length < 2 || account.length > 64) throw new Error(`invalid NEAR account id "${account}"`);
   const ftRes = await ctx.http(`${ctx.endpoints.fastnear}/v1/account/${account}/ft`);

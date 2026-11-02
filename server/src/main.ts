@@ -17,7 +17,7 @@ import { LocalLedger, toJson, LedgerError } from '../../core/src/ledger.js';
 import { hashObject, sha256Hex } from '../../core/src/canonical.js';
 import { sealedHash, type SealedEnvelope } from '../../core/src/seal.js';
 import { validateRecipe, type Catalog, type PublicListing } from '../../core/src/frs.js';
-import { computeCodehash } from '../../core/src/codehash.js';
+import { computeCodehash, loadCatalog } from '../../core/src/codehash.js';
 import { runPaymentQuoteRequest, USDC_NEAR, type Token, type QuoteResponse } from '../../core/src/oneclick.js';
 import { World } from './world.js';
 import { mockRouter } from './mocks.js';
@@ -36,7 +36,7 @@ const RUNNER_TOKEN = env.RUNNER_TOKEN ?? '';
 const RUNNER_PUBLIC_URL = env.RUNNER_PUBLIC_URL ?? RUNNER; // browsers fetch attestation from the runner directly
 const rh = { 'content-type': 'application/json', 'x-runner-token': RUNNER_TOKEN };
 
-const catalog = JSON.parse(readFileSync(resolve(ROOT, 'standard/blocks.json'), 'utf8')) as Catalog;
+const catalog = loadCatalog(ROOT);
 const tokens = JSON.parse(readFileSync(resolve(ROOT, 'fixtures/oneclick-tokens.json'), 'utf8')).tokens as Token[];
 const world = new World(resolve(ROOT, 'fixtures/wallets.json'), resolve(ROOT, 'fixtures/oneclick-tokens.json'));
 const BATCH_MS = Number(env.FRS_BATCH_MS ?? 12000);
@@ -62,7 +62,7 @@ const mocks = mockRouter(world, tokens, {
       const r = msg.run_id ? runs.get(msg.run_id) : undefined;
       try {
         ledger.call(PAYMENT_TOKEN, (l) => l.ft_on_transfer({ sender_id: SOLVER, amount: amountOut, msg: req.customRecipientMsg! }));
-        if (r) pushEv(r, 'chain', 'run_requested', { tx: ledger.events.at(-1)?.tx_hash, block: ledger.height, amount: amountOut, solver: SOLVER, depositAddress });
+        if (r) pushEv(r, 'chain', 'run_requested', { tx: ledger.events.at(-1)?.tx_hash, height: ledger.height, amount: amountOut, solver: SOLVER, depositAddress });
         if (r) void startRunner(r);
       } catch (e) { if (r) pushEv(r, 'chain', 'payment_rejected', { error: (e as Error).message }); }
       return;
@@ -111,18 +111,18 @@ app.get('/api/chain/config', (_, res) => j(res, { contract_id: CONTRACT_ID, owne
 app.get('/api/chain/recipes/:id', (req, res) => { const r = ledger.recipes.get(String(req.params.id)); r ? j(res, r) : res.status(404).json({ error: 'no recipe' }); });
 app.get('/api/chain/runs/:id', (req, res) => { const r = ledger.runs.get(String(req.params.id)); r ? j(res, r) : res.status(404).json({ error: 'no run' }); });
 app.get('/api/chain/runners/:id', (req, res) => { const r = ledger.runners.get(String(req.params.id)); r ? j(res, r) : res.status(404).json({ error: 'no runner' }); });
-app.get('/api/chain/blocks', (_, res) => j(res, [...ledger.blocks.values()]));
+app.get('/api/chain/parts', (_, res) => j(res, [...ledger.parts.values()]));
 app.get('/api/chain/events', (req, res) => { const since = req.query.last ? Math.max(0, ledger.events.length - Number(req.query.last)) : Number(req.query.since ?? 0); j(res, { height: ledger.height, events: ledger.events.slice(since).map((e, i) => ({ idx: since + i, ...e })) }); });
 app.post('/api/chain/report_run', guard((req, res) => {
   const payouts = ledger.call('relayer.frs.testnet', (l) => l.report_run(req.body));
   const run = ledger.runs.get(req.body.run_id);
   const r = runs.get(req.body.run_id);
   const ev = ledger.events.at(-1)!;
-  if (r) pushEv(r, 'chain', ev.event, { tx: ev.tx_hash, block: ev.block_height, ...ev.data[0] });
-  j(res, { status: run?.status, payouts, tx: ev.tx_hash, block: ev.block_height });
+  if (r) pushEv(r, 'chain', ev.event, { tx: ev.tx_hash, height: ev.block_height, ...ev.data[0] });
+  j(res, { status: run?.status, payouts, tx: ev.tx_hash, height: ev.block_height });
 }));
 /** demo wallet: sign "as" an account. Local mode only — testnet mode uses a real NEAR wallet. */
-const ALLOWED = new Set(['register_block', 'place_ask', 'cancel_order', 'transfer_shares', 'claim_dividends', 'withdraw', 'bid', 'clear_batch']);
+const ALLOWED = new Set(['register_part', 'place_ask', 'cancel_order', 'transfer_shares', 'claim_dividends', 'withdraw', 'bid', 'clear_batch']);
 app.post('/api/chain/tx', guard((req, res) => {
   const { signer, method, args } = req.body as { signer: string; method: string; args: Record<string, string> };
   if (!ALLOWED.has(method)) throw new LedgerError('method not allowed from demo wallet');
@@ -134,7 +134,7 @@ app.post('/api/chain/tx', guard((req, res) => {
     out = ledger.call(signer, (l) => (l as unknown as Record<string, (a: unknown) => unknown>)[method](args));
   }
   const ev = ledger.events.at(-1);
-  j(res, { ok: true, result: out, tx: ev?.tx_hash, block: ledger.height });
+  j(res, { ok: true, result: out, tx: ev?.tx_hash, height: ledger.height });
 }));
 
 // ---- marketplace ----
@@ -143,7 +143,7 @@ app.get('/api/mode', (_, res) => j(res, {
   services: { fastnear: 'mock', rpc: 'mock', oneclick: 'fixture (frozen token sample)', nearai: 'mock (real secp256k1 signatures, no hardware quote)', tee: 'local-dev runner (no hardware quote)' },
   ai_signing_address: mocks.aiSigningAddress,
 }));
-app.get('/api/catalog', (_, res) => j(res, { ...catalog, onchain: Object.fromEntries([...ledger.blocks].map(([k, b]) => [k, { author: b.author, manifest_hash: b.manifest_hash, fee_per_call: b.fee_per_call, active: b.active }])) }));
+app.get('/api/catalog', (_, res) => j(res, { ...catalog, onchain: Object.fromEntries([...ledger.parts].map(([k, b]) => [k, { author: b.author, manifest_hash: b.manifest_hash, fee_per_call: b.fee_per_call, active: b.active }])) }));
 app.get('/api/listings', (_, res) => j(res, [...listings.values()].map((l) => ({ ...l, market: market.ticker(l.ticker), onchain: ledger.recipes.get(l.ticker) }))));
 app.get('/api/vault/:ticker', (req, res) => { const v = vault.get(String(req.params.ticker)); v ? res.json({ envelope: v, sealed_hash: sealedHash(v) }) : res.status(404).json({ error: 'not found' }); });
 app.get('/api/runner/attestation', guard(async (req, res) => {
@@ -152,14 +152,16 @@ app.get('/api/runner/attestation', guard(async (req, res) => {
 }));
 
 app.post('/api/publish', guard((req, res) => {
-  const { listing, sealed, ipo } = req.body as { listing: PublicListing; sealed: SealedEnvelope; ipo?: { price: number; float_pct: number } };
+  const { listing, sealed, ipo, bond } = req.body as { listing: PublicListing; sealed: SealedEnvelope; ipo?: { price: number; float_pct: number }; bond?: string };
   if (sealed?.v !== 'frs-seal-v1' || sealed.purpose !== 'recipe') throw new LedgerError('expected a sealed recipe envelope');
   const runner = ledger.runners.get(RUNNER_ID)!;
   if (sealed.to !== runner.enc_pk_hex) throw new LedgerError('envelope is not sealed to the registered runner key');
   if ((listing as unknown as Record<string, unknown>).nodes) throw new LedgerError('refusing plaintext recipe: only the public listing may be sent');
   const sh = sealedHash(sealed);
-  ledger.call(listing.creator, (l) => l.publish_recipe({ id: listing.ticker, name: listing.name, sealed_hash: sh, runner_id: RUNNER_ID, blocks: listing.blocks, price_per_run: listing.price_per_run, royalty_bps: listing.royalty_bps, total_shares: listing.total_shares }));
+  ledger.call(listing.creator, (l) => l.publish_recipe({ id: listing.ticker, name: listing.name, sealed_hash: sh, runner_id: RUNNER_ID, parts: listing.parts, price_per_run: listing.price_per_run, royalty_bps: listing.royalty_bps, total_shares: listing.total_shares }));
   const tx = ledger.events.at(-1)!;
+  // the creator backs the recipe's quotes with a bond (ft_transfer_call with {"action":"bond"})
+  if (bond && BigInt(bond) > 0n) ledger.call(PAYMENT_TOKEN, (l) => l.ft_on_transfer({ sender_id: listing.creator, amount: bond, msg: JSON.stringify({ action: 'bond', recipe_id: listing.ticker }) }));
   vault.set(listing.ticker, sealed);
   const ipoPrice = ipo?.price ?? 0.01;
   listings.set(listing.ticker, { ...listing, ipo_price: ipoPrice, published_at: new Date().toISOString() });
@@ -171,7 +173,7 @@ app.post('/api/publish', guard((req, res) => {
     for (let k = 0; k < 5; k++) ledger.call(listing.creator, (l) => l.place_ask({ recipe_id: listing.ticker, price: String(Math.round(px * (1 + k * 0.01))), qty: (qty / 5n).toString() }));
   }
   if (BOTS) setTimeout(() => market.openingBids(listing.ticker, ipoPrice), 1500);
-  j(res, { ok: true, sealed_hash: sh, tx: tx.tx_hash, block: tx.block_height });
+  j(res, { ok: true, sealed_hash: sh, tx: tx.tx_hash, height: tx.block_height });
 }));
 
 app.get('/api/market/:ticker', guard((req, res) => {
@@ -183,8 +185,8 @@ app.get('/api/market/:ticker', guard((req, res) => {
     const d = e.data[0] as { batch_id: number; price: string | null; volume: string; fills: unknown[] };
     return { batch_id: d.batch_id, price: d.price, volume: d.volume, fills: d.fills.length, tx: e.tx_hash, ts: e.timestamp_ns };
   });
-  const settlements = ledger.events.filter((e) => e.event === 'frs_settlement' && (e.data[0] as { recipe_id: string }).recipe_id === t).slice(-20).reverse().map((e) => ({ ...(e.data[0] as Record<string, unknown>), tx: e.tx_hash, block: e.block_height }));
-  j(res, { stats: market.ticker(t), candles: market.candles.get(t), book: { bids: agg(book.bids), asks: agg(book.asks) }, auctions, settlements, holders: ledger.holders(t).slice(0, 10), listing: listings.get(t) });
+  const settlements = ledger.events.filter((e) => e.event === 'frs_settlement' && (e.data[0] as { recipe_id: string }).recipe_id === t).slice(-20).reverse().map((e) => ({ ...(e.data[0] as Record<string, unknown>), tx: e.tx_hash, height: e.block_height }));
+  j(res, { stats: market.ticker(t), candles: market.candles.get(t), book: { bids: agg(book.bids), asks: agg(book.asks) }, auctions, settlements, onchain: ledger.recipes.get(t), holders: ledger.holders(t).slice(0, 10), listing: listings.get(t) });
 }));
 app.get('/api/tickers', (_, res) => j(res, [...ledger.recipes.keys()].map((t) => market.ticker(t))));
 app.get('/api/portfolio/:account', (req, res) => {
@@ -198,14 +200,41 @@ app.get('/api/portfolio/:account', (req, res) => {
 });
 app.get('/api/intents/log', (_, res) => j(res, mocks.oneclick.log.slice(-60)));
 
+// ---- recipe intents: post a job, recipes compete with signed quotes ----
+const MAX_QUOTES_PER_JOB = 5; // dry runs cost compute: cap the fan-out…
+const JOBS_PER_MINUTE = 12; //   …and rate-limit job posts per client
+const jobLog = new Map<string, number[]>();
+const openDemand: { job_type: string; at: string }[] = [];
+app.get('/api/jobs', (_, res) => j(res, (catalog.jobs ?? []).map((jt) => ({ ...jt, recipes: [...listings.values()].filter((l) => l.implements === jt.id).map((l) => l.ticker) }))));
+app.get('/api/demand', (_, res) => j(res, openDemand.slice(-50).reverse()));
+app.post('/api/jobs', guard(async (req, res) => {
+  const ip = req.ip ?? 'local';
+  const now = Date.now();
+  const recent = (jobLog.get(ip) ?? []).filter((t) => now - t < 60_000);
+  if (recent.length >= JOBS_PER_MINUTE) throw new LedgerError('too many jobs posted in the last minute');
+  jobLog.set(ip, [...recent, now]);
+  const { job_type, sealed_job, job_hash, only } = req.body as { job_type: string; sealed_job: SealedEnvelope; job_hash: string; only?: string };
+  if (!catalog.jobs?.some((jt) => jt.id === job_type)) throw new LedgerError('unknown job type');
+  if (!/^[0-9a-f]{64}$/.test(job_hash ?? '') || sealed_job?.purpose !== 'inputs') throw new LedgerError('expected a sealed job and its job_hash');
+  const candidates = [...listings.values()].filter((l) => l.implements === job_type && (!only || l.ticker === only)).slice(0, MAX_QUOTES_PER_JOB);
+  if (!candidates.length) { openDemand.push({ job_type, at: new Date().toISOString() }); j(res, { quotes: [], open_demand: true }); return; }
+  const quotes = await Promise.all(candidates.map(async (l) => {
+    const q = await fetch(`${RUNNER}/quotes`, { method: 'POST', headers: rh, body: JSON.stringify({ recipe_id: l.ticker, sealed_recipe: vault.get(l.ticker), sealed_job, job_hash }) }).then((x) => x.json()).catch((e) => ({ recipe_id: l.ticker, ok: false, error: String(e) }));
+    const r = ledger.recipes.get(l.ticker)!;
+    return { ...q, listing: { ticker: l.ticker, name: l.name, creator: l.creator, price_per_run: l.price_per_run, privacy: l.privacy, risk: l.risk, disclosures: l.disclosures, parts: l.parts },
+      track: { runs: r.runs, failed: r.failed, promised_total: r.promised_total, delivered_total: r.delivered_total, compensated_total: r.compensated_total, bond_available: r.bond_available } };
+  }));
+  j(res, { quotes, open_demand: false });
+}));
+
 // ---- runs ----
 app.post('/api/runs/quote', guard(async (req, res) => {
-  const { recipe_id, buyer, pay_asset, refund_to, sealed_inputs } = req.body as { recipe_id: string; buyer: string; pay_asset: string; refund_to: string; sealed_inputs: SealedEnvelope };
+  const { recipe_id, buyer, pay_asset, refund_to, sealed_inputs, signed_quote: sq } = req.body as { recipe_id: string; buyer: string; pay_asset: string; refund_to: string; sealed_inputs: SealedEnvelope; signed_quote?: { job_hash: string; promised: string; expires_ns: string; signature: string } };
   const r = ledger.recipes.get(recipe_id); if (!r) throw new LedgerError('unknown recipe');
   if (sealed_inputs?.purpose !== 'inputs' || sealed_inputs.to !== ledger.runners.get(r.runner_id)!.enc_pk_hex) throw new LedgerError('inputs must be sealed to the recipe runner');
   const run_id = 'r-' + randomBytes(6).toString('hex');
   const inputs_hash = sealedHash(sealed_inputs);
-  const msg = JSON.stringify({ action: 'run', recipe_id, run_id, inputs_hash, on_behalf_of: buyer });
+  const msg = JSON.stringify({ action: 'run', recipe_id, run_id, inputs_hash, on_behalf_of: buyer, ...(sq ? { quote: { job_hash: sq.job_hash, promised: sq.promised, expires_ns: sq.expires_ns, signature: sq.signature } } : {}) });
   const qreq = runPaymentQuoteRequest({ originAsset: pay_asset, refundTo: refund_to || buyer, contractId: CONTRACT_ID, price: r.price_per_run.toString(), msg });
   const quote = await mocks.oneclick.quote(qreq);
   const token = randomBytes(24).toString('hex');
@@ -290,7 +319,7 @@ async function boot() {
   const audited = existsSync(pinned) ? readFileSync(pinned, 'utf8').trim() : computeCodehash(ROOT).codehash;
   if (att.codehash !== audited) console.warn(`[server] WARNING runner codehash ${att.codehash.slice(0, 12)} != audited ${audited.slice(0, 12)} — UI will show the mismatch`);
   ledger.call('frs-dao.testnet', (l) => l.add_runner({ id: RUNNER_ID, signing_pk: att!.signing_pk, enc_pk_hex: att!.enc_pk_hex, codehash: audited, fee_per_run: '30000' }));
-  for (const b of catalog.blocks) ledger.call(b.author, (l) => l.register_block({ id: b.id, version: b.id.split('@')[1], fee_per_call: b.fee_per_call, manifest_hash: hashObject(b) }));
+  for (const b of catalog.parts) ledger.call(b.author, (l) => l.register_part({ id: b.id, version: b.id.split('@')[1], fee_per_call: b.fee_per_call, manifest_hash: hashObject(b) }));
   app.listen(PORT, '127.0.0.1', () => console.log(`[server] marketplace on http://127.0.0.1:${PORT}  (contract mirror ${CONTRACT_ID}, runner ${RUNNER})`));
   setInterval(() => market.keeperTick(), 500);
   if (BOTS) setInterval(() => market.botTick(), 1200);

@@ -5,7 +5,7 @@ export interface SplitInput {
   price: bigint;
   protocolFeeBps: number;
   runnerFee: bigint;
-  blockFees: bigint[];
+  partFees: bigint[];
   royaltyBps: number;
   totalShares: bigint;
 }
@@ -13,7 +13,7 @@ export interface SplitInput {
 export interface Split {
   protocol: bigint;
   runner: bigint;
-  blocks: bigint[];
+  parts: bigint[];
   remainder: bigint;
   creator: bigint;
   pool: bigint;
@@ -23,21 +23,21 @@ export interface Split {
   protocolTotal: bigint;
 }
 
-export function minimumPrice(price: bigint, protocolFeeBps: number, runnerFee: bigint, blockFees: bigint[]): boolean {
+export function minimumPrice(price: bigint, protocolFeeBps: number, runnerFee: bigint, partFees: bigint[]): boolean {
   const protocol = (price * BigInt(protocolFeeBps)) / 10000n;
-  return price >= protocol + runnerFee + blockFees.reduce((a, b) => a + b, 0n);
+  return price >= protocol + runnerFee + partFees.reduce((a, b) => a + b, 0n);
 }
 
 export function settlementSplit(i: SplitInput): Split {
   if (i.totalShares <= 0n) throw new Error('total_shares must be > 0');
   const protocol = (i.price * BigInt(i.protocolFeeBps)) / 10000n;
-  const blocksTotal = i.blockFees.reduce((a, b) => a + b, 0n);
-  const remainder = i.price - protocol - i.runnerFee - blocksTotal;
+  const partsTotal = i.partFees.reduce((a, b) => a + b, 0n);
+  const remainder = i.price - protocol - i.runnerFee - partsTotal;
   if (remainder < 0n) throw new Error('price below minimum viable price');
   const creator = (remainder * BigInt(i.royaltyBps)) / 10000n;
   const pool = remainder - creator;
   const accIncrement = (pool * SCALE) / i.totalShares;
   const distributed = (accIncrement * i.totalShares) / SCALE;
   const dustToProtocol = pool - distributed;
-  return { protocol, runner: i.runnerFee, blocks: [...i.blockFees], remainder, creator, pool, accIncrement, distributed, dustToProtocol, protocolTotal: protocol + dustToProtocol };
+  return { protocol, runner: i.runnerFee, parts: [...i.partFees], remainder, creator, pool, accIncrement, distributed, dustToProtocol, protocolTotal: protocol + dustToProtocol };
 }

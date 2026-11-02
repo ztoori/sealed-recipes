@@ -7,7 +7,7 @@ export function Wallet() {
   const [ev] = usePoll<any>('/api/chain/events?last=600', 3000);
   const income = (ev?.events ?? []).flatMap((e: any) => {
     const d = e.data[0];
-    if (e.event === 'frs_settlement') return d.payouts.filter((x: any) => x.account_id === acting).map((x: any) => ({ what: x.role.startsWith('block:') ? `block fee (${x.role.slice(6).split('@')[0]})` : x.role.replace('_', ' '), ref: d.recipe_id, amount: Number(x.amount), tx: e.tx_hash }));
+    if (e.event === 'frs_settlement') return d.payouts.filter((x: any) => x.account_id === acting).map((x: any) => ({ what: x.role.startsWith('part:') ? `part fee (${x.role.slice(6).split('@')[0]})` : x.role.replace('_', ' '), ref: d.recipe_id, amount: Number(x.amount), tx: e.tx_hash }));
     if (e.event === 'batch_cleared' && d.price !== null) return d.fills.filter((f: any) => f.owner === acting && f.side === 'Ask').map((f: any) => ({ what: `sold ${Number(f.qty).toLocaleString()} shares in batch #${d.batch_id}`, ref: d.recipe_id, amount: Number(f.qty) * Number(d.price), tx: e.tx_hash }));
     if (e.event === 'dividends_claimed' && d.account_id === acting && d.amount !== '0') return [{ what: 'dividends claimed', ref: d.recipe_id, amount: Number(d.amount), tx: e.tx_hash }];
     return [];
@@ -44,7 +44,7 @@ export function Wallet() {
       </div>
       <div className="panel">
         <header><h2>Income</h2><span className="small muted">from settlements and auctions, recent</span></header>
-        {income.length === 0 && <div className="body small muted">Nothing yet. Block authors, creators and the runner are paid inside each run's settlement.</div>}
+        {income.length === 0 && <div className="body small muted">Nothing yet. Part authors, creators and the runner are paid inside each run's settlement.</div>}
         <table className="small"><tbody>
           {income.slice(0, 12).map((x: any, i: number) => <tr key={i}><td>{x.what}<div className="muted">{x.ref} · tx {short(x.tx, 6, 4)}</div></td><td className="r gain">+{usd(x.amount)}</td></tr>)}
         </tbody></table>

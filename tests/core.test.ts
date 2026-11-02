@@ -5,21 +5,21 @@ import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { hexToBytes, bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import {
-  settlementSplit, LocalLedger, runReportMessage, base64, seal, open, sealedHash,
-  clearAuction, validateRecipe, compatibleSwaps, swapBlock, publicListing, recoverSigner, signEip191, addressFromPublicKey,
+  settlementSplit, LocalLedger, runReportMessage, quoteMessage, withdrawalRisk, jobHash, base64, seal, open, sealedHash,
+  clearAuction, validateRecipe, compatibleSwaps, swapPart, publicListing, recoverSigner, signEip191, addressFromPublicKey,
   verifyChat, sha256Hex, OneClick, runPaymentQuoteRequest, USDC_NEAR, reportData, verifyRunnerAttestation,
   type Catalog, type Recipe, type RunnerAttestation,
 } from '../core/src/index.js';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 
 const json = (p: string) => JSON.parse(readFileSync(new URL('../' + p, import.meta.url), 'utf8'));
-const catalog = json('standard/blocks.json') as Catalog;
+const catalog = { ...json('standard/parts.json'), jobs: json('standard/jobs.json').jobs } as Catalog;
 const recipe = (t: string) => json(`seed/recipes/${t}.json`) as Recipe;
 
 test('settlement vectors match the contract spec (shared with Rust tests)', () => {
   const v = json('contracts/test-vectors/settlement.json');
   for (const c of v.cases) {
-    const s = settlementSplit({ price: BigInt(c.input.price), protocolFeeBps: c.input.protocol_fee_bps, runnerFee: BigInt(c.input.runner_fee), blockFees: c.input.block_fees.map(BigInt), royaltyBps: c.input.royalty_bps, totalShares: BigInt(c.input.total_shares) });
+    const s = settlementSplit({ price: BigInt(c.input.price), protocolFeeBps: c.input.protocol_fee_bps, runnerFee: BigInt(c.input.runner_fee), partFees: c.input.part_fees.map(BigInt), royaltyBps: c.input.royalty_bps, totalShares: BigInt(c.input.total_shares) });
     const e = c.expected;
     assert.equal(s.protocol.toString(), e.protocol, c.name);
     assert.equal(s.remainder.toString(), e.remainder, c.name);
@@ -27,7 +27,7 @@ test('settlement vectors match the contract spec (shared with Rust tests)', () =
     assert.equal(s.pool.toString(), e.pool, c.name);
     assert.equal(s.accIncrement.toString(), e.acc_increment, c.name);
     assert.equal(s.dustToProtocol.toString(), e.dust_to_protocol, c.name);
-    const total = s.protocolTotal + s.runner + s.blocks.reduce((a, b) => a + b, 0n) + s.creator + s.distributed;
+    const total = s.protocolTotal + s.runner + s.parts.reduce((a, b) => a + b, 0n) + s.creator + s.distributed;
     assert.equal(total, BigInt(c.input.price), `${c.name}: every unit is paid out`);
   }
 });
@@ -37,24 +37,24 @@ function keyring() {
   return { kp, pk: 'ed25519:' + bs58.encode(kp.publicKey) };
 }
 
-function setupLedger(o: { price?: string; total?: string; royalty?: number; fee?: number; runnerFee?: string; blockFees?: string[] } = {}) {
+function setupLedger(o: { price?: string; total?: string; royalty?: number; fee?: number; runnerFee?: string; partFees?: string[] } = {}) {
   let now = 1_000_000_000n;
   const L = new LocalLedger({ contractId: 'frs.testnet', owner: 'owner.testnet', paymentToken: 'usdc.testnet', protocolAccount: 'treasury.testnet', protocolFeeBps: o.fee ?? 200, clock: () => now });
   const { kp, pk } = keyring();
   L.call('owner.testnet', (l) => l.add_runner({ id: 'runner.testnet', signing_pk: pk, enc_pk_hex: 'ab'.repeat(32), codehash: 'c0de', fee_per_run: o.runnerFee ?? '30000' }));
-  const fees = o.blockFees ?? ['20000', '50000'];
-  fees.forEach((f, i) => L.call(`author${i}.testnet`, (l) => l.register_block({ id: `b${i}@1.0.0`, version: '1.0.0', fee_per_call: f, manifest_hash: 'h' })));
-  L.call('creator.testnet', (l) => l.publish_recipe({ id: 'TEST', name: 'Test', sealed_hash: 'aa', runner_id: 'runner.testnet', blocks: fees.map((_, i) => `b${i}@1.0.0`), price_per_run: o.price ?? '750000', royalty_bps: o.royalty ?? 1000, total_shares: o.total ?? '1000000' }));
-  const sign = (runId: string, ok: boolean, blocks: string[], out = 'f'.repeat(64)) => base64.enc(nacl.sign.detached(utf8ToBytes(runReportMessage('frs.testnet', runId, 'TEST', ok, out, blocks)), kp.secretKey));
+  const fees = o.partFees ?? ['20000', '50000'];
+  fees.forEach((f, i) => L.call(`author${i}.testnet`, (l) => l.register_part({ id: `b${i}@1.0.0`, version: '1.0.0', fee_per_call: f, manifest_hash: 'h' })));
+  L.call('creator.testnet', (l) => l.publish_recipe({ id: 'TEST', name: 'Test', sealed_hash: 'aa', runner_id: 'runner.testnet', parts: fees.map((_, i) => `b${i}@1.0.0`), price_per_run: o.price ?? '750000', royalty_bps: o.royalty ?? 1000, total_shares: o.total ?? '1000000' }));
+  const sign = (runId: string, ok: boolean, parts: string[], out = 'f'.repeat(64)) => base64.enc(nacl.sign.detached(utf8ToBytes(runReportMessage('frs.testnet', runId, 'TEST', ok, out, '0', parts)), kp.secretKey));
   const pay = (runId: string, amount = o.price ?? '750000', buyer = 'bob.testnet') => L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: buyer, amount, msg: JSON.stringify({ action: 'run', recipe_id: 'TEST', run_id: runId, inputs_hash: '0'.repeat(64) }) }));
-  return { L, sign, pay, advance: (ns: bigint) => { now += ns; }, blocks: fees.map((_, i) => `b${i}@1.0.0`) };
+  return { L, sign, pay, advance: (ns: bigint) => { now += ns; }, parts: fees.map((_, i) => `b${i}@1.0.0`) };
 }
 
 test('pay-per-run → signed report → every party credited in one settlement', () => {
-  const { L, sign, pay, blocks } = setupLedger();
+  const { L, sign, pay, parts } = setupLedger();
   pay('r1', '800000'); // overpay: 50000 credited back
   assert.equal(L.balance_of('bob.testnet'), 50000n);
-  const payouts = L.call('relayer.testnet', (l) => l.report_run({ run_id: 'r1', success: true, blocks_used: blocks, output_hash: 'f'.repeat(64), signature: sign('r1', true, blocks) }));
+  const payouts = L.call('relayer.testnet', (l) => l.report_run({ run_id: 'r1', success: true, parts_used: parts, output_hash: 'f'.repeat(64), delivered: '0', signature: sign('r1', true, parts) }));
   assert.equal(payouts.length, 5);
   assert.equal(L.balance_of('treasury.testnet'), 15000n);
   assert.equal(L.balance_of('runner.testnet'), 30000n);
@@ -65,19 +65,19 @@ test('pay-per-run → signed report → every party credited in one settlement',
   assert.equal(L.pending_dividends('TEST', 'creator.testnet'), 571500n);
   const ev = L.events.at(-1)!;
   assert.equal(ev.event, 'frs_settlement');
-  assert.deepEqual((ev.data[0].payouts as { role: string }[]).map((p) => p.role), ['protocol', 'runner', 'block:b0@1.0.0', 'block:b1@1.0.0', 'creator_royalty']);
+  assert.deepEqual((ev.data[0].payouts as { role: string }[]).map((p) => p.role), ['protocol', 'runner', 'part:b0@1.0.0', 'part:b1@1.0.0', 'creator_royalty']);
 });
 
 test('forged or replayed reports are rejected; failure refunds; timeout reclaim', () => {
-  const { L, sign, pay, blocks, advance } = setupLedger();
+  const { L, sign, pay, parts, advance } = setupLedger();
   pay('r1');
   const wrong = base64.enc(nacl.sign.detached(utf8ToBytes('nope'), nacl.sign.keyPair().secretKey));
-  assert.throws(() => L.call('x', (l) => l.report_run({ run_id: 'r1', success: true, blocks_used: blocks, output_hash: 'f'.repeat(64), signature: wrong })), /invalid runner signature/);
-  assert.throws(() => L.call('x', (l) => l.report_run({ run_id: 'r1', success: true, blocks_used: [...blocks, blocks[0]], output_hash: 'f'.repeat(64), signature: sign('r1', true, [...blocks, blocks[0]]) })), /not part of recipe/);
-  L.call('x', (l) => l.report_run({ run_id: 'r1', success: true, blocks_used: blocks, output_hash: 'f'.repeat(64), signature: sign('r1', true, blocks) }));
-  assert.throws(() => L.call('x', (l) => l.report_run({ run_id: 'r1', success: true, blocks_used: blocks, output_hash: 'f'.repeat(64), signature: sign('r1', true, blocks) })), /not pending/);
+  assert.throws(() => L.call('x', (l) => l.report_run({ run_id: 'r1', success: true, parts_used: parts, output_hash: 'f'.repeat(64), delivered: '0', signature: wrong })), /invalid runner signature/);
+  assert.throws(() => L.call('x', (l) => l.report_run({ run_id: 'r1', success: true, parts_used: [...parts, parts[0]], output_hash: 'f'.repeat(64), delivered: '0', signature: sign('r1', true, [...parts, parts[0]]) })), /not part of recipe/);
+  L.call('x', (l) => l.report_run({ run_id: 'r1', success: true, parts_used: parts, output_hash: 'f'.repeat(64), delivered: '0', signature: sign('r1', true, parts) }));
+  assert.throws(() => L.call('x', (l) => l.report_run({ run_id: 'r1', success: true, parts_used: parts, output_hash: 'f'.repeat(64), delivered: '0', signature: sign('r1', true, parts) })), /not pending/);
   pay('r2');
-  L.call('x', (l) => l.report_run({ run_id: 'r2', success: false, blocks_used: [], output_hash: 'f'.repeat(64), signature: sign('r2', false, []) }));
+  L.call('x', (l) => l.report_run({ run_id: 'r2', success: false, parts_used: [], output_hash: 'f'.repeat(64), delivered: '0', signature: sign('r2', false, []) }));
   assert.equal(L.balance_of('bob.testnet'), 750000n);
   pay('r3');
   assert.throws(() => L.call('bob.testnet', (l) => l.reclaim_run({ run_id: 'r3' })), /timeout/);
@@ -91,10 +91,10 @@ test('forged or replayed reports are rejected; failure refunds; timeout reclaim'
 
 test('dividends vector: harvest-before-transfer keeps accounting exact', () => {
   const v = json('contracts/test-vectors/dividends.json');
-  const { L, sign, pay } = setupLedger({ price: v.recipe.price, total: v.recipe.total_shares, royalty: 0, fee: 0, runnerFee: '0', blockFees: ['0'] });
+  const { L, sign, pay } = setupLedger({ price: v.recipe.price, total: v.recipe.total_shares, royalty: 0, fee: 0, runnerFee: '0', partFees: ['0'] });
   let n = 0;
   for (const s of v.steps) {
-    if (s.op === 'run') { const id = 'r' + n++; pay(id); L.call('x', (l) => l.report_run({ run_id: id, success: true, blocks_used: ['b0@1.0.0'], output_hash: 'f'.repeat(64), signature: sign(id, true, ['b0@1.0.0']) })); }
+    if (s.op === 'run') { const id = 'r' + n++; pay(id); L.call('x', (l) => l.report_run({ run_id: id, success: true, parts_used: ['b0@1.0.0'], output_hash: 'f'.repeat(64), delivered: '0', signature: sign(id, true, ['b0@1.0.0']) })); }
     if (s.op === 'transfer_shares') L.call(`${s.from}.testnet`, (l) => l.transfer_shares({ recipe_id: 'TEST', receiver_id: `${s.to}.testnet`, qty: s.qty }));
   }
   for (const [who, amt] of Object.entries(v.expected_pending)) {
@@ -175,7 +175,7 @@ test('FRS-1: seed recipes validate; listing hides wiring and secret params', () 
   const s = JSON.stringify(l);
   assert.ok(!s.includes('token-safety classifier'), 'secret policy prompt must not leak');
   assert.ok(!s.includes('slippage_bps'));
-  assert.deepEqual(l.blocks, ['near.wallet-scanner@1.0.0', 'addr.fresh-check@1.0.0', 'ai.spam-shield@1.1.0', 'filter.dust@1.0.0', 'intents.confidential-swap@1.0.0']);
+  assert.deepEqual(l.parts, ['near.wallet-scanner@1.0.0', 'addr.fresh-check@1.0.0', 'ai.spam-shield@1.1.0', 'filter.dust@1.0.0', 'intents.confidential-swap@1.0.0']);
 });
 
 test('FRS-1: type errors, cycles and unwired ports are caught', () => {
@@ -192,11 +192,11 @@ test('FRS-1: type errors, cycles and unwired ports are caught', () => {
 test('FRS-1: drop-in swaps respect subtyping', () => {
   const clnp = recipe('CLNP');
   assert.deepEqual(compatibleSwaps(clnp, 'swap', catalog).map((b) => b.id), ['intents.public-swap@1.0.0']);
-  assert.deepEqual(compatibleSwaps(clnp, 'shield', catalog).map((b) => b.id), ['rules.spam-shield@1.0.0']);
+  assert.deepEqual(compatibleSwaps(clnp, 'shield', catalog).map((b) => b.id), ['ai.spam-shield-pro@1.0.0', 'rules.spam-shield@1.0.0']);
   assert.deepEqual(compatibleSwaps(recipe('SWPR'), 'swap', catalog).map((b) => b.id), [], 'public→confidential needs a fresh address');
-  const swapped = swapBlock(clnp, 'shield', 'rules.spam-shield@1.0.0', catalog);
+  const swapped = swapPart(clnp, 'shield', 'rules.spam-shield@1.0.0', catalog);
   assert.ok(validateRecipe(swapped, catalog).ok);
-  assert.equal(validateRecipe(swapped, catalog).blockFees, 20000n + 10000n + 10000n + 10000n + 50000n);
+  assert.equal(validateRecipe(swapped, catalog).partFees, 20000n + 10000n + 10000n + 10000n + 50000n);
 });
 
 test('EIP-191 recovery matches the well-known key-1 address', () => {
@@ -259,9 +259,9 @@ test('every mirror event has exactly the fields documented for the contract (doc
     if (fields.length) spec.set(m[1], [...new Set(fields)].sort());
   }
   spec.set('order_cancelled', spec.get('order_placed')!);
-  const { L, sign, pay, blocks, advance } = setupLedger();
-  pay('r1'); L.call('x', (l) => l.report_run({ run_id: 'r1', success: true, blocks_used: blocks, output_hash: 'f'.repeat(64), signature: sign('r1', true, blocks) }));
-  pay('r2'); L.call('x', (l) => l.report_run({ run_id: 'r2', success: false, blocks_used: [], output_hash: 'f'.repeat(64), signature: sign('r2', false, []) }));
+  const { L, sign, pay, parts, advance } = setupLedger();
+  pay('r1'); L.call('x', (l) => l.report_run({ run_id: 'r1', success: true, parts_used: parts, output_hash: 'f'.repeat(64), delivered: '0', signature: sign('r1', true, parts) }));
+  pay('r2'); L.call('x', (l) => l.report_run({ run_id: 'r2', success: false, parts_used: [], output_hash: 'f'.repeat(64), delivered: '0', signature: sign('r2', false, []) }));
   L.call('creator.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: '10', qty: '5' }));
   L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'a.testnet', amount: '100', msg: JSON.stringify({ action: 'bid', recipe_id: 'TEST', price: '10', qty: '10' }) }));
   advance(12n * 1_000_000_000n);
@@ -272,6 +272,8 @@ test('every mirror event has exactly the fields documented for the contract (doc
   L.call('creator.testnet', (l) => l.update_sealed({ id: 'TEST', sealed_hash: 'bb' }));
   L.call('creator.testnet', (l) => l.withdraw({}));
   L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 's', amount: '1', msg: JSON.stringify({ action: 'run', recipe_id: 'X', run_id: 'q', inputs_hash: '0'.repeat(64), on_behalf_of: 'b' }) }));
+  L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'creator.testnet', amount: '100', msg: JSON.stringify({ action: 'bond', recipe_id: 'TEST' }) }));
+  L.call('creator.testnet', (l) => l.withdraw_bond({ recipe_id: 'TEST', amount: '40' }));
   const seen = new Set<string>();
   for (const e of L.events) {
     const want = spec.get(e.event);
@@ -279,5 +281,79 @@ test('every mirror event has exactly the fields documented for the contract (doc
     assert.deepEqual(Object.keys(e.data[0]).sort(), want, `fields of ${e.event}`);
     seen.add(e.event);
   }
-  assert.ok(seen.size >= 14, `covered ${seen.size} event types`);
+  assert.ok(seen.size >= 16, `covered ${seen.size} event types`);
+});
+
+function quoted(o: { bond: string; promised: string; expiresIn?: bigint; signer?: nacl.SignKeyPair }) {
+  const t = setupLedger();
+  const { kp } = keyring();
+  if (o.bond !== '0') t.L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'creator.testnet', amount: o.bond, msg: JSON.stringify({ action: 'bond', recipe_id: 'TEST' }) }));
+  const job_hash = jobHash({ wallet: 'bob.testnet' }, 'salt');
+  const expires_ns = String(1_000_000_000n + (o.expiresIn ?? 600_000_000_000n));
+  const signature = base64.enc(nacl.sign.detached(utf8ToBytes(quoteMessage('frs.testnet', 'TEST', job_hash, o.promised, expires_ns)), (o.signer ?? kp).secretKey));
+  const payQuoted = (runId: string, onBehalf = true) => t.L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'solver', amount: '750000', msg: JSON.stringify({ action: 'run', recipe_id: 'TEST', run_id: runId, inputs_hash: '0'.repeat(64), ...(onBehalf ? { on_behalf_of: 'bob.testnet' } : {}), quote: { job_hash, promised: o.promised, expires_ns, signature } }) }));
+  const report = (runId: string, ok: boolean, delivered: string) => t.L.call('relayer', (l) => l.report_run({ run_id: runId, success: ok, parts_used: ok ? t.parts : [], output_hash: 'f'.repeat(64), delivered, signature: base64.enc(nacl.sign.detached(utf8ToBytes(runReportMessage('frs.testnet', runId, 'TEST', ok, 'f'.repeat(64), delivered, ok ? t.parts : [])), kp.secretKey)) }));
+  return { ...t, payQuoted, report };
+}
+
+test('bond vectors: quoted runs lock cover, compensate shortfalls and release on failure (shared with Rust)', () => {
+  for (const c of json('contracts/test-vectors/bonds.json').cases) {
+    const q = quoted({ bond: c.input.bond_available, promised: c.input.promised });
+    if (c.name === 'unquoted-run') { q.pay('r1'); q.L.call('relayer', (l) => l.report_run({ run_id: 'r1', success: true, parts_used: q.parts, output_hash: 'f'.repeat(64), delivered: '0', signature: q.sign('r1', true, q.parts).replace(/.*/, base64.enc(nacl.sign.detached(utf8ToBytes(runReportMessage('frs.testnet', 'r1', 'TEST', true, 'f'.repeat(64), '0', q.parts)), keyring().kp.secretKey))) })); }
+    else {
+      q.payQuoted('r1');
+      assert.equal(q.L.runs.get('r1')!.covered.toString(), c.expected.covered, c.name + ' covered');
+      const before = q.L.balance_of('bob.testnet');
+      q.report('r1', c.input.outcome === 'ok', c.input.delivered);
+      const refund = c.input.outcome === 'ok' ? 0n : 750000n;
+      assert.equal((q.L.balance_of('bob.testnet') - before - refund).toString(), c.expected.compensation, c.name + ' compensation');
+    }
+    const r = q.L.recipes.get('TEST')!;
+    assert.equal(r.bond_available.toString(), c.expected.bond_available_after, c.name + ' bond_available');
+    assert.equal(r.bond_locked.toString(), c.expected.bond_locked_after, c.name + ' bond_locked');
+  }
+});
+
+test('quotes are bound to the runner key and expire; failures with on_behalf_of credit the buyer', () => {
+  const forged = quoted({ bond: '0', promised: '1000', signer: nacl.sign.keyPair() });
+  forged.payQuoted('r1');
+  assert.equal((forged.L.events.at(-1)!.data[0] as { reason: string }).reason, 'invalid quote signature');
+  assert.equal(forged.L.balance_of('bob.testnet'), 750000n);
+  const old = quoted({ bond: '0', promised: '1000', expiresIn: 0n });
+  old.advance(1n);
+  old.payQuoted('r2');
+  assert.equal((old.L.events.at(-1)!.data[0] as { reason: string }).reason, 'quote expired');
+  const q = quoted({ bond: '5000000', promised: '3000000' });
+  q.payQuoted('r3');
+  assert.throws(() => q.L.call('creator.testnet', (l) => l.withdraw_bond({ recipe_id: 'TEST', amount: '2000001' })), /exceeds bond_available/, 'locked cover cannot be withdrawn');
+  assert.throws(() => q.L.call('bob.testnet', (l) => l.withdraw_bond({ recipe_id: 'TEST', amount: '1' })), /creator only/);
+  q.L.call('creator.testnet', (l) => l.withdraw_bond({ recipe_id: 'TEST', amount: '2000000' }));
+  q.report('r3', true, '2500000');
+  const r = q.L.recipes.get('TEST')!;
+  assert.equal(r.compensated_total, 500000n); assert.equal(r.promised_total, 3000000n); assert.equal(r.delivered_total, 2500000n); assert.equal(r.runs, 1n);
+});
+
+test('FRS-1 disclosure: open-weights parts are low risk, closed models high, remote services medium', () => {
+  const base = { instructions: 'open', harness: 'open', verification: 'open', runtime: 'bundled' } as const;
+  assert.equal(withdrawalRisk({ ...base, model: { kind: 'open-weights' } }), 'low');
+  assert.equal(withdrawalRisk({ ...base, model: { kind: 'none' } }), 'low');
+  assert.equal(withdrawalRisk({ ...base, model: { kind: 'closed' } }), 'high');
+  assert.equal(withdrawalRisk({ ...base, model: { kind: 'none' }, runtime: 'remote' }), 'medium');
+  assert.equal(withdrawalRisk({ ...base, model: { kind: 'none' }, runtime: 'remote', harness: 'closed' }), 'high');
+  const clnp = recipe('CLNP');
+  assert.equal(validateRecipe(clnp, catalog).risk, 'low');
+  const pro = swapPart(clnp, 'shield', 'ai.spam-shield-pro@1.0.0', catalog);
+  const v = validateRecipe(pro, catalog);
+  assert.equal(v.risk, 'high');
+  assert.ok(v.diagnostics.some((d) => d.code === 'part.closed-model'));
+  assert.equal(publicListing(clnp, catalog).privacy, 'confidential');
+  assert.equal(publicListing(recipe('SWPR'), catalog).privacy, 'public');
+});
+
+test('recipe intents: a recipe must match the job type it claims', () => {
+  for (const t of ['CLNP', 'SWPR', 'EXIT', 'SAFE']) assert.ok(validateRecipe(recipe(t), catalog).ok, t);
+  const bad = { ...recipe('CLNP'), implements: 'job.wallet-exit@1.0.0' };
+  const v = validateRecipe(bad, catalog);
+  assert.ok(v.diagnostics.some((d) => d.code === 'job.input' && /threshold_usd/.test(d.message)));
+  assert.notEqual(jobHash({ wallet: 'bob.testnet' }, 'a'), jobHash({ wallet: 'bob.testnet' }, 'b'), 'salted');
 });

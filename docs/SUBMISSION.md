@@ -2,15 +2,14 @@
 
 Everything the NEAR Hackathon asks for, ready to use. Per the organizers' rules, **a human must** publish the repo, post on X and send the form. Nothing in this repo does any of those automatically.
 
-Deadline: **Nov 14, 2026, 23:59 UTC**. Submissions open Nov 1, 00:00 UTC. One submission per repo, and it can't be edited afterwards.
+Deadline: **Nov 14, 2026, 23:59 UTC** (6:59 pm Toronto). Submissions open Nov 1, 00:00 UTC. One submission per repo, and it can't be edited afterwards. Suggested timing: deploy to testnet around Nov 10–11, then submit by Nov 12–13.
 
 ## 1. Checklist
 
-- [ ] `git init` is done and tag `baseline-2026-10-31` exists (it marks the work done before the hackathon started on Nov 1, 2026. Code written after the announcement counts, and HACKATHON.md asks you to separate the baseline from in-window work).
-- [ ] Push to a **public** GitHub repo (you do this; we did not upload anything).
-- [ ] On a clean machine: `npm install && npm run test:e2e` ends with `✔ story complete`; `npm test` and `npm run test:rust` pass.
-- [ ] Optional but strong: `NEAR_AI_API_KEY=… npm run live-check` and paste the output into an issue or the README.
-- [ ] Optional: deploy the contract to testnet (commands in `contracts/fungible-recipes/README.md`) and add the account to the README.
+- [ ] Tag `baseline-2026-10-31` exists. It marks the work done before the window opened; everything after it was built during the hackathon, as HACKATHON.md asks.
+- [ ] Push to a **public** GitHub repo (you do this; nothing was uploaded).
+- [ ] On a clean machine: `npm install && npm run test:e2e` ends with `✔ story complete`; `npm test` (27) and `npm run test:rust` (61) pass.
+- [ ] Strongly recommended: `NEAR_AI_API_KEY=… npm run live-check`, and deploy the contract to testnet (commands in `contracts/fungible-recipes/README.md`). Add the results to the README.
 - [ ] Post the demo on X (below) with `docs/media/demo.mp4` attached.
 - [ ] Create a **mainnet** NEAR account for the prize payout.
 - [ ] Check that no keys are in the repo history (`.env` is git-ignored).
@@ -24,39 +23,38 @@ Deadline: **Nov 14, 2026, 23:59 UTC**. Submissions open Nov 1, 00:00 UTC. One su
 | Team lead | *you* |
 | Email | *you* (max 2 submissions per email) |
 | Team size | *1 / 2-4 / …* |
-| Tracks | `privacy` (Privacy & Private AI), `defi` (Unstoppable DeFi), `agents` (Agent Economy), `open` (Open Innovation). All four fit: sealed TEE execution and NEAR AI Cloud, an exchange with Intents settlement, pay-per-call bots, and a new asset class |
+| Tracks | `privacy` (sealed TEE execution, NEAR AI Cloud), `agents` (agents post jobs, parts are paid per call), `defi` (Intents payment and settlement, revenue shares), `open` |
 | NEAR wallet address | *your mainnet account* |
 | Repository link | *your public GitHub URL* |
 | Demo post link | *your X post URL* |
 | Website | leave empty |
-| Project description (1989 / 2000 chars) | see below |
+| Project description (1805 / 2000 chars) | see below |
 
 ```text
-Problem: businesses run on workflows that chain apps, bots and AI. The workflow itself (which tools, in what order, with which prompts and thresholds) is the edge, but it is protected only by NDAs, it is easy to copy, and the builders whose tools it uses are rarely paid.
+Problem: businesses and AI agents run on workflows that chain tools, bots and models. The workflow (which parts, in what order, with which prompts and thresholds) is the edge, but it is protected only by NDAs, easy to copy, hard to compare on results, and the builders of its parts are rarely paid.
 
-Fungible Recipes turns a workflow into a sealed, tradable financial instrument on NEAR:
-- Compose: builders publish typed blocks with per-call fees. Creators wire them into a recipe in a no-code canvas (FRS-1 standard: typed ports, subtyping, drop-in block swaps).
-- Seal: the recipe is encrypted in the creator's browser to an attested TEE runner (Intel TDX via dstack, the Shade Agent stack). Only its hash goes on-chain: no patent or licence needed to stop copying.
-- Pay per run with NEAR Intents: a 1Click EXACT_OUTPUT quote delivers the exact run price to our contract via ft_transfer_call with the run ticket in customRecipientMsg. The buyer pays from any chain and fills one short form.
-- Execute privately: the runner checks on-chain commitments, decrypts and runs the blocks. AI blocks use NEAR AI Cloud private models with verified TEE signatures; swaps use confidential intents to a fresh address.
-- Settle: the runner's ed25519-signed report is verified on-chain, and one receipt pays the protocol, the runner, every block author, the creator's royalty and a dividend to all shareholders.
-- Trade: each recipe has shares that trade in frequent batch auctions (an opening auction, then one uniform price every batch), so the market prices the edge without seeing it.
+Fungible Recipes is intents for workflows, on NEAR:
+- Post a job: a buyer, or an agent, fills one short form for a standard job type, sealed to an attested TEE runner.
+- Compete: every recipe that does that job quotes from a dry run inside the TEE: expected value, a runner-signed promise backed by the creator's bond, price, privacy and a withdrawal-risk label. Buyers compare results, not methods; recipes stay sealed. Unserved jobs become open demand for builders.
+- Pay with NEAR Intents from any chain: a 1Click EXACT_OUTPUT quote delivers the exact run price to our contract via ft_transfer_call, carrying the signed quote.
+- Run privately: parts (code, specialist agents, NEAR AI Cloud private models) run under per-part resource limits; swaps use confidential intents to a fresh address; everything about the buyer is sealed back to a key in their browser.
+- Settle once: the contract verifies the runner's signed report and pays the protocol, the runner, every part author, the creator and shareholders in one receipt, and pays any shortfall to the buyer from the bond.
+- FRS-1, a no-code standard: typed parts with drop-in swaps and disclosure of model, instructions, harness and verification (open-weights low risk, closed models high).
+- Optional funding: creators sell revenue shares in batch auctions.
 
-Demo: a creator seals "Clean up and protect"; a buyer pays $0.75 from Arbitrum; the workflow quarantines scam airdrops, sweeps dust and confidentially swaps it to a fresh address; 8 parties plus all shareholders are paid in one settlement.
-
-Includes: a Rust NEAR contract (50 tests), a TS mirror on the same vectors, the TEE runner, 8 blocks, the exchange UI, a headless e2e story and a live-check against real 1Click and NEAR AI Cloud.
+Includes: Rust NEAR contract (61 tests), a TS mirror on shared vectors, the TEE runner, an agent buyer, the UI, a headless e2e story and a live-check against real 1Click and NEAR AI Cloud.
 ```
 
 ## 3. X demo post
 
-Attach `docs/media/demo.mp4` (81 s, 1440×900), or the screenshots `02-sealed.png`, `03-wallet-approval.png`, `05-settlement.png`, `06-exchange-clnp.png`.
+Attach `docs/media/demo.mp4`, or the screenshots `03-quotes.png`, `02-sealed.png`, `06-settlement.png` and `10-compose-disclosure.png`.
 
-**Main post** (fits in 280 characters):
+**Main post** (277 characters):
 
 ```text
 Your workflow is your edge. Copy it once and it's gone.
 
-Fungible Recipes: seal a workflow in a TEE, sell it per run via NEAR Intents, and pay every builder in one settlement. Shares trade in batch auctions.
+Fungible Recipes: intents for workflows. Post a job, sealed workflows compete with signed quotes, pay via NEAR Intents, and every builder gets paid in one settlement.
 
 Built at NEAR HACKATHON @NEARProtocol #NEARHackathon
 ```
@@ -65,15 +63,15 @@ Built at NEAR HACKATHON @NEARProtocol #NEARHackathon
 
 ```text
 2/ What NEAR does here:
-• 1Click EXACT_OUTPUT quote delivers the exact run price to our contract via ft_transfer_call
-• confidential intents make the swaps unlinkable
-• runner reports are ed25519-verified on-chain
-• NEAR AI Cloud private models with verified TEE signatures
+• 1Click EXACT_OUTPUT delivers the run price to our contract with the signed quote
+• confidential intents for swaps
+• quotes + reports signed by an attested TEE runner, verified on-chain
+• NEAR AI Cloud private models
 
-3/ One run of "Clean up and protect", $0.75 from Arbitrum: quarantine 2 scam airdrops, sweep 4 dust balances, confidentially swap to a fresh address. Protocol, runner, 5 block authors, the creator and every shareholder are paid in one receipt.
+3/ Bob posts "Clean up my wallet". SWPR quotes more USDC but is public and sweeps his gas; CLNP is confidential and bonded. He picks CLNP, pays $0.75 from Arbitrum, gets $28.02 vs $27.81 promised. 5 part authors, the runner, the creator and shareholders: one receipt.
 
-4/ Repo (MIT, 72 tests, one-command demo): <repo link>
-Question for builders: which workflow would you seal and list first?
+4/ Repo (MIT, 88 tests, one-command demo, agent buyer included): <repo link>
+Question for builders: which workflow would you seal and let compete first?
 ```
 
 Optional tags: @NearLegion @NearBuilders.
@@ -89,7 +87,7 @@ Optional tags: @NearLegion @NearBuilders.
   "leadName": "<lead name>",
   "email": "<email>",
   "size": "<1 | 2-4 | 4-6 | 6-8 | 8+>",
-  "tracks": ["privacy", "defi", "agents", "open"],
+  "tracks": ["privacy", "agents", "defi", "open"],
   "nearAddress": "<mainnet account>",
   "projectUrl": "<public repo URL>",
   "demoUrl": "<X post URL>",
@@ -100,12 +98,12 @@ Optional tags: @NearLegion @NearBuilders.
 
 ## 5. Narration (if you record your own voice-over over `demo.mp4`)
 
-| Time | Screen | Say |
-|---|---|---|
-| 0–4 s | Title card | "Your workflow is your edge. Fungible Recipes lets you sell it without giving it away." |
-| 4–20 s | Composer, blocks snapping in | "Five blocks from five builders, type-checked as they connect. A private AI guard, a dust filter, a fresh-address check and a confidential Intents swap." |
-| 20–30 s | Seal dialog | "We verify the runner's attestation, then seal the recipe in the browser. The market only ever sees the listing; the chain stores a hash." |
-| 30–45 s | Run form + Intents quote | "A buyer fills four fields and pays seventy-five cents in USDC from Arbitrum. NEAR Intents delivers it straight to our contract, run ticket attached." |
-| 45–65 s | Execution timeline, wallet approval | "The runner checks the on-chain commitments, decrypts, quarantines two scam airdrops with a signed AI verdict, and routes four confidential swaps to a never-used address." |
-| 65–75 s | Settlement diagram | "One signed report, one receipt: protocol, runner, five builders, the creator, and every shareholder." |
-| 75–81 s | Exchange | "And because every run pays a dividend, the market prices the recipe's edge without ever seeing it." |
+| Screen | Say |
+|---|---|
+| Title card | "Your workflow is your edge. Fungible Recipes lets workflows compete for jobs without giving their method away." |
+| Composer, parts snapping in | "Five parts from five builders, type-checked as they connect. Each part discloses its model and harness, so buyers can see what could be withdrawn." |
+| Seal dialog | "We verify the runner's attestation, seal the recipe in the browser and back its quotes with a bond. The chain stores only a hash." |
+| Job form and quotes | "A buyer posts one short job. Every recipe that does it quotes from a sealed dry run: expected value, a signed promise, price, privacy and risk. SWPR offers more but is public; Bob picks CLNP." |
+| Intents payment, execution | "He pays seventy-five cents from Arbitrum through NEAR Intents. The runner checks the commitments, quarantines two scam airdrops and routes four confidential swaps to a fresh address." |
+| Settlement | "One receipt pays five builders, the runner, the creator and every shareholder, and delivery beat the promise, so the bond stays untouched." |
+| Revenue shares, Trust | "Creators can sell revenue shares in batch auctions for funding, and every proof is on the Trust page." |

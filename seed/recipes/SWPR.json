@@ -42,7 +42,7 @@
   "nodes": [
     {
       "id": "scan",
-      "block": "near.wallet-scanner@1.0.0",
+      "part": "near.wallet-scanner@1.0.0",
       "inputs": {
         "account": "form.wallet"
       },
@@ -54,7 +54,7 @@
     },
     {
       "id": "shield",
-      "block": "rules.spam-shield@1.0.0",
+      "part": "rules.spam-shield@1.0.0",
       "inputs": {
         "holdings": "scan.holdings"
       },
@@ -66,7 +66,7 @@
     },
     {
       "id": "dust",
-      "block": "filter.dust@1.0.0",
+      "part": "filter.dust@1.0.0",
       "inputs": {
         "holdings": "shield.clean",
         "threshold_usd": "form.threshold_usd"
@@ -82,7 +82,7 @@
     },
     {
       "id": "swap",
-      "block": "intents.public-swap@1.0.0",
+      "part": "intents.public-swap@1.0.0",
       "inputs": {
         "tokens": "dust.dust",
         "to": "form.recipient",
@@ -101,6 +101,8 @@
   "listing": {
     "price_per_run": "200000",
     "royalty_bps": 500,
-    "total_shares": "1000000"
-  }
+    "total_shares": "1000000",
+    "bond": "10000000"
+  },
+  "implements": "job.wallet-cleanup@1.0.0"
 }

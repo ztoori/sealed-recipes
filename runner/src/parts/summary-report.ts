@@ -1,6 +1,6 @@
-import type { BlockHandler, Flag, Holding } from '../types.js';
+import type { PartHandler, Flag, Holding } from '../types.js';
 
-export const summaryReport: BlockHandler = async (inputs, ctx) => {
+export const summaryReport: PartHandler = async (inputs, ctx) => {
   const flags = inputs.flags as Flag[];
   const holdings = inputs.holdings as Holding[];
   const scams = flags.filter((f) => f.verdict === 'SCAM');

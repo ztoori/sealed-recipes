@@ -1,4 +1,4 @@
-import type { BlockManifest } from '../../core/src/frs.js';
+import type { PartManifest } from '../../core/src/frs.js';
 
 export interface Holding {
   owner: string;
@@ -19,18 +19,20 @@ export interface ApprovalResult { approved: boolean; txHashes: string[] }
 
 export type Emit = (type: string, data: Record<string, unknown>) => void;
 
-export interface BlockCtx {
+export interface PartCtx {
   nodeId: string;
-  manifest: BlockManifest;
+  manifest: PartManifest;
   params: Record<string, unknown>;
-  /** fetch restricted to the block's declared `net:` capabilities */
+  /** fetch restricted to the part's declared `net:` capabilities */
   http: (url: string, init?: RequestInit) => Promise<Response>;
   log: (msg: string, data?: Record<string, unknown>) => void;
   requestApproval: (req: ApprovalRequest) => Promise<ApprovalResult>;
   endpoints: Endpoints;
   secrets: { nearAiKey?: string; oneClickJwt?: string };
+  /** 'quote' = dry run for recipe intents: read-only, no approvals, swaps are priced but not executed */
+  mode: 'run' | 'quote';
 }
 
 export interface Endpoints { fastnear: string; rpc: string; oneclick: string; nearai: string; nras: string }
 
-export type BlockHandler = (inputs: Record<string, unknown>, ctx: BlockCtx) => Promise<Record<string, unknown>>;
+export type PartHandler = (inputs: Record<string, unknown>, ctx: PartCtx) => Promise<Record<string, unknown>>;

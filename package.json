@@ -22,7 +22,8 @@
     "test:e2e": "node scripts/demo.mjs --no-open --story --exit",
     "record": "node scripts/record-demo.mjs",
     "seed": "tsx scripts/seed.ts",
-    "pin-codehash": "tsx scripts/pin-codehash.ts"
+    "pin-codehash": "tsx scripts/pin-codehash.ts",
+    "agent": "tsx scripts/agent-buyer.ts"
   },
   "dependencies": {
     "@noble/curves": "^2.4.0",

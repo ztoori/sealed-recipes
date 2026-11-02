@@ -1,7 +1,7 @@
-import type { BlockHandler, Flag, Holding } from '../types.js';
+import type { PartHandler, Flag, Holding } from '../types.js';
 
 /** Deterministic guard: anything 1Click solvers will not quote is treated as unsafe. */
-export const allowlistShield: BlockHandler = async (inputs, ctx) => {
+export const allowlistShield: PartHandler = async (inputs, ctx) => {
   const holdings = inputs.holdings as Holding[];
   const res = await ctx.http(`${ctx.endpoints.oneclick}/v0/tokens`);
   const listed = new Set(((await res.json()) as { assetId: string }[]).map((t) => t.assetId));

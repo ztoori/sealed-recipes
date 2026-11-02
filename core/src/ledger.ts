@@ -20,22 +20,29 @@ export const MAX_ORDERS_PER_BOOK = 200;
 export const EVENT_STANDARD = 'fungible-recipes';
 export const EVENT_VERSION = '1.0.0';
 
-export interface LedgerBlock { id: string; version: string; author: string; fee_per_call: bigint; manifest_hash: string; active: boolean }
+export interface LedgerPart { id: string; version: string; author: string; fee_per_call: bigint; manifest_hash: string; active: boolean }
 export interface LedgerRunner { id: string; signing_pk: string; enc_pk_hex: string; codehash: string; fee_per_run: bigint; active: boolean }
 export interface LedgerRecipe {
-  id: string; name: string; creator: string; sealed_hash: string; runner_id: string; blocks: string[];
+  id: string; name: string; creator: string; sealed_hash: string; runner_id: string; parts: string[];
   price_per_run: bigint; royalty_bps: number; total_shares: bigint; acc_per_share: bigint; runs: bigint; revenue: bigint; listed: boolean; created_ns: bigint;
+  /** track record + bond (v2) */
+  failed: bigint; promised_total: bigint; delivered_total: bigint; compensated_total: bigint; bond_available: bigint; bond_locked: bigint;
 }
 export type RunStatus = 'Pending' | 'Settled' | 'Refunded';
-export interface LedgerRun { run_id: string; recipe_id: string; buyer: string; amount: bigint; inputs_hash: string; sealed_hash: string; status: RunStatus; created_ns: bigint }
+export interface LedgerRun { run_id: string; recipe_id: string; buyer: string; amount: bigint; inputs_hash: string; sealed_hash: string; job_hash: string; promised: bigint; covered: bigint; status: RunStatus; created_ns: bigint }
 export interface LedgerOrder { id: number; recipe_id: string; owner: string; side: 'Bid' | 'Ask'; price: bigint; qty: bigint; created_ns: bigint }
 export interface LedgerEvent { standard: string; version: string; event: string; data: Record<string, unknown>[]; block_height: number; timestamp_ns: string; tx_hash: string; signer: string }
 export interface Payout { account_id: string; role: string; amount: bigint }
 export interface Holding { shares: bigint; reward_debt: bigint; locked: bigint }
 
-export function runReportMessage(contractId: string, runId: string, recipeId: string, ok: boolean, outputHash: string, blocksUsed: string[]): string {
-  return ['frs-run-v1', contractId, runId, recipeId, ok ? 'ok' : 'fail', outputHash, blocksUsed.join(',')].join('|');
+export function runReportMessage(contractId: string, runId: string, recipeId: string, ok: boolean, outputHash: string, delivered: string, partsUsed: string[]): string {
+  return ['frs-run-v2', contractId, runId, recipeId, ok ? 'ok' : 'fail', outputHash, delivered, partsUsed.join(',')].join('|');
 }
+/** what a runner signs when a recipe quotes for a job (recipe intents) */
+export function quoteMessage(contractId: string, recipeId: string, jobHash: string, promised: string, expiresNs: string): string {
+  return ['frs-quote-v1', contractId, recipeId, jobHash, promised, expiresNs].join('|');
+}
+export interface SignedQuote { job_hash: string; promised: string; expires_ns: string; signature: string }
 
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new LedgerError(msg);
@@ -51,7 +58,7 @@ export class LocalLedger {
   readonly paymentToken: string;
   protocolAccount: string;
   protocolFeeBps: number;
-  blocks = new Map<string, LedgerBlock>();
+  parts = new Map<string, LedgerPart>();
   runners = new Map<string, LedgerRunner>();
   recipes = new Map<string, LedgerRecipe>();
   runs = new Map<string, LedgerRun>();
@@ -135,27 +142,28 @@ export class LocalLedger {
   }
 
   // ---------- builders & creators ----------
-  register_block(a: { id: string; version: string; fee_per_call: string; manifest_hash: string }) {
+  register_part(a: { id: string; version: string; fee_per_call: string; manifest_hash: string }) {
     const author = this.caller();
-    assert(/^[a-z0-9._@-]{1,64}$/.test(a.id), 'block id must match ^[a-z0-9._@-]{1,64}$');
-    assert(!this.blocks.has(a.id), 'block id taken');
+    assert(/^[a-z0-9._@-]{1,64}$/.test(a.id), 'part id must match ^[a-z0-9._@-]{1,64}$');
+    assert(!this.parts.has(a.id), 'part id taken');
     const b = { id: a.id, version: a.version, author, fee_per_call: BigInt(a.fee_per_call), manifest_hash: a.manifest_hash, active: true };
-    this.blocks.set(a.id, b);
-    this.emit('block_registered', { ...b });
+    this.parts.set(a.id, b);
+    this.emit('part_registered', { ...b });
   }
 
-  publish_recipe(a: { id: string; name: string; sealed_hash: string; runner_id: string; blocks: string[]; price_per_run: string; royalty_bps: number; total_shares: string }) {
+  publish_recipe(a: { id: string; name: string; sealed_hash: string; runner_id: string; parts: string[]; price_per_run: string; royalty_bps: number; total_shares: string }) {
     const creator = this.caller();
     assert(/^[A-Z0-9]{3,6}$/.test(a.id), 'invalid ticker');
     assert(!this.recipes.has(a.id), 'ticker taken');
     assert(a.royalty_bps <= 5000, 'royalty too high');
     const total = BigInt(a.total_shares); assert(total > 0n, 'total_shares must be > 0');
     const runner = this.runners.get(a.runner_id); assert(runner?.active, 'runner not active');
-    assert(a.blocks.length > 0, 'recipe needs at least one block');
-    const fees = a.blocks.map((b) => { const blk = this.blocks.get(b); assert(blk?.active, `unknown block ${b}`); return blk.fee_per_call; });
+    assert(a.parts.length > 0, 'recipe needs at least one part');
+    const fees = a.parts.map((b) => { const blk = this.parts.get(b); assert(blk?.active, `unknown part ${b}`); return blk.fee_per_call; });
     const price = BigInt(a.price_per_run);
     assert(minimumPrice(price, this.protocolFeeBps, runner.fee_per_run, fees), 'price below minimum viable price');
-    const r: LedgerRecipe = { id: a.id, name: a.name, creator, sealed_hash: a.sealed_hash, runner_id: a.runner_id, blocks: a.blocks, price_per_run: price, royalty_bps: a.royalty_bps, total_shares: total, acc_per_share: 0n, runs: 0n, revenue: 0n, listed: true, created_ns: this.now() };
+    const r: LedgerRecipe = { id: a.id, name: a.name, creator, sealed_hash: a.sealed_hash, runner_id: a.runner_id, parts: a.parts, price_per_run: price, royalty_bps: a.royalty_bps, total_shares: total, acc_per_share: 0n, runs: 0n, revenue: 0n, listed: true, created_ns: this.now(),
+      failed: 0n, promised_total: 0n, delivered_total: 0n, compensated_total: 0n, bond_available: 0n, bond_locked: 0n };
     this.recipes.set(a.id, r);
     const h = this.holding(a.id, creator); h.shares = total; this.rebase(r, h);
     this.batches.set(a.id, { id: 1, opened_ns: this.now() }); // opening auction
@@ -173,9 +181,9 @@ export class LocalLedger {
   ft_on_transfer(a: { sender_id: string; amount: string; msg: string }): string {
     assert(this.caller() === this.paymentToken, 'only payment token');
     const amount = BigInt(a.amount);
-    let m: { action: string; [k: string]: string };
+    let m: { action: string; quote?: SignedQuote; [k: string]: unknown } & Record<string, any>;
     try { m = JSON.parse(a.msg); } catch { throw new LedgerError('invalid msg'); }
-    if (m.action !== 'run' && m.action !== 'bid') throw new LedgerError('invalid msg');
+    if (m.action !== 'run' && m.action !== 'bid' && m.action !== 'bond') throw new LedgerError('invalid msg');
     const owner = m.on_behalf_of || a.sender_id; // NEAR Intents: sender is the solver side, not the buyer
     // validate everything before touching state (same order and reasons as the contract)
     const reject = (reason: string): string => {
@@ -192,10 +200,30 @@ export class LocalLedger {
       if (!r) return reject('unknown recipe');
       if (!r.listed) return reject('recipe not listed');
       if (amount < r.price_per_run) return reject('payment below price_per_run');
+      let job_hash = '', promised = 0n;
+      if (m.quote) {
+        const q = m.quote;
+        if (!/^[0-9a-f]{64}$/.test(q.job_hash ?? '')) return reject('job_hash must be 64 lowercase hex');
+        const runner = this.runners.get(r.runner_id)!;
+        let ok = false;
+        try { ok = nacl.sign.detached.verify(utf8ToBytes(quoteMessage(this.contractId, r.id, q.job_hash, q.promised, q.expires_ns)), base64.dec(q.signature), bs58.decode(runner.signing_pk.slice(8))); } catch { ok = false; }
+        if (!ok) return reject('invalid quote signature');
+        if (this.now() > BigInt(q.expires_ns)) return reject('quote expired');
+        job_hash = q.job_hash; promised = BigInt(q.promised);
+      }
       this.credit(owner, amount - r.price_per_run);
-      const run: LedgerRun = { run_id: m.run_id, recipe_id: r.id, buyer: owner, amount: r.price_per_run, inputs_hash: m.inputs_hash, sealed_hash: r.sealed_hash, status: 'Pending', created_ns: this.now() };
+      const covered = promised < r.bond_available ? promised : r.bond_available;
+      r.bond_available -= covered; r.bond_locked += covered;
+      const run: LedgerRun = { run_id: m.run_id, recipe_id: r.id, buyer: owner, amount: r.price_per_run, inputs_hash: m.inputs_hash, sealed_hash: r.sealed_hash, job_hash, promised, covered, status: 'Pending', created_ns: this.now() };
       this.runs.set(m.run_id, run);
       this.emit('run_requested', { ...run });
+      return '0';
+    }
+    if (m.action === 'bond') {
+      const rb = this.recipes.get(m.recipe_id);
+      if (!rb) return reject('unknown recipe');
+      rb.bond_available += amount;
+      this.emit('bond_posted', { recipe_id: rb.id, from: owner, amount, bond_available: rb.bond_available });
       return '0';
     }
     const r = this.recipes.get(m.recipe_id);
@@ -212,34 +240,43 @@ export class LocalLedger {
     return '0';
   }
 
-  report_run(a: { run_id: string; success: boolean; blocks_used: string[]; output_hash: string; signature: string }) {
+  report_run(a: { run_id: string; success: boolean; parts_used: string[]; output_hash: string; delivered: string; signature: string }) {
     const run = this.runs.get(a.run_id); assert(run, 'no run'); assert(run.status === 'Pending', 'run not pending');
     const r = this.recipes.get(run.recipe_id)!;
     const runner = this.runners.get(r.runner_id); assert(runner?.active, 'runner inactive');
     assert(/^[0-9a-f]{64}$/.test(a.output_hash), 'output_hash must be 64 lowercase hex');
-    const msg = runReportMessage(this.contractId, a.run_id, r.id, a.success, a.output_hash, a.blocks_used);
+    const msg = runReportMessage(this.contractId, a.run_id, r.id, a.success, a.output_hash, a.delivered, a.parts_used);
     const pk = bs58.decode(runner.signing_pk.slice(8));
     const sig = base64.dec(a.signature);
     assert(sig.length === 64 && nacl.sign.detached.verify(utf8ToBytes(msg), sig, pk), 'invalid runner signature');
     if (!a.success) {
       run.status = 'Refunded'; this.credit(run.buyer, run.amount);
+      this.releaseCover(r, run); r.failed += 1n;
       this.emit('run_refunded', { run_id: run.run_id, buyer: run.buyer, amount: run.amount, reason: 'runner_reported_failure' });
       return [];
     }
-    const pool = [...r.blocks];
-    for (const b of a.blocks_used) { const i = pool.indexOf(b); assert(i >= 0, 'blocks_used not part of recipe'); pool.splice(i, 1); }
-    const fees = a.blocks_used.map((b) => this.blocks.get(b)!.fee_per_call);
-    const s = settlementSplit({ price: run.amount, protocolFeeBps: this.protocolFeeBps, runnerFee: runner.fee_per_run, blockFees: fees, royaltyBps: r.royalty_bps, totalShares: r.total_shares });
+    const pool = [...r.parts];
+    for (const b of a.parts_used) { const i = pool.indexOf(b); assert(i >= 0, 'parts_used not part of recipe'); pool.splice(i, 1); }
+    const fees = a.parts_used.map((b) => this.parts.get(b)!.fee_per_call);
+    const s = settlementSplit({ price: run.amount, protocolFeeBps: this.protocolFeeBps, runnerFee: runner.fee_per_run, partFees: fees, royaltyBps: r.royalty_bps, totalShares: r.total_shares });
     const payouts: Payout[] = [];
     payouts.push({ account_id: this.protocolAccount, role: 'protocol', amount: s.protocolTotal });
     payouts.push({ account_id: runner.id, role: 'runner', amount: s.runner });
-    a.blocks_used.forEach((b, i) => payouts.push({ account_id: this.blocks.get(b)!.author, role: `block:${b}`, amount: s.blocks[i] }));
+    a.parts_used.forEach((b, i) => payouts.push({ account_id: this.parts.get(b)!.author, role: `part:${b}`, amount: s.parts[i] }));
     payouts.push({ account_id: r.creator, role: 'creator_royalty', amount: s.creator });
     for (const p of payouts) this.credit(p.account_id, p.amount);
     r.acc_per_share += s.accIncrement;
     r.runs += 1n; r.revenue += run.amount;
+    // bonded quote: compensate any shortfall from the cover locked when the run was paid
+    const delivered = BigInt(a.delivered);
+    const shortfall = run.promised > delivered ? run.promised - delivered : 0n;
+    const compensation = shortfall < run.covered ? shortfall : run.covered;
+    this.credit(run.buyer, compensation);
+    r.bond_locked -= run.covered; r.bond_available += run.covered - compensation;
+    if (run.job_hash) { r.promised_total += run.promised; r.delivered_total += delivered; }
+    r.compensated_total += compensation;
     run.status = 'Settled';
-    this.emit('frs_settlement', { run_id: run.run_id, recipe_id: r.id, buyer: run.buyer, price: run.amount, output_hash: a.output_hash, payouts, shareholder_pool: s.distributed, acc_increment: s.accIncrement });
+    this.emit('frs_settlement', { run_id: run.run_id, recipe_id: r.id, buyer: run.buyer, price: run.amount, output_hash: a.output_hash, payouts, shareholder_pool: s.distributed, acc_increment: s.accIncrement, delivered, compensation });
     return payouts;
   }
 
@@ -248,7 +285,18 @@ export class LocalLedger {
     assert(run.buyer === this.caller(), 'only buyer'); assert(run.status === 'Pending', 'run not pending');
     assert(this.now() >= run.created_ns + RUN_TIMEOUT_NS, 'timeout not reached');
     run.status = 'Refunded'; this.credit(run.buyer, run.amount);
+    const r = this.recipes.get(run.recipe_id)!; this.releaseCover(r, run); r.failed += 1n;
     this.emit('run_refunded', { run_id: run.run_id, buyer: run.buyer, amount: run.amount, reason: 'timeout' });
+  }
+
+  private releaseCover(r: LedgerRecipe, run: LedgerRun) { r.bond_locked -= run.covered; r.bond_available += run.covered; }
+
+  withdraw_bond(a: { recipe_id: string; amount: string }) {
+    const r = this.recipes.get(a.recipe_id); assert(r, 'unknown recipe');
+    assert(r.creator === this.caller(), 'creator only');
+    const amt = BigInt(a.amount); assert(amt > 0n, 'amount must be > 0'); assert(amt <= r.bond_available, 'amount exceeds bond_available');
+    r.bond_available -= amt; this.credit(r.creator, amt);
+    this.emit('bond_withdrawn', { recipe_id: r.id, amount: amt, bond_available: r.bond_available });
   }
 
   // ---------- shares & dividends ----------
@@ -358,10 +406,10 @@ export class LocalLedger {
       asks: os.filter((o) => o.side === 'Ask').sort((a, b) => (a.price > b.price ? 1 : a.price < b.price ? -1 : a.id - b.id)),
     };
   }
-  quote_settlement(recipe_id: string, blocks_used: string[]) {
+  quote_settlement(recipe_id: string, parts_used: string[]) {
     const r = this.recipes.get(recipe_id); assert(r, 'no recipe');
     const runner = this.runners.get(r.runner_id)!;
-    return settlementSplit({ price: r.price_per_run, protocolFeeBps: this.protocolFeeBps, runnerFee: runner.fee_per_run, blockFees: blocks_used.map((b) => this.blocks.get(b)!.fee_per_call), royaltyBps: r.royalty_bps, totalShares: r.total_shares });
+    return settlementSplit({ price: r.price_per_run, protocolFeeBps: this.protocolFeeBps, runnerFee: runner.fee_per_run, partFees: parts_used.map((b) => this.parts.get(b)!.fee_per_call), royaltyBps: r.royalty_bps, totalShares: r.total_shares });
   }
   holders(recipe_id: string): { account: string; shares: bigint; locked: bigint }[] {
     return [...this.holdings.entries()].filter(([k, h]) => k.startsWith(recipe_id + '|') && h.shares > 0n).map(([k, h]) => ({ account: k.split('|')[1], shares: h.shares, locked: h.locked })).sort((a, b) => (b.shares > a.shares ? 1 : -1));

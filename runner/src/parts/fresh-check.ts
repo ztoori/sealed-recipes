@@ -1,7 +1,7 @@
-import type { BlockHandler } from '../types.js';
+import type { PartHandler } from '../types.js';
 
 /** A fresh address must not exist on-chain: NEAR RPC view_account → UNKNOWN_ACCOUNT. */
-export const freshCheck: BlockHandler = async (inputs, ctx) => {
+export const freshCheck: PartHandler = async (inputs, ctx) => {
   const addr = String(inputs.recipient);
   if (!/^[0-9a-f]{64}$/.test(addr)) throw new Error('fresh recipient must be an implicit (64-hex) account generated client-side');
   const r = await ctx.http(ctx.endpoints.rpc, {

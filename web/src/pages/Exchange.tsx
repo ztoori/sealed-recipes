@@ -29,7 +29,7 @@ export function Exchange() {
           </tbody>
         </table>
         <div className="body small muted">
-          Each recipe is a sealed workflow with a fixed supply of shares. Every paid run streams a dividend to holders. Shares trade in frequent batch auctions: orders collect for {s?.batch ? Math.round(s.batch.intervalMs / 1000) : 12} seconds, then everything that crosses clears at one price.
+          Revenue shares are optional funding for creators: they sell part of a recipe's future run revenue, and every paid run pays holders a dividend. Shares change hands in frequent batch auctions: orders collect for {s?.batch ? Math.round(s.batch.intervalMs / 1000) : 12} seconds, then everything that crosses clears at one price.
           {!listings?.some((l) => l.ticker === 'CLNP') && <p><button className="btn sm" onClick={() => go('compose')}>Compose “Clean up and protect”</button></p>}
         </div>
       </section>
@@ -58,6 +58,17 @@ export function Exchange() {
         {s && (
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
             <div className="panel">
+              <header><h2>Track record</h2><span className="small muted">on-chain</span></header>
+              <dl className="kv body">
+                <dt>Successful runs</dt><dd>{s.runs}</dd>
+                <dt>Refunded runs</dt><dd>{Number(m.onchain?.failed ?? 0)}</dd>
+                <dt>Delivered vs promised</dt><dd>{Number(m.onchain?.promised_total ?? 0) ? `${(Number(m.onchain.delivered_total) / Number(m.onchain.promised_total) * 100).toFixed(0)}%` : 'no quoted runs yet'}</dd>
+                <dt>Bond backing quotes</dt><dd>{usd(m.onchain?.bond_available ?? 0, 2)}{Number(m.onchain?.bond_locked ?? 0) ? ` (+${usd(m.onchain.bond_locked, 2)} locked)` : ''}</dd>
+                <dt>Paid out to buyers from bond</dt><dd>{usd(m.onchain?.compensated_total ?? 0, 2)}</dd>
+                <dt>Withdrawal risk</dt><dd>{m.listing?.risk ?? '—'}</dd>
+              </dl>
+            </div>
+            <div className="panel">
               <header><h2>Run economics</h2></header>
               <dl className="kv body">
                 <dt>Price per run</dt><dd>{money(s.pricePerRun, 2)}</dd>
@@ -71,14 +82,14 @@ export function Exchange() {
             <div className="panel">
               <header><h2>What the market can see</h2></header>
               <div className="body grid" style={{ gap: 8 }}>
-                <div className="blocks-strip">
-                  {m.listing?.blocks.map((b: string, i: number) => (
+                <div className="parts-strip">
+                  {m.listing?.parts.map((b: string, i: number) => (
                     <span key={b} className="row" style={{ gap: 6 }}>{i > 0 && <span className="arrow">›</span>}<span className="blk">{b.split('@')[0]}<small>{b.split('@')[1]}</small></span></span>
                   ))}
                 </div>
                 <div className="small">Form: {m.listing?.form.map((f: any) => f.label).join(', ')}</div>
                 <div className="sealed-box">Wiring, parameters and prompts are sealed to the runner. On-chain commitment <SealedHash ticker={ticker} /></div>
-                <button className="btn ghost sm" onClick={() => go('run', ticker)}>Run this recipe ({money(s.pricePerRun)})</button>
+                <button className="btn ghost sm" onClick={() => go('run', ticker)}>Get a quote from {ticker} ({money(s.pricePerRun)} per run)</button>
               </div>
             </div>
           </div>

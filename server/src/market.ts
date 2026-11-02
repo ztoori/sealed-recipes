@@ -76,7 +76,7 @@ export class Market {
     const ind = this.ledger.indicative_clearing(ticker);
     const runs = this.ledger.events.filter((e) => e.event === 'frs_settlement' && (e.data[0] as { recipe_id: string }).recipe_id === ticker);
     const poolPaid = runs.reduce((s, e) => s + Number((e.data[0] as { shareholder_pool: string }).shareholder_pool), 0) / USDC;
-    const q = this.ledger.quote_settlement(ticker, r.blocks);
+    const q = this.ledger.quote_settlement(ticker, r.parts);
     const perRunToShares = Number(q.distributed) / USDC;
     const perShare = perRunToShares / Number(r.total_shares);
     return {

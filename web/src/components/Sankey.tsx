@@ -4,7 +4,7 @@ const COLORS: Record<string, string> = { protocol: '#8592a8', runner: '#5b6b84',
 
 /** Where one run's payment went: a single settlement split into every payee. */
 export function SettlementFlow({ price, payouts, pool }: { price: number; payouts: { account_id: string; role: string; amount: string }[]; pool: number }) {
-  const items = [...payouts.map((p) => ({ label: p.role.startsWith('block:') ? `${p.account_id}` : p.account_id, sub: p.role.startsWith('block:') ? p.role.slice(6).split('@')[0] : p.role.replace('_', ' '), amount: Number(p.amount), color: p.role.startsWith('block:') ? '#2f6fdb' : COLORS[p.role] ?? '#5b6b84' })),
+  const items = [...payouts.map((p) => ({ label: p.role.startsWith('part:') ? `${p.account_id}` : p.account_id, sub: p.role.startsWith('part:') ? p.role.slice(6).split('@')[0] : p.role.replace('_', ' '), amount: Number(p.amount), color: p.role.startsWith('part:') ? '#2f6fdb' : COLORS[p.role] ?? '#5b6b84' })),
     { label: 'all shareholders', sub: 'dividend, pro rata', amount: pool, color: COLORS.shareholders }];
   const H = 430, W = 660, gap = 5, x0 = 150, x1 = 400;
   const total = items.reduce((s, i) => s + i.amount, 0) || 1;

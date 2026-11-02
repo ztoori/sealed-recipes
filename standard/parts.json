@@ -1,6 +1,6 @@
 {
   "frs": "1.0",
-  "kind": "block-catalog",
+  "kind": "part-catalog",
   "types": {
     "near.account": {
       "description": "NEAR account id (named or implicit)",
@@ -43,7 +43,7 @@
       "extends": null
     }
   },
-  "blocks": [
+  "parts": [
     {
       "id": "near.wallet-scanner@1.0.0",
       "name": "Wallet Scanner",
@@ -67,7 +67,22 @@
         "net:1click.chaindefuser.com"
       ],
       "fee_per_call": "20000",
-      "implementation": "runner/src/blocks/wallet-scanner.ts"
+      "implementation": "runner/src/parts/wallet-scanner.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 8000,
+        "max_http_calls": 40,
+        "max_model_calls": 0,
+        "max_output_bytes": 64000
+      }
     },
     {
       "id": "ai.spam-shield@1.1.0",
@@ -106,7 +121,75 @@
         "net:1click.chaindefuser.com"
       ],
       "fee_per_call": "50000",
-      "implementation": "runner/src/blocks/spam-shield.ts"
+      "implementation": "runner/src/parts/spam-shield.ts",
+      "disclosure": {
+        "model": {
+          "kind": "open-weights",
+          "name": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+          "host": "NEAR AI Cloud (private, TEE)"
+        },
+        "instructions": "sealed",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 20000,
+        "max_http_calls": 12,
+        "max_model_calls": 2,
+        "max_output_bytes": 32000
+      }
+    },
+    {
+      "id": "ai.spam-shield-pro@1.0.0",
+      "name": "AI Spam Shield Pro",
+      "category": "guard",
+      "author": "oracle-labs.testnet",
+      "summary": "Scam classifier on a closed frontier model behind NEAR AI Cloud's anonymised route, with the supplier's private scoring harness. Strong verdicts, but the model and harness can be withdrawn or repriced by their owners.",
+      "inputs": {
+        "holdings": {
+          "type": "token.holdings"
+        }
+      },
+      "outputs": {
+        "clean": {
+          "type": "token.holdings"
+        },
+        "flags": {
+          "type": "token.flags"
+        }
+      },
+      "params": {
+        "policy": {
+          "type": "string",
+          "secret": true,
+          "description": "Classifier instructions"
+        }
+      },
+      "capabilities": [
+        "net:cloud-api.near.ai",
+        "net:nras.attestation.nvidia.com",
+        "net:1click.chaindefuser.com"
+      ],
+      "fee_per_call": "40000",
+      "implementation": "runner/src/parts/spam-shield.ts",
+      "disclosure": {
+        "model": {
+          "kind": "closed",
+          "name": "anthropic/claude-sonnet-4-5",
+          "host": "NEAR AI Cloud (anonymised)"
+        },
+        "instructions": "sealed",
+        "harness": "closed",
+        "verification": "closed",
+        "runtime": "remote"
+      },
+      "limits": {
+        "max_ms": 20000,
+        "max_http_calls": 12,
+        "max_model_calls": 2,
+        "max_output_bytes": 32000
+      }
     },
     {
       "id": "rules.spam-shield@1.0.0",
@@ -132,7 +215,22 @@
         "net:1click.chaindefuser.com"
       ],
       "fee_per_call": "10000",
-      "implementation": "runner/src/blocks/allowlist-shield.ts"
+      "implementation": "runner/src/parts/allowlist-shield.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 5000,
+        "max_http_calls": 4,
+        "max_model_calls": 0,
+        "max_output_bytes": 32000
+      }
     },
     {
       "id": "filter.dust@1.0.0",
@@ -167,7 +265,22 @@
       },
       "capabilities": [],
       "fee_per_call": "10000",
-      "implementation": "runner/src/blocks/dust-filter.ts"
+      "implementation": "runner/src/parts/dust-filter.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 1000,
+        "max_http_calls": 0,
+        "max_model_calls": 0,
+        "max_output_bytes": 32000
+      }
     },
     {
       "id": "addr.fresh-check@1.0.0",
@@ -190,7 +303,22 @@
         "net:rpc.mainnet.fastnear.com"
       ],
       "fee_per_call": "10000",
-      "implementation": "runner/src/blocks/fresh-check.ts"
+      "implementation": "runner/src/parts/fresh-check.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 4000,
+        "max_http_calls": 2,
+        "max_model_calls": 0,
+        "max_output_bytes": 1000
+      }
     },
     {
       "id": "intents.confidential-swap@1.0.0",
@@ -231,7 +359,22 @@
         "wallet:approve"
       ],
       "fee_per_call": "50000",
-      "implementation": "runner/src/blocks/intents-swap.ts"
+      "implementation": "runner/src/parts/intents-swap.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 480000,
+        "max_http_calls": 120,
+        "max_model_calls": 0,
+        "max_output_bytes": 64000
+      }
     },
     {
       "id": "intents.public-swap@1.0.0",
@@ -267,7 +410,22 @@
         "wallet:approve"
       ],
       "fee_per_call": "20000",
-      "implementation": "runner/src/blocks/intents-swap.ts"
+      "implementation": "runner/src/parts/intents-swap.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 480000,
+        "max_http_calls": 120,
+        "max_model_calls": 0,
+        "max_output_bytes": 64000
+      }
     },
     {
       "id": "report.summary@1.0.0",
@@ -291,7 +449,31 @@
       "params": {},
       "capabilities": [],
       "fee_per_call": "10000",
-      "implementation": "runner/src/blocks/summary-report.ts"
+      "implementation": "runner/src/parts/summary-report.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 1000,
+        "max_http_calls": 0,
+        "max_model_calls": 0,
+        "max_output_bytes": 16000
+      }
     }
-  ]
+  ],
+  "disclosure_rules": {
+    "layers": "model, instructions, harness, verification: each open (published), sealed (escrowed to the TEE runner, so it can be rebuilt without anyone seeing it) or closed (held only by the supplier)",
+    "runtime": "bundled (code ships inside the attested runner image, pinned by hash) or remote (the supplier operates it as a service)",
+    "withdrawal_risk": {
+      "high": "closed model, or a remote part with a closed harness or verification",
+      "medium": "remote part whose layers are all open or sealed",
+      "low": "bundled part with no model or an open-weights model"
+    }
+  }
 }

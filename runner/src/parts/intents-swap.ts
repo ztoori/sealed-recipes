@@ -1,5 +1,5 @@
 import type { QuoteRequest, QuoteResponse, StatusResponse } from '../../../core/src/oneclick.js';
-import type { BlockHandler, Holding, NearTx } from '../types.js';
+import type { PartHandler, Holding, NearTx } from '../types.js';
 
 const TERMINAL = new Set(['SUCCESS', 'FAILED', 'REFUNDED', 'INCOMPLETE_DEPOSIT']);
 
@@ -10,7 +10,7 @@ const TERMINAL = new Set(['SUCCESS', 'FAILED', 'REFUNDED', 'INCOMPLETE_DEPOSIT']
  * Non-custodial: the runner never holds user funds. It prepares the NEP-141
  * `ft_transfer`s to the quoted deposit addresses; the buyer's wallet signs them once.
  */
-export const intentsSwap: BlockHandler = async (inputs, ctx) => {
+export const intentsSwap: PartHandler = async (inputs, ctx) => {
   const confidential = ctx.manifest.id.startsWith('intents.confidential-swap');
   const tokens = [...(inputs.tokens as Holding[])];
   const to = String(inputs.to);
@@ -24,7 +24,7 @@ export const intentsSwap: BlockHandler = async (inputs, ctx) => {
   for (const h of tokens) {
     if (h.assetId === target) { ctx.log(`skip ${h.symbol}: already the target asset`); continue; }
     const req: QuoteRequest = {
-      dry: false, swapType: 'EXACT_INPUT', slippageTolerance: slippage,
+      dry: ctx.mode === 'quote', swapType: 'EXACT_INPUT', slippageTolerance: slippage,
       originAsset: h.assetId, depositType: 'ORIGIN_CHAIN',
       destinationAsset: target, amount: h.amount,
       refundTo: h.owner, refundType: 'ORIGIN_CHAIN',
@@ -40,6 +40,12 @@ export const intentsSwap: BlockHandler = async (inputs, ctx) => {
     ctx.log(`quote ${h.symbol} → ${q.quote.amountOutFormatted} out ($${q.quote.amountOutUsd}), ${confidential ? 'confidential' : 'public'}`, { correlationId: q.correlationId });
   }
   if (!quotes.length) { ctx.log('nothing to swap'); return { receipts: [] }; }
+  if (ctx.mode === 'quote') {
+    // dry run for recipe intents: priced by real (dry) 1Click quotes, nothing is deposited or signed
+    const receipts = quotes.map(({ h, q }) => ({ symbol: h.symbol, assetIn: h.assetId, assetOut: target, amountIn: q.quote.amountInFormatted, amountOut: q.quote.amountOutFormatted, amountOutUnits: q.quote.amountOut, minAmountOutUnits: q.quote.minAmountOut ?? q.quote.amountOut, status: 'QUOTED', confidentiality: confidential ? 'basic' : 'public' }));
+    ctx.log(`priced ${receipts.length} swap(s) without executing`);
+    return { receipts };
+  }
 
   const transactions: NearTx[] = quotes.map(({ h, q }) => ({
     receiverId: h.contract,
@@ -68,7 +74,7 @@ export const intentsSwap: BlockHandler = async (inputs, ctx) => {
       if (last.get(addr) !== s.status) { last.set(addr, s.status); ctx.log(`${x.h.symbol}: ${s.status}`, { depositAddress: addr, status: s.status }); }
       if (TERMINAL.has(s.status)) {
         pending.delete(addr);
-        receipts.push({ symbol: x.h.symbol, assetIn: x.h.assetId, amountIn: x.q.quote.amountInFormatted, amountOut: s.swapDetails.amountOutFormatted ?? '0', amountOutUnits: s.swapDetails.amountOut ?? '0', status: s.status, depositAddress: addr, originTx: s.swapDetails.originChainTxHashes[0]?.hash, destinationTx: s.swapDetails.destinationChainTxHashes[0]?.hash, confidentiality: confidential ? 'basic' : 'public' });
+        receipts.push({ symbol: x.h.symbol, assetIn: x.h.assetId, assetOut: target, minAmountOutUnits: x.q.quote.minAmountOut ?? '0', amountIn: x.q.quote.amountInFormatted, amountOut: s.swapDetails.amountOutFormatted ?? '0', amountOutUnits: s.swapDetails.amountOut ?? '0', status: s.status, depositAddress: addr, originTx: s.swapDetails.originChainTxHashes[0]?.hash, destinationTx: s.swapDetails.destinationChainTxHashes[0]?.hash, confidentiality: confidential ? 'basic' : 'public' });
       }
     }
     if (pending.size) await new Promise((r) => setTimeout(r, 500));
