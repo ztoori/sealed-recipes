@@ -15,7 +15,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { open, seal, sealedHash, USDC_NEAR, type Recipe, type SealedEnvelope } from '../core/src/index.js';
-import { api, BASE, freshImplicitAccount, verifiedRunner, postJob, signedQuote } from './lib/client.js';
+import { api, BASE, freshImplicitAccount, verifiedRunner, postJob, signedQuote, creatorCopy } from './lib/client.js';
 
 const BUYER = 'carol.testnet';
 const T = 'SWPR';
@@ -36,7 +36,7 @@ const creator = recipe.meta.creator;
 const first = await api<any>(`/api/recipes/${T}/update`, { signer: creator, sealed: seal({ ...recipe, meta: { ...recipe.meta, description: 'draft' } }, runner.onchain.enc_pk_hex, 'recipe') });
 say(`announced a draft as version ${first.version}; cancelling it`);
 await api(`/api/recipes/${T}/cancel-update`, { signer: creator });
-const sched = await api<any>(`/api/recipes/${T}/update`, { signer: creator, sealed });
+const sched = await api<any>(`/api/recipes/${T}/update`, { signer: creator, sealed, creator_copy: creatorCopy(recipe) });
 const waitS = Math.ceil((Number(BigInt(sched.effective_ns) / 1_000_000n) - Date.now()) / 1000);
 say(`announced version ${sched.version} (${short(sched.sealed_hash)}): takes effect in ${waitS} s (recipe_update_scheduled, tx ${short(sched.tx)})`);
 

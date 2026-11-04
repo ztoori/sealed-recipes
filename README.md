@@ -117,11 +117,47 @@ Real workflows span many transactions and can run for hours. Three things make t
 ```bash
 npm run test:durable    # TRCH "Exit in two tranches": the runner is killed twice mid-run; checks it resumes,
                         # deposits once, asks for 2 signatures (not more), pays every part once, settles once
+npm run test:atomic     # ATOM "Exit, all or nothing": a solver backs out of one leg -> nothing is swapped, the run is
+                        # refunded; then every swap and the payout settle in ONE execute_intents
 npm run test:versions   # announce, cancel, re-announce SWPR v2; a run paid on v1 finishes on v1 after v2 is live
                         # (runner killed in between); a v1 quote is refused after the switch
 ```
 
 Where everything is stored, and who runs what, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#storage-what-lives-where).
+
+## Where this sits: comparable offerings, integrations, and what only this adds
+
+Workflow engines and agent markets exist, and some overlap with parts of this project:
+- **Chainlink CRE:** triggers, consensus, and confidential workflows in beta, on EVM chains and Solana.
+- **OutLayer:** attested WASM for NEAR.
+- **NEAR AI Cloud and IronClaw:** private inference, and agents with routines.
+- **NEAR AI Agent Market:** jobs, escrow and bids.
+- **Olas, Gelato, Venice.**
+
+This project treats them as places to run recipes and channels to sell them, not as rivals:
+- **Execution is pluggable.** The marketplace talks to executors only through `ExecutionBackend` (`server/src/backends.ts`). [docs/EXECUTION_BACKENDS.md](docs/EXECUTION_BACKENDS.md) maps it to a CRE confidential workflow and to OutLayer (integration paths, not built).
+- **NEAR Intents for atomicity.** The `intents.atomic-swap` part swaps everything in one signed Verifier batch: every swap and the payout, or nothing. `npm run test:atomic` makes one leg fail and shows nothing moved.
+
+What none of them offers, and this project does:
+- secret recipes sold to strangers, hidden from buyers and from the operators;
+- recipes competing on standard jobs with signed quotes;
+- bond-backed outcome guarantees whose safety is machine-checked;
+- every part author paid in the same settlement;
+- typed, swappable parts that disclose their withdrawal risk;
+- revenue shares;
+- durable runs with partial settlement, and versions with a notice period.
+
+Where others are ahead is listed too:
+- CRE's multi-node consensus and maturity;
+- Agent Market's live network;
+- IronClaw's triggers;
+- OutLayer's sandbox.
+
+Full comparison: [docs/LANDSCAPE.md](docs/LANDSCAPE.md), and the **Landscape** tab in the app.
+
+Two more pieces make recipes manageable over time:
+- **Durable storage.** Every sealed version and checkpoint is kept in a content-addressed store (`server/src/store.ts`). A blob's id is the hash committed on-chain, and every read is integrity-checked.
+- **Creator copies.** Each version is also sealed to a key derived from the creator's wallet signature. The creator can reopen and edit any published version from any device ("Reopen my published recipe…" in Compose), and nothing is kept in the browser.
 
 ## Formal verification
 
@@ -154,7 +190,7 @@ npm run verify:tla      # also the TLC model check (~10 min; Java + tla2tools.ja
 ## Tests
 
 ```bash
-npm test                # 36 TypeScript tests: settlement, batch-auction and bond vectors; quote signatures and expiry;
+npm test                # 39 TypeScript tests: settlement, batch-auction and bond vectors; quote signatures and expiry;
                         # event parity with the contract; FRS-1 typing, swaps, job types and withdrawal risk;
                         # sealing; per-part resource limits; EIP-191; 1Click shapes; attestation; capability guard; code hash
 npm run test:rust       # 102 Rust tests for the NEAR contract (same vectors, conformance with the proved models,

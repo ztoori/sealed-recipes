@@ -5,7 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import nacl from 'tweetnacl';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { seal, publicListing, validateRecipe, verifyRunnerAttestation, type Catalog, type Recipe, type RunnerAttestation } from '../../core/src/index.js';
+import { seal, publicListing, validateRecipe, verifyRunnerAttestation, creatorKeyFromSignature, creatorKeyMessage, demoWalletSign, type Catalog, type Recipe, type RunnerAttestation } from '../../core/src/index.js';
 
 export const BASE = process.env.FRS_URL ?? 'http://127.0.0.1:8080';
 
@@ -29,7 +29,14 @@ export async function publish(recipe: Recipe, catalog: Catalog, encPkHex: string
   if (!v.ok) throw new Error('invalid recipe: ' + JSON.stringify(v.diagnostics));
   const listing = publicListing(recipe, catalog);
   const sealed = seal(recipe, encPkHex, 'recipe');
-  return api<{ sealed_hash: string; tx: string; height: number }>('/api/publish', { listing, sealed, ipo, bond: recipe.listing.bond ?? '0', settle_mode: recipe.listing.settle_mode ?? 'final' });
+  return api<{ sealed_hash: string; tx: string; height: number }>('/api/publish', { listing, sealed, ipo, bond: recipe.listing.bond ?? '0', settle_mode: recipe.listing.settle_mode ?? 'final', creator_copy: creatorCopy(recipe) });
+}
+
+/** a copy only the creator can reopen: sealed to a key derived from the creator's wallet signature (core/src/creator.ts) */
+export function creatorCopy(recipe: Recipe) {
+  const who = recipe.meta.creator;
+  const { publicKeyHex } = creatorKeyFromSignature(demoWalletSign(who, creatorKeyMessage(who)));
+  return seal(recipe, publicKeyHex, 'creator-copy');
 }
 
 export function freshImplicitAccount() {

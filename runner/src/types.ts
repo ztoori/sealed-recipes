@@ -1,3 +1,4 @@
+import type { Nep413Payload, SignedNep413 } from '../../core/src/nep413.js';
 import type { PartManifest } from '../../core/src/frs.js';
 
 export interface Holding {
@@ -14,8 +15,10 @@ export interface Holding {
 export interface Flag { assetId: string; symbol: string; verdict: 'SCAM' | 'OK'; reason: string; source: 'nearai-tee' | 'allowlist' }
 
 export interface NearTx { receiverId: string; actions: { type: 'FunctionCall'; params: { methodName: string; args: Record<string, unknown>; gas: string; deposit: string } }[] }
-export interface ApprovalRequest { title: string; signer: string; transactions: NearTx[]; summary: { symbol: string; amount: string; usd: number; to: string }[] }
-export interface ApprovalResult { approved: boolean; txHashes: string[] }
+export interface ApprovalRequest { title: string; signer: string; transactions: NearTx[]; summary: { symbol: string; amount: string; usd: number; to: string }[];
+  /** NEAR Intents: an off-chain NEP-413 message for the wallet to sign (e.g. one atomic bundle of swaps) */
+  sign_message?: Nep413Payload; sign_summary?: string }
+export interface ApprovalResult { approved: boolean; txHashes: string[]; signed?: SignedNep413 }
 
 export type Emit = (type: string, data: Record<string, unknown>) => void;
 
@@ -41,6 +44,6 @@ export interface PartCtx {
   priorApproval?: ApprovalResult;
 }
 
-export interface Endpoints { fastnear: string; rpc: string; oneclick: string; nearai: string; nras: string }
+export interface Endpoints { fastnear: string; rpc: string; oneclick: string; nearai: string; nras: string; solverRelay: string }
 
 export type PartHandler = (inputs: Record<string, unknown>, ctx: PartCtx) => Promise<Record<string, unknown>>;

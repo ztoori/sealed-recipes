@@ -4,6 +4,8 @@ import { compatibleSwaps, swapPart, validateRecipe, withdrawalRisk, type PartMan
 import { api, money, usd, usePoll } from '../api';
 import { useApp } from '../App';
 import { SealModal } from '../components/SealModal';
+import { open, type SealedEnvelope } from '../../../core/src/seal';
+import { creatorKeyFromSignature, creatorKeyMessage, demoWalletSign } from '../../../core/src/creator';
 import CLNP from '../../../seed/recipes/CLNP.json';
 import SWPR from '../../../seed/recipes/SWPR.json';
 
@@ -117,6 +119,18 @@ function ComposeInner() {
     addPart(m, rf.screenToFlowPosition({ x: e.clientX, y: e.clientY }));
   };
 
+  // creators reopen any published version from the copy sealed to their own key (re-derived from a wallet signature)
+  const [mine, setMine] = useState<string[]>([]);
+  useEffect(() => { api<any[]>('/api/listings').then((ls) => setMine(ls.filter((l) => l.creator === acting).map((l) => l.ticker))).catch(() => setMine([])); }, [acting]);
+  const reopen = async (ticker: string) => {
+    try {
+      const c = await api<{ envelope: SealedEnvelope; sealed_hash: string }>(`/api/vault/${ticker}/creator-copy`);
+      const { secretKey } = creatorKeyFromSignature(demoWalletSign(acting, creatorKeyMessage(acting)));
+      const r = open<Recipe>(c.envelope, secretKey);
+      setRecipe(r); setSel(null); setFormPos({ x: -260, y: 110 }); setTimeout(() => rf.fitView({ padding: 0.08 }), 120);
+      toast(`Reopened ${ticker} (version ${c.sealed_hash.slice(0, 8)}…) from your own sealed copy`);
+    } catch (e) { toast('Could not reopen: ' + (e as Error).message, true); }
+  };
   const loadTemplate = (t: string) => { const r = structuredClone(TEMPLATES[t]); r.meta.creator = acting; setRecipe(r); setSel(null); setFormPos({ x: -260, y: 110 }); setTimeout(() => rf.fitView({ padding: 0.08 }), 120); };
 
   // ---------- story step 1: build CLNP live, then seal ----------
@@ -178,6 +192,8 @@ function ComposeInner() {
           <button className="btn ghost sm" onClick={() => loadTemplate('CLNP')}>Load “Clean up and protect”</button>
           <button className="btn ghost sm" onClick={() => loadTemplate('SWPR')}>Load “Dust sweeper”</button>
           <button className="btn ghost sm" onClick={() => { setRecipe(blank()); setSel(null); }}>Clear</button>
+          {mine.length > 0 && <select className="sm" aria-label="Reopen one of your published recipes" value="" onChange={(e) => e.target.value && reopen(e.target.value)}>
+            <option value="">Reopen my published recipe…</option>{mine.map((t) => <option key={t} value={t}>{t}</option>)}</select>}
         </div>
         <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onPaneClick={() => setSel(null)} fitView minZoom={0.3} proOptions={{ hideAttribution: true }}>
           <Background gap={22} color="#d7dde6" />

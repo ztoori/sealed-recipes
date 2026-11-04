@@ -325,7 +325,7 @@ app.post('/runs/:id/approval', auth, (req, res) => {
   const job = jobs.get(String(req.params.id));
   if (!job?.approval) { res.status(409).json({ error: 'no approval pending' }); return; }
   const r = job.approval; job.approval = undefined;
-  const result: ApprovalResult = { approved: !!req.body?.approved, txHashes: req.body?.txHashes ?? [] };
+  const result: ApprovalResult = { approved: !!req.body?.approved, txHashes: req.body?.txHashes ?? [], ...(req.body?.signed ? { signed: req.body.signed } : {}) };
   emit(job, 'approval_result', { approved: result.approved, transfers: result.txHashes.length });
   r.resolve(result);
   res.json({ ok: true });

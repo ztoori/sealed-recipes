@@ -70,7 +70,7 @@ Built at NEAR HACKATHON @NEARProtocol #NEARHackathon
 
 3/ Bob posts "Clean up my wallet". SWPR quotes more USDC but is public and sweeps his wNEAR; CLNP is confidential and bonded. He picks CLNP, pays $0.75 from Arbitrum, gets $28.02 vs $27.81 promised. 5 part authors, the runner, the creator and shareholders: one receipt.
 
-4/ Repo (MIT, 138 tests + formal proofs, one-command demo, agent buyer included): <repo link>
+4/ Repo (MIT, 141 tests + formal proofs, one-command demo, agent buyer included): <repo link>
 Question for builders: which workflow would you seal and let compete first?
 ```
 

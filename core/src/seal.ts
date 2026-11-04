@@ -13,7 +13,7 @@ import { canonicalJson, sha256Hex } from './canonical.js';
 export interface SealedEnvelope {
   v: 'frs-seal-v1';
   alg: 'x25519-xsalsa20poly1305';
-  purpose: 'recipe' | 'inputs' | 'output' | 'state';
+  purpose: 'recipe' | 'inputs' | 'output' | 'state' | 'creator-copy';
   to: string; // runner X25519 public key (hex)
   epk: string; // ephemeral public key (hex)
   nonce: string; // base64

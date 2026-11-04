@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { seal, sealedHash, type SealedEnvelope } from '../../../core/src/seal';
 import { publicListing, type Catalog, type Recipe } from '../../../core/src/frs';
 import { verifyRunnerAttestation } from '../../../core/src/attestation';
+import { creatorKeyFromSignature, creatorKeyMessage, demoWalletSign } from '../../../core/src/creator';
 import type { Check } from '../../../core/src/nearai';
 import { api, runnerAttestation, short } from '../api';
 
@@ -30,7 +31,11 @@ export function SealModal({ recipe, catalog, ipo, auto, onClose }: { recipe: Rec
   const publish = async (e: SealedEnvelope) => {
     try {
       const listing = publicListing(recipe, catalog);
-      const r = await api('/api/publish', { listing, sealed: e, ipo, bond: recipe.listing.bond ?? '0', settle_mode: recipe.listing.settle_mode ?? 'final' });
+      // a second copy sealed to the creator's own key (derived from a wallet signature; local demo wallet here),
+      // so the creator can reopen and edit any published version from any device
+      const who = recipe.meta.creator;
+      const creator_copy = seal(recipe, creatorKeyFromSignature(demoWalletSign(who, creatorKeyMessage(who))).publicKeyHex, 'creator-copy');
+      const r = await api('/api/publish', { listing, sealed: e, ipo, bond: recipe.listing.bond ?? '0', settle_mode: recipe.listing.settle_mode ?? 'final', creator_copy });
       setTx(r); setStage(3); return true;
     } catch (x) { setErr((x as Error).message); return false; }
   };

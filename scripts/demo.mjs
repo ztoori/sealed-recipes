@@ -58,6 +58,7 @@ const rewrite = [
   `rpc.mainnet.fastnear.com=${base}/mock/rpc`,
   `1click.chaindefuser.com=${base}/mock/1click`,
   `cloud-api.near.ai=${base}/mock/nearai`,
+  `solver-relay-v2.chaindefuser.com=${base}/mock/solver-relay`,
 ].join(',');
 
 start('runner', 'runner/src/main.ts', { RUNNER_PORT: RPORT, CHAIN_URL: `${base}/api/chain`, FRS_REWRITE: rewrite, RUNNER_TOKEN, TEE_MODE: process.env.TEE_MODE ?? 'local-dev', FRS_ALLOW_CRASH: '1' }, true);
@@ -69,7 +70,7 @@ if (seed.status) shutdown(seed.status);
 
 console.log(`\n  Fungible Recipes is running →  ${base}\n  (local mode: offline mocks for FastNEAR / RPC / 1Click / NEAR AI Cloud; see README "What is real")\n  Ctrl+C to stop.\n`);
 
-for (const [flag, script] of [['--crash-test', 'scripts/crash-test.ts'], ['--versions', 'scripts/versions-demo.ts']]) {
+for (const [flag, script] of [['--crash-test', 'scripts/crash-test.ts'], ['--versions', 'scripts/versions-demo.ts'], ['--atomic', 'scripts/atomic-demo.ts']]) {
   if (!args.has(flag)) continue;
   // async (not spawnSync): the launcher must stay responsive to restart the runner while the script runs
   const status = await new Promise((done) => spawn(node, [...tsx, script], { cwd: root, stdio: 'inherit', env: { ...process.env, FRS_URL: base } }).on('exit', (c) => done(c ?? 1)));

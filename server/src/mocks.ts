@@ -7,6 +7,7 @@
  *   /mock/rpc       ≈ https://rpc.mainnet.fastnear.com    (JSON-RPC query: view_account, call_function ft_metadata)
  *   /mock/1click    ≈ https://1click.chaindefuser.com     (/v0/tokens, /v0/quote, /v0/deposit/submit, /v0/status)
  *   /mock/nearai    ≈ https://cloud-api.near.ai           (/v1/chat/completions, /v1/attestation/report, /v1/signature/{id})
+ *   /mock/solver-relay ≈ https://solver-relay-v2.chaindefuser.com (/rpc: quote, publish_intent, get_status) + Verifier
  *
  * The NEAR AI mock signs responses with a real secp256k1 key exactly like the model
  * TEE does, but it has NO hardware attestation (no intel_quote / nvidia_payload), and
@@ -19,14 +20,27 @@ import { sha256Hex } from '../../core/src/canonical.js';
 import { OneClick, type QuoteRequest, type Token } from '../../core/src/oneclick.js';
 import { addressFromPublicKey, signEip191 } from '../../core/src/nearai.js';
 import type { World } from './world.js';
+import { IntentsVerifierMock } from './intents-verifier.js';
 
 export interface MockHooks {
   /** called once when a 1Click swap reaches SUCCESS: deliver funds like a solver would */
   onDelivered: (req: QuoteRequest, amountOut: string, depositAddress: string) => void;
 }
 
-export function mockRouter(world: World, tokens: Token[], hooks: MockHooks): { router: Router; oneclick: OneClick; aiSigningAddress: string } {
+export function mockRouter(world: World, tokens: Token[], hooks: MockHooks): { router: Router; oneclick: OneClick; aiSigningAddress: string; verifier: IntentsVerifierMock } {
   const r = express.Router();
+  const verifier = new IntentsVerifierMock(world, tokens);
+
+  // ---------------- NEAR Intents Solver Relay (Message Bus) + Verifier ----------------
+  r.post('/solver-relay/rpc', express.json(), (req, res) => {
+    const { id, method, params } = req.body ?? {};
+    try {
+      const p = params?.[0] ?? {};
+      const result = method === 'quote' ? verifier.quote(p) : method === 'publish_intent' ? verifier.publish(p) : method === 'get_status' ? verifier.status(p.intent_hash) : undefined;
+      if (result === undefined) { res.json({ jsonrpc: '2.0', id, error: { code: -32601, message: `unknown method ${method}` } }); return; }
+      res.json({ jsonrpc: '2.0', id, result });
+    } catch (e) { res.json({ jsonrpc: '2.0', id, error: { code: -32000, message: (e as Error).message } }); }
+  });
   const oneclick = new OneClick({ mode: 'fixture', fixtureTokens: tokens });
   const delivered = new Set<string>();
 
@@ -102,5 +116,5 @@ export function mockRouter(world: World, tokens: Token[], hooks: MockHooks): { r
     res.json({ ...s, signing_address: aiSigningAddress, signing_algo: 'ecdsa', signature_kind: 'provider_tee' });
   });
 
-  return { router: r, oneclick, aiSigningAddress };
+  return { router: r, oneclick, aiSigningAddress, verifier };
 }

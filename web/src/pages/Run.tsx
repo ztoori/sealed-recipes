@@ -128,7 +128,7 @@ export function Run() {
   const completed = events.find((e) => e.type === 'completed');
   const result = events.find((e) => e.type === 'result')?.data;
   const failed = events.find((e) => e.type === 'failed' || e.type === 'payment_rejected');
-  const approve = async (ok: boolean) => { try { await api(`/api/runs/${runId}/approve?token=${runToken.current}`, { approved: ok, transactions: ok ? approval?.transactions : [] }); } catch (e) { toast((e as Error).message, true); } };
+  const approve = async (ok: boolean) => { try { await api(`/api/runs/${runId}/approve?token=${runToken.current}`, { approved: ok, transactions: ok ? approval?.transactions : [], ...(ok && approval?.sign_message ? { sign_message: approval.sign_message } : {}) }); } catch (e) { toast((e as Error).message, true); } };
 
   // ---------- story automation (steps 2-4) ----------
   useEffect(() => {
@@ -289,6 +289,7 @@ export function Run() {
             <table className="small"><thead><tr><th>Token</th><th className="r">Amount</th><th className="r">≈ USD</th><th>To deposit address</th></tr></thead><tbody>
               {approval.summary.map((s: any, i: number) => <tr key={i}><td>{s.symbol}</td><td className="r">{s.amount}</td><td className="r">{money(s.usd)}</td><td className="hash">{short(s.to, 8, 6)}</td></tr>)}
             </tbody></table>
+            {approval.sign_message && <div className="small" style={{ padding: '8px 10px', border: '1px solid var(--line, #d7dde6)', borderRadius: 8 }}><b>Also sign one NEAR Intents bundle (NEP-413):</b> {approval.sign_summary}<details><summary>Message</summary><pre className="codebox">{JSON.stringify(JSON.parse(approval.sign_message.message), null, 1)}</pre></details></div>}
             <details className="small"><summary>Raw transactions (signAndSendTransactions)</summary><pre className="codebox">{JSON.stringify(approval.transactions, null, 1)}</pre></details>
             <div className="row"><button className="btn buy" onClick={() => approve(true)}>Approve {approval.transactions.length} transfers</button><button className="btn ghost" onClick={() => approve(false)}>Reject</button></div>
           </div>

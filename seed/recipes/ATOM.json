@@ -1,0 +1,94 @@
+{
+  "frs": "1.0",
+  "kind": "recipe",
+  "meta": {
+    "ticker": "ATOM",
+    "name": "Exit, all or nothing",
+    "creator": "calm.testnet",
+    "description": "Every non-scam token to USDC at a fresh address in ONE atomic NEAR Intents bundle: either every swap and the payout happen, or nothing does. Public on NEAR, unlike EXIT's confidential swaps."
+  },
+  "form": [
+    {
+      "id": "wallet",
+      "label": "Wallet to evacuate",
+      "type": "near.account",
+      "required": true,
+      "placeholder": "bob.testnet"
+    },
+    {
+      "id": "recipient",
+      "label": "Fresh address (generated in your browser)",
+      "type": "address.near",
+      "required": true,
+      "generator": "fresh-implicit"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "scan",
+      "part": "near.wallet-scanner@1.0.0",
+      "inputs": {
+        "account": "form.wallet"
+      },
+      "params": {},
+      "ui": {
+        "x": 0,
+        "y": 120
+      }
+    },
+    {
+      "id": "shield",
+      "part": "ai.spam-shield@1.1.0",
+      "inputs": {
+        "holdings": "scan.holdings"
+      },
+      "params": {
+        "policy": "Flag SCAM tokens (URLs in symbol, reward bait, impersonation). Answer JSON only."
+      },
+      "ui": {
+        "x": 280,
+        "y": 120
+      }
+    },
+    {
+      "id": "fresh",
+      "part": "addr.fresh-check@1.0.0",
+      "inputs": {
+        "recipient": "form.recipient"
+      },
+      "params": {},
+      "ui": {
+        "x": 560,
+        "y": 260
+      }
+    },
+    {
+      "id": "swap",
+      "part": "intents.atomic-swap@1.0.0",
+      "inputs": {
+        "tokens": "shield.clean",
+        "to": "fresh.fresh",
+        "target": "const.usdc"
+      },
+      "params": {},
+      "ui": {
+        "x": 840,
+        "y": 120
+      }
+    }
+  ],
+  "consts": {
+    "usdc": {
+      "type": "asset.id",
+      "value": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"
+    }
+  },
+  "output": "swap.receipts",
+  "listing": {
+    "price_per_run": "1100000",
+    "royalty_bps": 1500,
+    "total_shares": "400000",
+    "bond": "20000000"
+  },
+  "implements": "job.wallet-exit@1.0.0"
+}

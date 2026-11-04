@@ -4,9 +4,10 @@ import { Exchange } from './pages/Exchange';
 import { Compose } from './pages/Compose';
 import { Run } from './pages/Run';
 import { Trust } from './pages/Trust';
+import { Landscape } from './pages/Landscape';
 import { Wallet } from './pages/Wallet';
 
-export type Tab = 'exchange' | 'compose' | 'run' | 'trust' | 'wallet';
+export type Tab = 'exchange' | 'compose' | 'run' | 'trust' | 'wallet' | 'landscape';
 export interface Story { step: number; next: () => void; stop: () => void }
 interface Ctx {
   acting: string; setActing: (a: string) => void;
@@ -60,7 +61,7 @@ export function App() {
           <b>Fungible Recipes</b>
         </a>
         <nav className="nav" aria-label="Sections">
-          {([['run', 'Post a job'], ['compose', 'Compose'], ['wallet', 'Wallet'], ['exchange', 'Revenue shares'], ['trust', 'Trust & privacy']] as [Tab, string][]).map(([t, l]) => (
+          {([['run', 'Post a job'], ['compose', 'Compose'], ['wallet', 'Wallet'], ['exchange', 'Revenue shares'], ['trust', 'Trust & privacy'], ['landscape', 'Landscape']] as [Tab, string][]).map(([t, l]) => (
             <button key={t} aria-current={tab === t ? 'page' : undefined} onClick={() => go(t)}>{l}</button>
           ))}
         </nav>
@@ -87,6 +88,7 @@ export function App() {
         {tab === 'run' && <Run />}
         {tab === 'wallet' && <Wallet />}
         {tab === 'trust' && <Trust />}
+        {tab === 'landscape' && <Landscape />}
       </main>
       {cap && (
         <div className="caption" role="status" aria-live="polite">

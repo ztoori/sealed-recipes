@@ -551,6 +551,51 @@
         "max_model_calls": 0,
         "max_output_bytes": 64000
       }
+    },
+    {
+      "id": "intents.atomic-swap@1.0.0",
+      "name": "Atomic Swap Bundle (Intents)",
+      "category": "action",
+      "author": "veil.testnet",
+      "summary": "Swaps every token into the target through the NEAR Intents Verifier as ONE signed bundle: all swaps and the withdrawal to the recipient settle together in one execute_intents, or none does and the deposits stay withdrawable. Public on NEAR (no confidentiality mode).",
+      "inputs": {
+        "tokens": {
+          "type": "token.holdings"
+        },
+        "to": {
+          "type": "address.near.fresh"
+        },
+        "target": {
+          "type": "asset.id"
+        }
+      },
+      "outputs": {
+        "receipts": {
+          "type": "swap.receipts"
+        }
+      },
+      "params": {},
+      "capabilities": [
+        "net:solver-relay-v2.chaindefuser.com",
+        "wallet:approve"
+      ],
+      "fee_per_call": "60000",
+      "implementation": "runner/src/parts/intents-atomic.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 120000,
+        "max_http_calls": 120,
+        "max_model_calls": 0,
+        "max_output_bytes": 64000
+      }
     }
   ],
   "disclosure_rules": {

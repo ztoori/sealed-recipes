@@ -91,9 +91,10 @@ Each run keeps the version it paid for. The marketplace vault stores every versi
 |---|---|---|---|
 | Recipe metadata, parts list, price, bond, track record, version, pending update | contract state (NEAR storage staking) | everyone | permanent |
 | Run ticket: paid version, inputs hash, checkpoint seq and state hash, billed parts | contract state | everyone | permanent |
-| Sealed recipe, every version | marketplace vault (in-memory in the demo; production: a durable store keyed by `sealed_hash`) | the runner only | while any run may need it |
+| Sealed recipe, every version | marketplace vault: content-addressed `FileBlobStore` keyed by `sealed_hash`, integrity-checked on every read (IPFS/S3 drop-in) | the runner only | while any run may need it |
+| Creator copy of each version | same store, indexed per version | the creator only (key derived from a wallet signature, re-derivable on any device) | permanent |
 | Sealed inputs of a run | marketplace, per run | the runner only | until the run ends |
-| Checkpoints (progress, part outputs, swap intents) | marketplace, per run | the runner only (sealed to its own key, signed) | until the run ends |
+| Checkpoints (progress, part outputs, swap intents) | same store (blob by `state_hash`) plus a per-run pointer | the runner only (sealed to its own key, signed) | until the run ends |
 | Plaintext recipe, inputs, intermediate values | runner memory, inside the TEE | nobody else | during execution |
 | Runner keys | dstack KMS inside the TEE | nobody | for the runner's lifetime |
 

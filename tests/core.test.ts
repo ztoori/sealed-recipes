@@ -8,7 +8,7 @@ import {
   settlementSplit, LocalLedger, checkpointMessage, RUN_TIMEOUT_NS, type Outcome, runReportMessage, quoteMessage, withdrawalRisk, labelsFromParts, jobHash, base64, seal, open, sealedHash,
   clearAuction, validateRecipe, compatibleSwaps, swapPart, publicListing, recoverSigner, signEip191, addressFromPublicKey,
   verifyChat, sha256Hex, OneClick, runPaymentQuoteRequest, USDC_NEAR, reportData, verifyRunnerAttestation,
-  bondLock, bondRelease, bondSettle, pendingDividends, harvestDividends, rebaseDebt,
+  bondLock, bondRelease, bondSettle, pendingDividends, harvestDividends, rebaseDebt, creatorKeyFromSignature, creatorKeyMessage, demoWalletSign,
   type Catalog, type Recipe, type RunnerAttestation,
 } from '../core/src/index.js';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
@@ -193,7 +193,7 @@ test('FRS-1: type errors, cycles and unwired ports are caught', () => {
 
 test('FRS-1: drop-in swaps respect subtyping', () => {
   const clnp = recipe('CLNP');
-  assert.deepEqual(compatibleSwaps(clnp, 'swap', catalog).map((b) => b.id), ['intents.public-swap@1.0.0']);
+  assert.deepEqual(compatibleSwaps(clnp, 'swap', catalog).map((b) => b.id), ['intents.public-swap@1.0.0', 'intents.atomic-swap@1.0.0'], 'the atomic bundle is a drop-in alternative');
   assert.deepEqual(compatibleSwaps(clnp, 'shield', catalog).map((b) => b.id), ['ai.spam-shield-pro@1.0.0', 'rules.spam-shield@1.0.0']);
   assert.deepEqual(compatibleSwaps(recipe('SWPR'), 'swap', catalog).map((b) => b.id), [], 'public→confidential needs a fresh address');
   const swapped = swapPart(clnp, 'shield', 'rules.spam-shield@1.0.0', catalog);
@@ -517,4 +517,17 @@ test('durable runs: checkpoints are ordered and signed, extend the timeout, and 
   const before = cp.L.balance_of('bob.testnet');
   cp.L.call('x', (l) => l.report_run({ run_id: 'r2', outcome: 'fail', parts_used: [], output_hash: 'f'.repeat(64), delivered: '0', signature: cp.sign('r2', 'fail', []) }));
   assert.equal(cp.L.balance_of('bob.testnet') - before, 750000n - 20000n, 'a failed run refunds everything not yet billed');
+});
+
+test('creator copies: only the creator can reopen a published recipe, from any device, with nothing stored in the browser', () => {
+  const r = recipe('CLNP');
+  const { publicKeyHex, secretKey } = creatorKeyFromSignature(demoWalletSign('chef.testnet', creatorKeyMessage('chef.testnet')));
+  const copy = seal(r, publicKeyHex, 'creator-copy');
+  // same wallet signature on another device -> same key
+  const again = creatorKeyFromSignature(demoWalletSign('chef.testnet', creatorKeyMessage('chef.testnet')));
+  assert.deepEqual(open(copy, again.secretKey), r);
+  const other = creatorKeyFromSignature(demoWalletSign('mallory.testnet', creatorKeyMessage('mallory.testnet')));
+  assert.throws(() => open(copy, other.secretKey));
+  assert.notEqual(publicKeyHex, other.publicKeyHex);
+  void secretKey;
 });

@@ -11,6 +11,7 @@ import { intentsSwap } from './parts/intents-swap.js';
 import { summaryReport } from './parts/summary-report.js';
 import { wait } from './parts/wait.js';
 import { mergeReceipts } from './parts/merge-receipts.js';
+import { intentsAtomic } from './parts/intents-atomic.js';
 
 export const HANDLERS: Record<string, PartHandler> = {
   'near.wallet-scanner@1.0.0': walletScanner,
@@ -24,6 +25,7 @@ export const HANDLERS: Record<string, PartHandler> = {
   'report.summary@1.0.0': summaryReport,
   'time.wait@1.0.0': wait,
   'swap.merge@1.0.0': mergeReceipts,
+  'intents.atomic-swap@1.0.0': intentsAtomic,
 };
 
 export const REAL_ENDPOINTS: Endpoints = {
@@ -32,6 +34,7 @@ export const REAL_ENDPOINTS: Endpoints = {
   oneclick: 'https://1click.chaindefuser.com',
   nearai: 'https://cloud-api.near.ai',
   nras: 'https://nras.attestation.nvidia.com',
+  solverRelay: 'https://solver-relay-v2.chaindefuser.com',
 };
 
 /** host → base URL used in local mode (e.g. "api.fastnear.com=http://localhost:8080/mock/fastnear"). */

@@ -85,3 +85,62 @@ test('bonded runs credit what the buyer withheld after the re-check (verificatio
   m = measure(job, [r('REFUNDED', '0', '10000000')], new Map());
   assert.equal(creditedDelivered(m.delivered, 10000000n, m.executed), 0n);
 });
+
+test('durable store: content-addressed, integrity-checked, survives a restart', async () => {
+  const { FileBlobStore, BlobCorrupted } = await import('../server/src/store.js');
+  const { seal, sealedHash } = await import('../core/src/seal.js');
+  const { mkdtempSync, writeFileSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'frs-store-'));
+  const env = seal({ hello: 'world' }, 'ab'.repeat(32), 'recipe');
+  const a = new FileBlobStore(dir);
+  const h = a.put(env);
+  assert.equal(h, sealedHash(env), 'the id is the on-chain hash');
+  a.writeMeta('vault', { recipes: { X: { versions: [h], creator_copies: {} } } });
+  const b = new FileBlobStore(dir); // "restarted"
+  assert.deepEqual(b.get(h), env);
+  assert.deepEqual(b.readMeta('vault', null), { recipes: { X: { versions: [h], creator_copies: {} } } });
+  const p = join(dir, 'blobs', `${h}.json`);
+  writeFileSync(p, readFileSync(p, 'utf8').replace(/"ct":"(.)/, (_m, c: string) => `"ct":"${c === 'A' ? 'B' : 'A'}`));
+  assert.throws(() => b.get(h), BlobCorrupted, 'a tampered blob is refused');
+});
+
+test('NEAR Intents bundles: NEP-413 signatures, and the Verifier stand-in executes all intents or none', async () => {
+  const { IntentsVerifierMock } = await import('../server/src/intents-verifier.js');
+  const { World } = await import('../server/src/world.js');
+  const { signNep413, verifyNep413 } = await import('../core/src/nep413.js');
+  const { demoWalletKey } = await import('../core/src/creator.js');
+  const { base64 } = await import('../core/src/seal.js');
+  const { readFileSync } = await import('node:fs');
+  const root = new URL('..', import.meta.url).pathname;
+  const world = new World(`${root}fixtures/wallets.json`, `${root}fixtures/oneclick-tokens.json`);
+  const tokens = JSON.parse(readFileSync(`${root}fixtures/oneclick-tokens.json`, 'utf8')).tokens;
+  const V = new IntentsVerifierMock(world, tokens);
+  const USDC = 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
+  const held = world.tokensOf('bob.testnet').filter((t: any) => BigInt(t.balance) > 0n && tokens.some((x: any) => x.assetId === `nep141:${t.contract_id}`) && `nep141:${t.contract_id}` !== USDC).slice(0, 2);
+  assert.equal(held.length, 2);
+  for (const h of held) V.deposit('bob.testnet', h.contract_id, BigInt(h.balance));
+  const qs = held.map((h: any) => V.quote({ defuse_asset_identifier_in: `nep141:${h.contract_id}`, defuse_asset_identifier_out: USDC, exact_amount_in: h.balance })[0]);
+  const total = qs.reduce((s: bigint, q: any) => s + BigInt(q.amount_out), 0n);
+  const bundle = (out = total) => signNep413({ recipient: 'intents.near', nonce: base64.enc(new Uint8Array(32).fill(7)), message: JSON.stringify({ signer_id: 'bob.testnet', deadline: new Date(Date.now() + 60_000).toISOString(), intents: [
+    ...qs.map((q: any) => ({ intent: 'token_diff', diff: { [q.defuse_asset_identifier_in]: `-${q.amount_in}`, [USDC]: q.amount_out } })),
+    { intent: 'ft_withdraw', token: USDC.slice(7), receiver_id: 'fresh.testnet', amount: out.toString() }] }) }, demoWalletKey('bob.testnet').secretKey);
+  const signed = bundle();
+  assert.ok(verifyNep413(signed));
+  assert.ok(!verifyNep413({ ...signed, payload: { ...signed.payload, message: signed.payload.message.replace('fresh', 'evil') } }), 'any change breaks the signature');
+  const snapshot = JSON.stringify([...V.balances].map(([a, m]) => [a, [...m].map(([k, v]) => [k, String(v)])]));
+  // one leg cannot be filled -> nothing at all changes
+  V.failing.add(qs[1].defuse_asset_identifier_in);
+  const bad = V.publish({ quote_hashes: qs.map((q: any) => q.quote_hash), signed_data: signed });
+  assert.equal(V.status(bad.intent_hash).status, 'NOT_FOUND_OR_NOT_VALID');
+  assert.equal(JSON.stringify([...V.balances].map(([a, m]) => [a, [...m].map(([k, v]) => [k, String(v)])])), snapshot, 'no partial execution');
+  V.failing.clear();
+  // withdrawing more than the swaps produce: rejected as a whole
+  const greedy = V.publish({ quote_hashes: qs.map((q: any) => q.quote_hash), signed_data: bundle(total + 1n) });
+  assert.match(V.status(greedy.intent_hash).reason ?? '', /insufficient/);
+  // all legs fillable -> everything settles in one step, proceeds paid out
+  const ok = V.publish({ quote_hashes: qs.map((q: any) => q.quote_hash), signed_data: signed });
+  assert.equal(V.status(ok.intent_hash).status, 'SETTLED');
+  assert.equal(world.tokensOf('fresh.testnet').find((t: any) => `nep141:${t.contract_id}` === USDC)?.balance, total.toString());
+});
