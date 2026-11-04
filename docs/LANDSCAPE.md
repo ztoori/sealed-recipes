@@ -2,7 +2,7 @@
 
 Fungible Recipes is not a workflow engine. It is a market and settlement layer for **sealed workflows that other
 people pay to run**: buyers post a job, sealed recipes compete with signed and bonded quotes, and one settlement pays
-every part author, the runner, the creator and shareholders. Several products overlap with pieces of that. This page
+every part author, the runner and the creator. Several products overlap with pieces of that. This page
 says what each does, where it overlaps, how this project would use it, and what is actually built in this repo.
 
 Status key: **built** (in this repo and tested), **partly** (some of it is built), **integration path (not built)**.
@@ -118,16 +118,16 @@ Among the offerings above, as far as their public documentation shows:
   workflow to strangers is not part of its model. (Holds only when the runner runs in a TEE; local mode has none.)
 - **Competing signed quotes on standard job types.** Recipes that implement a job type quote from dry runs inside the
   runner; quotes are signed, bound to buyer, job and recipe version, and single use.
-- **Bonded outcome guarantees.** A creator's bond pays the buyer any shortfall against the signed promise, up to the
+- **Guaranteed outcomes.** A creator's guarantee deposit (a performance bond) pays the buyer any shortfall against the signed promise, up to the
   quoted cover. Bond safety (conservation, never overdrawn, no bond drain) is model-checked with TLA+ and its
   arithmetic proved with Z3; the proofs are about models tied to the code by conformance tests, not about the compiled
   Rust.
-- **Per-part attribution and settlement in one receipt.** Every part author, the runner, the creator and shareholders
+- **Per-part attribution and settlement in one receipt.** Every part author, the runner and the creator
   are paid in the same settlement, with conservation proved.
 - **FRS-1 typed parts.** Swappable parts with typed ports, capability limits, resource limits, and disclosure of model,
   instructions, harness and verification with a withdrawal-risk label.
-- **Revenue shares.** Optional funding: creators sell a share of future run revenue, traded in uniform-price batch
-  auctions.
+- **No investment features.** Buyers pay for a service and creators post collateral; there are no shares, dividends,
+  tokens or trading, so nothing in the product is plausibly a security and any wallet can use it.
 - **Durable runs with partial settlement.** Runs survive runner crashes with exactly-once deposits; in checkpoint mode
   each part is paid when it finishes.
 - **Versions with notice.** Updates are announced on-chain and take effect after a notice period; every run executes

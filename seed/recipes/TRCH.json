@@ -135,8 +135,7 @@
   "output": "merge.receipts",
   "listing": {
     "price_per_run": "1200000",
-    "royalty_bps": 1500,
-    "total_shares": "400000",
+    "reserve_bps": 1000,
     "bond": "20000000",
     "settle_mode": "checkpoint"
   },

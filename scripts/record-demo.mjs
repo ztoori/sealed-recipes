@@ -54,16 +54,17 @@ while (Date.now() - t0 < 120_000) {
   if (await page.getByText('That was one job, end to end').count()) break;
 }
 await page.waitForTimeout(2000);
-await page.getByRole('button', { name: 'Open CLNP' }).click(); await page.waitForTimeout(3500); await shot('07-revenue-shares-clnp.png');
+await page.getByRole('button', { name: 'Open CLNP' }).click(); await page.waitForTimeout(3500); await shot('07-recipe-clnp.png');
 await page.selectOption('select[aria-label="Acting as account"]', 'chef.testnet');
 await page.getByRole('button', { name: 'Wallet', exact: true }).click(); await page.waitForTimeout(2500); await shot('08-wallet.png');
 await page.getByRole('button', { name: 'Trust & privacy', exact: true }).click(); await page.waitForTimeout(3500); await shot('09-trust.png');
+await page.getByRole('button', { name: 'Landscape', exact: true }).click(); await page.waitForTimeout(2500); await shot('11-landscape.png');
 await page.getByRole('button', { name: 'Compose', exact: true }).click(); await page.waitForTimeout(800);
 await page.getByText('Load “Dust sweeper”').click(); await page.waitForTimeout(1200);
 await page.locator('.react-flow__node').filter({ hasText: 'Allowlist Shield' }).click(); await page.waitForTimeout(1200);
 await shot('10-compose-disclosure.png');
 await page.mouse.wheel(0, 500); await page.waitForTimeout(2500);
-await card('Intents for workflows.', 'Sealed recipes compete with signed, bonded quotes. NEAR Intents for payment and confidential swaps, an attested TEE runner, NEAR AI Cloud private models, and one settlement that pays every builder.');
+await card('Intents for workflows.', 'Sealed recipes compete with signed quotes, backed by each creator’s guarantee deposit. No shares, no tokens: you pay per run. NEAR Intents for payment and confidential swaps, an attested TEE runner, NEAR AI Cloud private models, and one settlement that pays every builder.');
 await page.waitForTimeout(4000);
 await ctx.close(); await browser.close();
 

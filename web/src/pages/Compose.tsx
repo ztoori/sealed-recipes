@@ -16,7 +16,7 @@ const CAT_ORDER = ['source', 'guard', 'transform', 'action', 'sink'];
 const CAT_LABEL: Record<string, string> = { source: 'Sources', guard: 'Guards', transform: 'Transforms', action: 'Actions', sink: 'Outputs' };
 
 function blank(): Recipe {
-  return { frs: '1.0', kind: 'recipe', meta: { ticker: '', name: 'Untitled recipe', creator: 'chef.testnet', description: '' }, form: [], nodes: [], output: '', listing: { price_per_run: '500000', royalty_bps: 1000, total_shares: '1000000' } };
+  return { frs: '1.0', kind: 'recipe', meta: { ticker: '', name: 'Untitled recipe', creator: 'chef.testnet', description: '' }, form: [], nodes: [], output: '', listing: { price_per_run: '500000', reserve_bps: 1000 } };
 }
 
 type PartData = { manifest: PartManifest; label: string; errors: number };
@@ -55,7 +55,6 @@ function ComposeInner() {
   const [recipe, setRecipe] = useState<Recipe>(blank);
   const [formPos, setFormPos] = useState({ x: -260, y: 110 });
   const [sel, setSel] = useState<string | null>(null);
-  const [ipo, setIpo] = useState({ price: 0.085, float_pct: 20 });
   const [sealing, setSealing] = useState(false);
   const [dims, setDims] = useState<Record<string, { width: number; height: number }>>({});
   const rf = useReactFlow();
@@ -163,6 +162,7 @@ function ComposeInner() {
   const fees = v?.partFees ?? 0n;
   const price = BigInt(recipe.listing.price_per_run || '0');
   const protocol = (price * PROTOCOL_BPS) / 10000n;
+  const left = price - fees - RUNNER_FEE - protocol > 0n ? price - fees - RUNNER_FEE - protocol : 0n;
   const minOk = price >= fees + RUNNER_FEE + protocol;
   const canPublish = !!v?.ok && minOk && /^[A-Z0-9]{3,6}$/.test(recipe.meta.ticker);
 
@@ -236,20 +236,17 @@ function ComposeInner() {
         <div className="panel">
           <header><h2>Listing</h2></header>
           <div className="body grid" style={{ gap: 8, gridTemplateColumns: '1fr 1fr' }}>
-            <div className="field"><label htmlFor="tk">Ticker</label><input id="tk" value={recipe.meta.ticker} onChange={(e) => setMeta('ticker', e.target.value.toUpperCase())} maxLength={6} /></div>
+            <div className="field"><label htmlFor="tk">Short code</label><input id="tk" value={recipe.meta.ticker} onChange={(e) => setMeta('ticker', e.target.value.toUpperCase())} maxLength={6} /></div>
             <div className="field"><label htmlFor="pr">Price per run (USDC)</label><input id="pr" value={Number(recipe.listing.price_per_run) / 1e6} onChange={(e) => setListing('price_per_run', String(Math.round(Number(e.target.value) * 1e6)))} inputMode="decimal" /></div>
             <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="nm">Name</label><input id="nm" value={recipe.meta.name} onChange={(e) => setMeta('name', e.target.value)} /></div>
-            <div className="field"><label htmlFor="ry">Creator royalty %</label><input id="ry" value={recipe.listing.royalty_bps / 100} onChange={(e) => setListing('royalty_bps', Math.round(Number(e.target.value) * 100))} /></div>
-            <div className="field"><label htmlFor="sh">Shares</label><input id="sh" value={recipe.listing.total_shares} onChange={(e) => setListing('total_shares', e.target.value.replace(/\D/g, ''))} /></div>
-            <div className="field"><label htmlFor="ip">IPO price per share</label><input id="ip" value={ipo.price} onChange={(e) => setIpo({ ...ipo, price: Number(e.target.value) })} /></div>
-            <div className="field"><label htmlFor="fl">Float offered %</label><input id="fl" value={ipo.float_pct} onChange={(e) => setIpo({ ...ipo, float_pct: Number(e.target.value) })} /></div>
+            <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="rs">Keep in the guarantee deposit (% of your cut per run)</label><input id="rs" value={(recipe.listing.reserve_bps ?? 0) / 100} onChange={(e) => setListing('reserve_bps', Math.max(0, Math.min(10000, Math.round(Number(e.target.value) * 100))))} inputMode="decimal" /></div>
             <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="jb">Competes for job</label>
               <select id="jb" value={recipe.implements ?? ''} onChange={(e) => setRecipe((r) => ({ ...r, implements: e.target.value || undefined }))}>
                 <option value="">none (direct runs only)</option>
                 {(catalog?.jobs ?? []).map((j) => <option key={j.id} value={j.id}>{j.name}</option>)}
               </select></div>
-            <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="bd">Bond backing your quotes (USDC)</label><input id="bd" value={Number(recipe.listing.bond ?? '0') / 1e6} onChange={(e) => setListing('bond', String(Math.round(Number(e.target.value) * 1e6)))} inputMode="decimal" /></div>
-            <div className="small muted" style={{ gridColumn: '1 / 3' }}>Shares are optional funding: sell part of the recipe's future run revenue in batch auctions. The bond pays buyers if a run delivers less than its signed quote.</div>
+            <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="bd">Initial guarantee deposit (USDC)</label><input id="bd" value={Number(recipe.listing.bond ?? '0') / 1e6} onChange={(e) => setListing('bond', String(Math.round(Number(e.target.value) * 1e6)))} inputMode="decimal" /></div>
+            <div className="small muted" style={{ gridColumn: '1 / 3' }}>The guarantee deposit is your collateral: each quote locks part of it, and a buyer is paid from it if a run delivers less than the quote promised. It grows by the share of each run you choose above, and you can withdraw the free part at any time. It earns nothing and nobody else holds a claim on it.</div>
           </div>
         </div>
 
@@ -262,15 +259,16 @@ function ComposeInner() {
               <dt>Part fees</dt><dd>{usd(fees)}</dd>
               <dt>TEE runner</dt><dd>{usd(RUNNER_FEE)}</dd>
               <dt>Protocol (2%)</dt><dd>{usd(protocol)}</dd>
-              <dt>Left for you and shareholders</dt><dd>{usd(price - fees - RUNNER_FEE - protocol > 0n ? price - fees - RUNNER_FEE - protocol : 0n)}</dd>
+              <dt>Left for you</dt><dd>{usd(left)}</dd>
+              <dt>of which to your guarantee deposit</dt><dd>{usd((left * BigInt(recipe.listing.reserve_bps ?? 0)) / 10000n)}</dd>
             </dl>
             <button className="btn seal" style={{ width: '100%', marginTop: 12 }} disabled={!canPublish} onClick={() => setSealing(true)}>Seal and publish as {recipe.meta.creator}</button>
           </div>
         </div>
       </aside>
 
-      {sealing && catalog && <SealModal recipe={{ ...recipe, meta: { ...recipe.meta, creator: story.step === 1 ? 'chef.testnet' : acting } }} catalog={catalog} ipo={ipo} auto={story.step === 1}
-        onClose={(published) => { setSealing(false); if (published && story.step === 1) setTimeout(story.next, 600); else if (published) go('exchange', recipe.meta.ticker); }} />}
+      {sealing && catalog && <SealModal recipe={{ ...recipe, meta: { ...recipe.meta, creator: story.step === 1 ? 'chef.testnet' : acting } }} catalog={catalog} auto={story.step === 1}
+        onClose={(published) => { setSealing(false); if (published && story.step === 1) setTimeout(story.next, 600); else if (published) go('recipes', recipe.meta.ticker); }} />}
     </div>
   );
 }

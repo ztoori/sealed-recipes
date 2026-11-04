@@ -24,14 +24,14 @@ const T = q?.listing.ticker as string;
 if (!q) { say('no quote: ' + JSON.stringify(job.quotes.map((x) => x.error))); process.exit(1); }
 say(`1. bonded ${T} quote while the wallet is full: promise ${usd(q.promised)}, bond covers ${usd(q.cover)}`);
 
-const before = await api<{ onchain: { bond_available: string; bond_locked: string; aborted: string; compensated_total: string } }>(`/api/market/${T}`);
-const wallet = await api<{ wallet: { contract_id: string; symbol: string; balance: string }[] }>(`/api/portfolio/${BUYER}`);
+const before = await api<{ onchain: { bond_available: string; bond_locked: string; aborted: string; compensated_total: string } }>(`/api/recipe/${T}`);
+const wallet = await api<{ wallet: { contract_id: string; symbol: string; balance: string }[] }>(`/api/account/${BUYER}`);
 let moved = 0;
 for (const t of wallet.wallet) if (BigInt(t.balance) > 0n) { await api('/api/world/transfer', { from: BUYER, token: t.contract_id, to: 'carol-stash.testnet', amount: t.balance }); moved++; }
 say(`2. emptied ${BUYER}: moved ${moved} tokens to another account of hers`);
 
 const r = await api<{ run_id: string; run_token: string; msg: string }>('/api/runs/quote', { recipe_id: T, buyer: BUYER, pay_asset: 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near', refund_to: '0xC0c0000000000000000000000000000000000001', sealed_inputs: job.sealed_job, signed_quote: signedQuote(q) });
-const balBefore = BigInt((await api<{ balance: string }>(`/api/portfolio/${BUYER}`)).balance);
+const balBefore = BigInt((await api<{ balance: string }>(`/api/account/${BUYER}`)).balance);
 await api(`/api/runs/${r.run_id}/pay?token=${r.run_token}`, {});
 say('3. paid with the old quote; watching the run');
 
@@ -52,8 +52,8 @@ for (let done = false; !done;) {
   }
 }
 
-const after = await api<{ onchain: { bond_available: string; bond_locked: string; aborted: string; compensated_total: string } }>(`/api/market/${T}`);
-const balAfter = BigInt((await api<{ balance: string }>(`/api/portfolio/${BUYER}`)).balance);
+const after = await api<{ onchain: { bond_available: string; bond_locked: string; aborted: string; compensated_total: string } }>(`/api/recipe/${T}`);
+const balAfter = BigInt((await api<{ balance: string }>(`/api/account/${BUYER}`)).balance);
 const checks = [
   ['run ended as abort', final?.data?.outcome === 'abort'],
   ['bond_available unchanged', after.onchain.bond_available === before.onchain.bond_available],

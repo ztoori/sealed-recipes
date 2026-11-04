@@ -1,9 +1,15 @@
-//! Pure settlement math. Shared spec: docs/CONTRACT_SPEC.md ("Settlement").
+//! Pure settlement math. Shared spec: docs/CONTRACT_SPEC.md ("v5 changes").
 //! The TypeScript mirror (packages/core) implements the same function and both
 //! are checked against contracts/test-vectors/settlement.json.
+//!
+//! ```text
+//! protocol = floor(P * f / 10000)
+//! R        = P - protocol - r - sum(b_i)
+//! reserve  = floor(R * reserve_bps / 10000)   -> recipe guarantee deposit (bond_available)
+//! creator  = R - reserve                       -> creator's withdrawable balance
+//! ```
+//! Conservation is exact: protocol + r + sum(b_i) + reserve + creator == P.
 
-/// Fixed-point scale of `acc_per_share`.
-pub const ACC_SCALE: u128 = 1_000_000_000_000_000_000; // 1e18
 pub const BPS_DENOM: u128 = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,45 +18,27 @@ pub struct Split {
     pub runner: u128,
     pub parts: Vec<u128>,
     pub remainder: u128,
+    pub reserve: u128,
     pub creator: u128,
-    pub pool: u128,
-    pub acc_increment: u128,
-    pub distributed: u128,
-    pub dust_to_protocol: u128,
 }
 
-impl Split {
-    /// Protocol fee plus rounding dust from the shareholder pool.
-    pub fn protocol_total(&self) -> u128 {
-        self.protocol + self.dust_to_protocol
-    }
-}
-
-/// Protocol fee charged on a price.
+/// Protocol fee charged on a price (saturating; a price large enough to overflow cannot settle anyway).
 pub fn protocol_fee(price: u128, protocol_fee_bps: u16) -> u128 {
-    price * protocol_fee_bps as u128 / BPS_DENOM
+    price.saturating_mul(protocol_fee_bps as u128) / BPS_DENOM
 }
 
 /// Splits one run payment between every party.
 ///
-/// `acc_before` is the recipe's `acc_per_share` before this run. The shareholders' share is computed so that
-/// the total ever set aside telescopes to `floor(acc * total_shares / ACC_SCALE)`, which is exactly the most
-/// holders can claim in total: the contract can never owe holders more than it set aside
-/// (verification/smt/prove_money.py: telescoping-two-runs-solvent, dividends K-invariant).
-///
 /// Returns `None` when the fixed fees exceed the price (publish rejects such recipes), when
-/// `total_shares == 0`, or when a product would overflow u128. Overflow is proven impossible while the
-/// recipe's lifetime settled revenue stays below 3.4e20 payment-token units (never-fails-when-fees-fit).
+/// `reserve_bps` or `protocol_fee_bps` exceed 10000, or when any intermediate value would overflow u128.
 pub fn settlement_split(
     price: u128,
     protocol_fee_bps: u16,
     runner_fee: u128,
     part_fees: &[u128],
-    royalty_bps: u16,
-    total_shares: u128,
-    acc_before: u128,
+    reserve_bps: u16,
 ) -> Option<Split> {
-    if total_shares == 0 {
+    if reserve_bps as u128 > BPS_DENOM || protocol_fee_bps as u128 > BPS_DENOM {
         return None;
     }
     let protocol = price.checked_mul(protocol_fee_bps as u128)? / BPS_DENOM;
@@ -61,23 +49,14 @@ pub fn settlement_split(
         .checked_sub(protocol)?
         .checked_sub(runner_fee)?
         .checked_sub(part_sum)?;
-    let creator = remainder.checked_mul(royalty_bps as u128)? / BPS_DENOM;
-    let pool = remainder - creator;
-    let acc_increment = pool.checked_mul(ACC_SCALE)? / total_shares;
-    let acc_after = acc_before.checked_add(acc_increment)?;
-    let set_aside_before = acc_before.checked_mul(total_shares)? / ACC_SCALE;
-    let set_aside_after = acc_after.checked_mul(total_shares)? / ACC_SCALE;
-    let distributed = set_aside_after - set_aside_before;
-    let dust_to_protocol = pool - distributed;
+    let reserve = remainder.checked_mul(reserve_bps as u128)? / BPS_DENOM;
+    let creator = remainder.checked_sub(reserve)?;
     Some(Split {
         protocol,
         runner: runner_fee,
         parts: part_fees.to_vec(),
         remainder,
+        reserve,
         creator,
-        pool,
-        acc_increment,
-        distributed,
-        dust_to_protocol,
     })
 }

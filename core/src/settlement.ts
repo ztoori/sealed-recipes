@@ -1,15 +1,12 @@
 /** Settlement math — must match `settlement_split` in contracts/fungible-recipes (see docs/CONTRACT_SPEC.md). */
-export const SCALE = 10n ** 18n;
 
 export interface SplitInput {
   price: bigint;
   protocolFeeBps: number;
   runnerFee: bigint;
   partFees: bigint[];
-  royaltyBps: number;
-  totalShares: bigint;
-  /** the recipe's acc_per_share before this run (0 for the first run) */
-  accBefore?: bigint;
+  /** share of the creator's remainder kept as the recipe's guarantee deposit (0..10000) */
+  reserveBps: number;
 }
 
 export interface Split {
@@ -17,13 +14,9 @@ export interface Split {
   runner: bigint;
   parts: bigint[];
   remainder: bigint;
+  /** added to the recipe's guarantee deposit (bond_available): the creator's money, held as collateral */
+  reserve: bigint;
   creator: bigint;
-  pool: bigint;
-  accIncrement: bigint;
-  accAfter: bigint;
-  distributed: bigint;
-  dustToProtocol: bigint;
-  protocolTotal: bigint;
 }
 
 export function minimumPrice(price: bigint, protocolFeeBps: number, runnerFee: bigint, partFees: bigint[]): boolean {
@@ -35,35 +28,20 @@ const U128 = 1n << 128n;
 const checked = (x: bigint): bigint => { if (x >= U128) throw new Error('settlement overflow'); return x; };
 
 /**
- * Same as the contract's `settlement_split`. The shareholders' share telescopes: the total ever set aside is
- * floor(acc * total_shares / SCALE), exactly what holders can claim in total (proved in verification/smt).
- * Throws where the contract returns None (fees above price, total_shares 0, a product above 2^128).
+ * Same as the contract's `settlement_split` (v5). Every unit of the price goes to exactly one of: the protocol,
+ * the runner, each part author, the creator, or the recipe's guarantee deposit. No shares, no dividends.
+ * Throws where the contract returns None (fees above the price, a product above 2^128).
  */
 export function settlementSplit(i: SplitInput): Split {
-  if (i.totalShares <= 0n) throw new Error('total_shares must be > 0');
-  const accBefore = i.accBefore ?? 0n;
+  if (i.reserveBps < 0 || i.reserveBps > 10000) throw new Error('reserve_bps must be <= 10000');
+  if (i.protocolFeeBps < 0 || i.protocolFeeBps > 10000) throw new Error('protocol_fee_bps must be <= 10000');
   const protocol = checked(i.price * BigInt(i.protocolFeeBps)) / 10000n;
   const partsTotal = checked(i.partFees.reduce((a, b) => a + b, 0n));
   const remainder = i.price - protocol - i.runnerFee - partsTotal;
   if (remainder < 0n) throw new Error('price below minimum viable price');
-  const creator = (remainder * BigInt(i.royaltyBps)) / 10000n;
-  const pool = remainder - creator;
-  const accIncrement = checked(pool * SCALE) / i.totalShares;
-  const accAfter = checked(accBefore + accIncrement);
-  const distributed = checked(accAfter * i.totalShares) / SCALE - checked(accBefore * i.totalShares) / SCALE;
-  const dustToProtocol = pool - distributed;
-  return { protocol, runner: i.runnerFee, parts: [...i.partFees], remainder, creator, pool, accIncrement, accAfter, distributed, dustToProtocol, protocolTotal: protocol + dustToProtocol };
+  const reserve = checked(remainder * BigInt(i.reserveBps)) / 10000n;
+  return { protocol, runner: i.runnerFee, parts: [...i.partFees], remainder, reserve, creator: remainder - reserve };
 }
-
-// ---- dividends: same rules as contracts/fungible-recipes/src/dividends.rs ----
-export const accrued = (shares: bigint, acc: bigint) => checked(shares * acc) / SCALE;
-export const pendingDividends = (shares: bigint, debt: bigint, acc: bigint) => { const a = accrued(shares, acc); return a > debt ? a - debt : 0n; };
-export function harvestDividends(shares: bigint, debt: bigint, acc: bigint): [paid: bigint, debt: bigint] {
-  const a = accrued(shares, acc);
-  return [a > debt ? a - debt : 0n, a > debt ? a : debt];
-}
-/** debt after a share-count change, rounded up so rounding never favours holders */
-export const rebaseDebt = (shares: bigint, acc: bigint) => { const x = checked(shares * acc); return x / SCALE + (x % SCALE ? 1n : 0n); };
 
 // ---- bonds: same rules as contracts/fungible-recipes/src/bond.rs ----
 export interface Bond { available: bigint; locked: bigint }

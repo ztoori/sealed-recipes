@@ -60,8 +60,7 @@
   "output": "report.report",
   "listing": {
     "price_per_run": "150000",
-    "royalty_bps": 2000,
-    "total_shares": "250000",
+    "reserve_bps": 2000,
     "bond": "0"
   },
   "implements": "job.wallet-audit@1.0.0"

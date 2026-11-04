@@ -1,19 +1,20 @@
 # Formal verification
 
-The money logic and the run/quote/bond protocol are machine-checked. The proofs found three real bugs, and all three are now fixed.
+The money logic and the run/quote/bond protocol are machine-checked. The proofs found three real bugs, and all three were fixed.
+
+Contract v5 removed revenue shares, dividends and the share auction (see the main README, *No investment features*). Their proofs and vectors are archived with that design in `archive/revenue-shares-2026-11-04/` and at git tag `archive/revenue-shares`. Everything below is about the current contract. The *bond* is the recipe's guarantee deposit: collateral the creator posts.
 
 | What | Tool | Result |
 |---|---|---|
-| Settlement split (0–8 parts), partial settlement at checkpoints, bond accounting, dividend solvency | Z3 4.x SMT, unbounded integers in the u128 range | 70 theorems; 67 proved for all inputs, 3 are kept counterexamples to the old rules |
-| Uniform-price batch auction (books of 2, 3 and 4 orders) | Z3 | 27 theorems proved |
+| Settlement split (0–8 parts), partial settlement at checkpoints, guarantee-deposit (bond) accounting | Z3 4.x SMT, unbounded integers in the u128 range | 58 theorems, all proved for all inputs |
 | Run / quote / bond lifecycle with an adversarial buyer | TLA+ / TLC | 7 invariants hold over 22,748,834 distinct states; the old rule is caught violating `NoBondDrain` |
 | Durable runs: crashes anywhere, resume from checkpoints, partial billing | TLA+ / TLC | `DepositsOnce`, `PaidExactlyOnce` and liveness `EventuallyDone` hold (all 313 states); without the write-ahead checkpoint TLC finds a double deposit |
 | Recipe versions with notice and the vault | TLA+ / TLC | `NoticeRespected`, `ExecutesPaidVersion` and `NoStrandedRun` hold (13,622 states); keeping only the current version strands runs |
-| The proved models match the shipped code | Conformance vectors | 400 settlement, 200 bond, 195 dividend and 60 auction cases, replayed by the Rust contract and the TypeScript mirror |
+| The proved models match the shipped code | Conformance vectors | 400 settlement and 200 deposit cases, replayed by the Rust contract and the TypeScript mirror |
 
 ```bash
 pip install z3-solver
-npm run verify        # Z3 proofs + conformance freshness (~10 s)
+npm run verify        # Z3 proofs + conformance freshness (~5 s)
 npm run verify:tla    # also TLC on all three models (~10 min; Java 11+, TLA2TOOLS=/path/to/tla2tools.jar)
 ```
 
@@ -23,49 +24,26 @@ npm run verify:tla    # also TLC on all three models (~10 min; Java 11+, TLA2TOO
 
 ### Settlement (`smt/prove_money.py`, model `smt/models.py :: settlement` ⇔ `src/settlement.rs`)
 
-These hold for every price, fee, royalty, share count and accumulator value in the u128 range, under the checks the contract enforces: protocol fee ≤ 10%, royalty ≤ 50%, total_shares > 0.
+These hold for every price, fee and reserve share in the u128 range, under the checks the contract enforces: protocol fee ≤ 10%, `reserve_bps` ≤ 10000.
 
-- **Conservation.** Protocol + rounding dust + runner + every part + creator + shareholders = the price, exactly.
-- **No negative payout,** and the shareholders' share never exceeds the pool.
-- **Fee caps.** The protocol takes at most 10% and the royalty at most 50% of the remainder.
-- **Rounding bound.** Rounding withheld from shareholders ≤ 1 + total_shares/10¹⁸ units per run.
-- **Never fails when fees fit.** If the fixed fees fit in the price and the recipe's lifetime revenue is below 3.4×10²⁰ units (3.4×10¹⁴ USDC), no multiplication overflows and settlement succeeds. The invariant that makes this inductive (`acc·TS ≤ lifetime_pool·10¹⁸`) is also proved.
+- **Conservation.** Protocol + runner + every part + creator + reserve = the price, to the unit.
+- **No negative payout,** and the reserve is never negative.
+- **The reserve is the creator's money.** Creator + reserve = the remainder, so the reserve only moves part of the creator's own cut into the recipe's deposit.
+- **Caps.** The protocol takes at most 10%; the reserve never exceeds the remainder, and is 0 when `reserve_bps` is 0.
+- **Never fails when fees fit.** If the fixed fees fit in the price (the publish minimum) and the price is below 2¹²⁸/10⁴ units, no operation overflows and settlement returns a split.
 
 ### Partial settlement (contract v4, checkpoint mode)
 
 For recipes with 1, 3 and 5 parts and any subset of parts already billed at checkpoints:
-- the parts billed at checkpoints + the final payouts + the shareholders' share equal the price exactly;
+- the parts billed at checkpoints + the final payouts + the reserve equal the price exactly;
 - a failed or timed-out run refunds `price − billed`, which is never negative, given the price minimum enforced at publish.
 
 ### Bonds (`models.py :: bond_*` ⇔ `src/bond.rs`)
 
 - Lock, settle and refund each conserve `available + locked (+ compensation)`. Nothing underflows.
+- A deposit (a top-up, or a settlement's reserve) only adds to `available` and leaves locked cover untouched.
 - Compensation is exactly `min(max(0, promised − delivered), cover)`. A covered shortfall is paid in full.
-- **Inductive ledger invariant over unbounded histories:** `locked = Σ cover of pending runs` and `deposited = available + locked + withdrawn + compensated`. It is preserved by deposit, withdraw, lock, refund and settle.
-
-### Dividends (`models.py :: harvest/rebase` ⇔ `src/dividends.rs`)
-
-The solvency invariant is K: `paid·10¹⁸ + Σ_h max(0, shares_h·acc − debt_h·10¹⁸) ≤ TS·acc`.
-
-K is proved:
-- to hold at publish;
-- to be preserved by paid runs, claims, share transfers and auction fills;
-- to imply that everything paid plus everything claimable is at most `floor(TS·acc/10¹⁸)`. That is exactly the total settlement ever set aside.
-
-Together these mean that **for every possible history, holders can never claim more than the contract set aside.**
-
-### Batch auction (`smt/prove_auction.py` ⇔ `src/auction.rs`)
-
-These hold for every book of up to 4 orders, with any side, price and quantity:
-- shares bought = shares sold = volume;
-- the clearing price itself trades the maximum volume, and no price at all would trade more;
-- limits are respected (buyers pay ≤ their limit, sellers get ≥ theirs), and fills never exceed order size;
-- price-time priority holds;
-- no remaining bid crosses a remaining ask;
-- if nothing clears, no bid ever crossed an ask;
-- the price lies between the tied candidates.
-
-For each of the 60 random books in the conformance file, the generator checks that the encoding has exactly one solution.
+- **Inductive ledger invariant over unbounded histories:** `locked = Σ cover of pending runs` and `deposited = available + locked + withdrawn + compensated`. It is preserved by deposit, withdraw, lock, refund, settle, and settle with the creator's reserve added.
 
 ### Protocol (`tla/BondedRuns.tla`)
 
@@ -110,33 +88,31 @@ With a vault that keeps only the current version (`MC_VersionsNoRetain`), TLC fi
 
 ## What the proofs found (and what changed)
 
-1. **Settlement could leave the contract insolvent** (Z3 counterexample: 3 shares, two runs). Per-run rounding sent dust to the protocol while holders' total claim rounded up across runs. Fix: the shareholders' share now telescopes (`src/settlement.rs`). Regression: `solvency_two_runs_rounding`.
-2. **Share transfers and auction fills could do the same.** The debt was rounded down after a share movement, so two holders could claim 3 units from 2 paid in. Fix: the debt rounds up and harvest saturates (`src/dividends.rs`). Regression: `solvency_transfer_rebase_rounding`.
+1. *(v4, design since removed)* **Settlement could leave the contract insolvent** (Z3 counterexample: 3 shares, two runs). Per-run rounding sent dust to the protocol while holders' total claim rounded up across runs. Fix: the shareholders' share now telescopes (`src/settlement.rs`). Regression: `solvency_two_runs_rounding`.
+2. *(v4, design since removed)* **Share transfers and auction fills could do the same.** The debt was rounded down after a share movement, so two holders could claim 3 units from 2 paid in. Fix: the debt rounds up and harvest saturates (`src/dividends.rs`). Regression: `solvency_transfer_rebase_rounding`.
 3. **The bond could be drained during execution** (TLC trace, depth 5, in `tla/results/MC_v3.log`). The buyer passes the re-check, then deposits less than asked, and the shortfall is billed to the bond. Fix: bonded runs report `delivered` credited with what the buyer withheld after the re-check (`runner/src/metrics.ts :: creditedDelivered`).
 
-Also fixed: `remainder × royalty` could overflow and panic instead of returning `None` (found by the conformance vectors).
+Also fixed in v4: `remainder × royalty` could overflow and panic instead of returning `None` (found by the conformance vectors). The v5 split uses checked arithmetic throughout, and the conformance vectors include overflow and out-of-range `reserve_bps` cases that must return `None`.
 
 ## How the proofs are tied to the code
 
 The Z3 models are written once in Python and run two ways:
 - **symbolically,** for the proofs;
-- **on concrete integers,** to generate `contracts/test-vectors/conformance-*.json`.
+- **on concrete integers,** to generate `contracts/test-vectors/conformance-money.json`.
 
 The Rust contract (`conformance_*` tests) and the TypeScript mirror must reproduce every vector exactly. That includes when settlement must return `None`.
 
 Mutation checks confirm the link works. Each of these deliberate bugs is caught:
-- dust off by one in the model fails 18 theorems;
-- rounding the debt down in Rust fails the solvency test;
-- taking the top tied price in Rust's auction fails conformance.
+- paying the creator one unit more in the model fails 21 theorems;
+- rounding the reserve up in the Rust contract fails `conformance_settlement_matches_proved_model`.
 
 Every proof also checks that its hypotheses are satisfiable, so nothing can pass vacuously.
 
 ## What is *not* proven (stated plainly)
 
-- **The compiled Rust itself.** These are proofs about models that are line-by-line transcriptions of the Rust and are tied to it by conformance tests, not proofs over the compiled code. The next step is [Kani](https://github.com/model-checking/kani) harnesses on `settlement.rs`, `bond.rs`, `dividends.rs` and `auction.rs`. Kani needs a nightly toolchain that this build environment could not download.
-- **The auction beyond 4 orders.** Larger books are covered by the 60 conformance books, of up to 7 orders.
+- **The compiled Rust itself.** These are proofs about models that are line-by-line transcriptions of the Rust and are tied to it by conformance tests, not proofs over the compiled code. The next step is [Kani](https://github.com/model-checking/kani) harnesses on `settlement.rs` and `bond.rs`. Kani needs a nightly toolchain that this build environment could not download.
 - **The protocol beyond the models' bounds.** The bonds model uses 2 runs and wallets up to 3. The durable model uses 1 run, 3 parts and 3 crashes. The versions model uses 3 versions, 2 runs and 6 time steps. TLC is exhaustive within these bounds.
 - **The durable store itself.** The models assume the marketplace's checkpoint store is durable once it acknowledges a write. In the demo it is in memory.
 - **Signatures, hashing and TEE attestation.** These are assumed sound (ed25519, sha256, Intel TDX). In the model, a quote "binds the buyer" because the contract verifies a signature.
-- **The runner, the marketplace server, the web UI, the local mocks and external services.** They are covered by tests (34 TypeScript, 73 Rust, an end-to-end story, an attack script), not by proofs. Formal proof is not meaningful for a UI or for third-party APIs.
+- **The runner, the marketplace server, the web UI, the local mocks and external services.** They are covered by tests (34 TypeScript, 93 Rust, an end-to-end story, an attack script, crash, version and atomicity suites), not by proofs. Formal proof is not meaningful for a UI or for third-party APIs.
 - **Market moves in the seconds between the re-check and execution.** These are not insured by the bond, by design.

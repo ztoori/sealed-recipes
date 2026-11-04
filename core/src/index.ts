@@ -6,7 +6,6 @@ export * from './ledger.js';
 export * from './oneclick.js';
 export * from './nearai.js';
 export * from './attestation.js';
-export * from './auction.js';
 export * from './jobs.js';
 export * from './creator.js';
 export * from './nep413.js';

@@ -2,7 +2,7 @@
 """
 Runs every machine-checked proof and writes verification/RESULTS.json.
 
-  python3 verification/run.py          Z3 proofs (money, auction) + conformance freshness check   (~10 s)
+  python3 verification/run.py          Z3 proofs (settlement, guarantee deposits) + conformance freshness check   (~5 s)
   python3 verification/run.py --tla    also model-check the run/quote/bond lifecycle with TLC     (~10 min)
 
 Requires: pip install z3-solver; for --tla, Java 11+ and tla2tools.jar (TLA2TOOLS env var or tools/tla2tools.jar).
@@ -14,12 +14,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "smt"))
-import prove_money, prove_auction, gen_conformance  # noqa: E402
+import prove_money, gen_conformance  # noqa: E402
 
 ok = True
-print("== Z3: settlement, bonds, dividends"); m = prove_money.main()
-print("== Z3: batch auction"); a = prove_auction.main()
-results = m.results + a.results
+print("== Z3: settlement, guarantee deposits (bonds)"); m = prove_money.main()
+results = m.results
 bad = [r for r in results if not r["ok"]]
 ok &= not bad
 print(f"\nZ3: {len(results) - len(bad)}/{len(results)} theorems as expected")

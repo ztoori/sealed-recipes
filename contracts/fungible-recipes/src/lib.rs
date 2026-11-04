@@ -2,9 +2,10 @@
 //!
 //! Sealed no-code workflows ("recipes") composed from third-party parts, sold
 //! pay-per-run through NEAR Intents and executed by an attested TEE runner.
-//! Each recipe is also a fungible share class: shareholders earn a pro-rata
-//! dividend from every run and can trade shares in frequent uniform-price
-//! batch auctions (one clearing price per batch, no continuous matching).
+//! Every run is settled in one receipt: protocol fee, runner fee, part fees,
+//! then the creator. A recipe can set aside `reserve_bps` of the creator's
+//! remainder into its guarantee deposit (`bond_available`), which backs quotes.
+//! There are no shares, dividends or order books (v5).
 //!
 //! Canonical interface: `docs/CONTRACT_SPEC.md`.
 
@@ -18,19 +19,15 @@ use near_sdk::{
 };
 use serde_json::json;
 
-pub mod auction;
 pub mod bond;
-pub mod dividends;
 pub mod settlement;
-pub use auction::{clear_auction, AuctionFill, AuctionOrder, AuctionResult, AuctionSide};
-pub use settlement::{protocol_fee, settlement_split, Split, ACC_SCALE};
+pub use settlement::{protocol_fee, settlement_split, Split};
 
 #[cfg(test)]
 mod tests;
 
 pub const RUN_TIMEOUT_NS: u64 = 15 * 60 * 1_000_000_000;
 pub const MAX_PROTOCOL_FEE_BPS: u16 = 1_000;
-pub const MAX_ROYALTY_BPS: u16 = 5_000;
 pub const EVENT_STANDARD: &str = "fungible-recipes";
 pub const EVENT_VERSION: &str = "1.0.0";
 pub const SIGNED_MESSAGE_PREFIX: &str = "frs-run-v3";
@@ -40,8 +37,6 @@ pub const CHECKPOINT_MESSAGE_PREFIX: &str = "frs-ckpt-v1";
 pub const SETTLE_MODES: [&str; 2] = ["final", "checkpoint"];
 const GAS_FT_TRANSFER: Gas = Gas::from_tgas(10);
 const GAS_ON_WITHDRAW: Gas = Gas::from_tgas(10);
-/// Upper bound on resting orders per recipe book; bounds `clear_batch` gas and storage spam.
-pub const MAX_ORDERS_PER_BOOK: usize = 200;
 
 #[derive(BorshStorageKey)]
 #[near]
@@ -50,11 +45,7 @@ enum StorageKey {
     Runners,
     Recipes,
     Runs,
-    Holdings,
     Balances,
-    Books,
-    OrderIndex,
-    Batches,
     UsedQuotes,
 }
 
@@ -94,9 +85,9 @@ pub struct Recipe {
     pub runner_id: AccountId,
     pub parts: Vec<String>,
     pub price_per_run: U128,
-    pub royalty_bps: u16,
-    pub total_shares: U128,
-    pub acc_per_share: U128,
+    /// Share of the creator's remainder (after protocol, runner and part fees) added to the
+    /// recipe's guarantee deposit (`bond_available`) on every successful run. 0..=10000.
+    pub reserve_bps: u16,
     /// Successful runs.
     pub runs: u64,
     pub revenue: U128,
@@ -171,91 +162,6 @@ pub struct Run {
     pub last_progress_ns: U64,
 }
 
-#[near(serializers = [json, borsh])]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Side {
-    Bid,
-    Ask,
-}
-
-#[near(serializers = [json, borsh])]
-#[derive(Clone, Debug)]
-pub struct Order {
-    pub id: u64,
-    pub recipe_id: String,
-    pub owner: AccountId,
-    pub side: Side,
-    /// Payment-token units per one share.
-    pub price: U128,
-    /// Remaining shares.
-    pub qty: U128,
-    pub created_ns: U64,
-}
-
-#[near(serializers = [json, borsh])]
-#[derive(Clone, Debug, Default)]
-pub struct Book {
-    /// Sorted best-first: highest price, then oldest.
-    pub bids: Vec<Order>,
-    /// Sorted best-first: lowest price, then oldest.
-    pub asks: Vec<Order>,
-}
-
-/// Current auction batch of a recipe. Orders rest until the batch is cleared.
-#[near(serializers = [json, borsh])]
-#[derive(Clone, Debug)]
-pub struct Batch {
-    pub id: u64,
-    pub opened_ns: U64,
-}
-
-#[near(serializers = [json])]
-#[derive(Clone, Debug)]
-pub struct BatchView {
-    pub id: u64,
-    pub opened_ns: U64,
-    pub closes_ns: U64,
-}
-
-#[near(serializers = [json])]
-#[derive(Clone, Debug)]
-pub struct IndicativeView {
-    pub price: Option<U128>,
-    pub volume: U128,
-    pub demand: U128,
-    pub supply: U128,
-}
-
-#[near(serializers = [json])]
-#[derive(Clone, Debug)]
-pub struct FillView {
-    pub order_id: u64,
-    pub owner: AccountId,
-    pub side: Side,
-    pub qty: U128,
-}
-
-/// Result of `clear_batch` (same fields as the `batch_cleared` event).
-#[near(serializers = [json])]
-#[derive(Clone, Debug)]
-pub struct ClearSummary {
-    pub recipe_id: String,
-    pub batch_id: u64,
-    pub price: Option<U128>,
-    pub volume: U128,
-    pub fills: Vec<FillView>,
-}
-
-/// Share position of one account in one recipe.
-#[near(serializers = [borsh])]
-#[derive(Clone, Debug, Default)]
-pub struct Holding {
-    pub shares: u128,
-    /// Shares escrowed in open asks. They keep earning dividends until filled.
-    pub locked: u128,
-    pub reward_debt: u128,
-}
-
 #[near(serializers = [json])]
 #[derive(Clone, Debug)]
 pub struct Payout {
@@ -272,18 +178,8 @@ pub struct SplitView {
     pub runner: U128,
     pub parts: Vec<U128>,
     pub remainder: U128,
+    pub reserve: U128,
     pub creator: U128,
-    pub pool: U128,
-    pub acc_increment: U128,
-    pub distributed: U128,
-    pub dust_to_protocol: U128,
-}
-
-#[near(serializers = [json])]
-#[derive(Clone, Debug)]
-pub struct ShareView {
-    pub shares: U128,
-    pub locked: U128,
 }
 
 #[near(serializers = [json])]
@@ -293,7 +189,6 @@ pub struct ConfigView {
     pub payment_token: AccountId,
     pub protocol_account: AccountId,
     pub protocol_fee_bps: u16,
-    pub batch_interval_ns: U64,
     pub update_delay_ns: U64,
 }
 
@@ -329,14 +224,6 @@ pub enum TransferMsg {
         #[serde(default)]
         quote: Option<QuoteMsg>,
     },
-    Bid {
-        recipe_id: String,
-        price: U128,
-        qty: U128,
-        /// Account that owns the bid and receives the shares (see `Run::on_behalf_of`).
-        #[serde(default)]
-        on_behalf_of: Option<AccountId>,
-    },
     /// Adds to a recipe's bond, which backs its quotes.
     Bond {
         recipe_id: String,
@@ -356,13 +243,7 @@ pub struct Contract {
     runners: IterableMap<AccountId, Runner>,
     recipes: IterableMap<String, Recipe>,
     runs: LookupMap<String, Run>,
-    holdings: LookupMap<(String, AccountId), Holding>,
     balances: LookupMap<AccountId, u128>,
-    books: LookupMap<String, Book>,
-    order_index: LookupMap<u64, String>,
-    next_order_id: u64,
-    batch_interval_ns: u64,
-    batches: LookupMap<String, Batch>,
     /// sha256 of every accepted quote message: each signed quote backs exactly one run.
     used_quotes: LookupSet<Vec<u8>>,
     /// Notice period before an announced recipe version takes effect.
@@ -538,14 +419,12 @@ impl Contract {
         payment_token: AccountId,
         protocol_account: AccountId,
         protocol_fee_bps: u16,
-        batch_interval_ns: U64,
         update_delay_ns: U64,
     ) -> Self {
         require!(
             protocol_fee_bps <= MAX_PROTOCOL_FEE_BPS,
             "protocol fee too high"
         );
-        require!(batch_interval_ns.0 > 0, "batch_interval_ns must be > 0");
         Self {
             owner,
             payment_token,
@@ -555,13 +434,7 @@ impl Contract {
             runners: IterableMap::new(StorageKey::Runners),
             recipes: IterableMap::new(StorageKey::Recipes),
             runs: LookupMap::new(StorageKey::Runs),
-            holdings: LookupMap::new(StorageKey::Holdings),
             balances: LookupMap::new(StorageKey::Balances),
-            books: LookupMap::new(StorageKey::Books),
-            order_index: LookupMap::new(StorageKey::OrderIndex),
-            next_order_id: 1,
-            batch_interval_ns: batch_interval_ns.0,
-            batches: LookupMap::new(StorageKey::Batches),
             used_quotes: LookupSet::new(StorageKey::UsedQuotes),
             update_delay_ns: update_delay_ns.0,
         }
@@ -642,8 +515,7 @@ impl Contract {
         runner_id: AccountId,
         parts: Vec<String>,
         price_per_run: U128,
-        royalty_bps: u16,
-        total_shares: U128,
+        reserve_bps: u16,
         settle_mode: Option<String>,
     ) {
         require!(valid_ticker(&id), "recipe id must match ^[A-Z0-9]{3,6}$");
@@ -653,8 +525,7 @@ impl Contract {
             r#"settle_mode must be "final" or "checkpoint""#
         );
         require!(!self.recipes.contains_key(&id), "recipe exists");
-        require!(royalty_bps <= MAX_ROYALTY_BPS, "royalty too high");
-        require!(total_shares.0 > 0, "total_shares must be > 0");
+        require!(reserve_bps <= 10_000, "reserve_bps must be <= 10000");
         require!(!sealed_hash.is_empty(), "sealed_hash required");
         require!(!parts.is_empty(), "recipe needs at least one part");
         let runner = self
@@ -687,9 +558,7 @@ impl Contract {
             runner_id,
             parts,
             price_per_run,
-            royalty_bps,
-            total_shares,
-            acc_per_share: U128(0),
+            reserve_bps,
             runs: 0,
             revenue: U128(0),
             listed: true,
@@ -706,21 +575,11 @@ impl Contract {
             update_effective_ns: U64(0),
         };
         emit("recipe_published", json!(recipe));
-        self.recipes.insert(id.clone(), recipe);
-        // the first batch is the recipe's opening auction
-        self.batches.insert(id.clone(), Batch { id: 1, opened_ns: U64(env::block_timestamp()) });
-        self.holdings.insert(
-            (id, creator),
-            Holding {
-                shares: total_shares.0,
-                locked: 0,
-                reward_debt: 0,
-            },
-        );
+        self.recipes.insert(id, recipe);
     }
 
-    /// Announces a new sealed version. It takes effect `update_delay_ns` later, so shareholders
-    /// and buyers get notice; runs paid before then keep the version they paid for.
+    /// Announces a new sealed version. It takes effect `update_delay_ns` later, so buyers get
+    /// notice; runs paid before then keep the version they paid for.
     pub fn update_sealed(&mut self, id: String, sealed_hash: String) {
         let creator = self
             .recipes
@@ -823,18 +682,6 @@ impl Contract {
             } => {
                 let from = on_behalf_of.clone().unwrap_or_else(|| sender_id.clone());
                 (on_behalf_of, self.internal_post_bond(from, amount.0, recipe_id))
-            }
-            TransferMsg::Bid {
-                recipe_id,
-                price,
-                qty,
-                on_behalf_of,
-            } => {
-                let owner = on_behalf_of.clone().unwrap_or_else(|| sender_id.clone());
-                (
-                    on_behalf_of,
-                    self.internal_place_bid(owner, amount.0, recipe_id, price.0, qty.0),
-                )
             }
         };
         if let Err(reason) = result {
@@ -1107,9 +954,7 @@ impl Contract {
             self.protocol_fee_bps,
             runner.fee_per_run.0,
             &fees,
-            recipe.royalty_bps,
-            recipe.total_shares.0,
-            recipe.acc_per_share.0,
+            recipe.reserve_bps,
         )
         .unwrap_or_else(|| env::panic_str("fees exceed price"));
 
@@ -1125,20 +970,21 @@ impl Contract {
             });
         };
         let protocol_account = self.protocol_account.clone();
-        pay(self, &protocol_account, "protocol", split.protocol_total());
+        pay(self, &protocol_account, "protocol", split.protocol);
         pay(self, &runner.id, "runner", split.runner);
         for ((part, fee), unpaid) in part_infos.iter().zip(fees.iter()).zip(unpaid.iter()) {
             if *unpaid {
                 pay(self, &part.author, &format!("part:{}", part.id), *fee);
             }
         }
-        pay(self, &recipe.creator, "creator_royalty", split.creator);
+        pay(self, &recipe.creator, "creator", split.creator);
 
         // bonded quote: pay any shortfall to the buyer from the cover set aside at payment
         let r = self.recipes.get_mut(&recipe.id).unwrap();
         let (b, compensation) = bond::settle(bond_of(r), run.covered.0, run.promised.0, delivered.0)
             .unwrap_or_else(|| env::panic_str("bond accounting"));
-        r.acc_per_share = U128(r.acc_per_share.0 + split.acc_increment);
+        // the reserve share of this run tops up the guarantee deposit
+        let b = bond::deposit(b, split.reserve).unwrap_or_else(|| env::panic_str("bond accounting"));
         r.runs += 1;
         r.revenue = U128(r.revenue.0 + run.amount.0);
         set_bond(r, b);
@@ -1161,8 +1007,7 @@ impl Contract {
                 "price": run.amount,
                 "output_hash": output_hash,
                 "payouts": payouts,
-                "shareholder_pool": U128(split.distributed),
-                "acc_increment": U128(split.acc_increment),
+                "reserve": U128(split.reserve),
                 "delivered": delivered,
                 "compensation": U128(compensation),
             }),
@@ -1338,260 +1183,6 @@ impl Contract {
         }
     }
 
-    // ---------------------------------------------------- shares & dividends
-
-    fn holding(&self, recipe_id: &str, account: &AccountId) -> Holding {
-        self.holdings
-            .get(&(recipe_id.to_string(), account.clone()))
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    fn acc(&self, recipe_id: &str) -> u128 {
-        self.recipes
-            .get(recipe_id)
-            .unwrap_or_else(|| env::panic_str("unknown recipe"))
-            .acc_per_share
-            .0
-    }
-
-    /// Credits pending dividends to the withdrawable balance and resets the debt.
-    fn harvest(&mut self, recipe_id: &str, account: &AccountId) -> u128 {
-        let acc = self.acc(recipe_id);
-        let mut h = self.holding(recipe_id, account);
-        let (pending, debt) = dividends::harvest(h.shares, h.reward_debt, acc);
-        h.reward_debt = debt;
-        self.holdings
-            .insert((recipe_id.to_string(), account.clone()), h);
-        if pending > 0 {
-            self.credit(account, pending);
-        }
-        pending
-    }
-
-    /// Moves available (unlocked) shares, harvesting both sides first.
-    fn move_shares(&mut self, recipe_id: &str, from: &AccountId, to: &AccountId, qty: u128) {
-        let acc = self.acc(recipe_id);
-        self.harvest(recipe_id, from);
-        self.harvest(recipe_id, to);
-        let mut hf = self.holding(recipe_id, from);
-        require!(hf.shares - hf.locked >= qty, "insufficient shares");
-        hf.shares -= qty;
-        hf.reward_debt = dividends::rebase(hf.shares, acc);
-        self.holdings.insert((recipe_id.to_string(), from.clone()), hf);
-        let mut ht = self.holding(recipe_id, to);
-        ht.shares += qty;
-        ht.reward_debt = dividends::rebase(ht.shares, acc);
-        self.holdings.insert((recipe_id.to_string(), to.clone()), ht);
-    }
-
-    pub fn transfer_shares(&mut self, recipe_id: String, receiver_id: AccountId, qty: U128) {
-        require!(qty.0 > 0, "qty must be > 0");
-        let sender = env::predecessor_account_id();
-        require!(sender != receiver_id, "cannot transfer to self");
-        self.move_shares(&recipe_id, &sender, &receiver_id, qty.0);
-        emit(
-            "shares_transferred",
-            json!({"recipe_id": recipe_id, "from": sender, "to": receiver_id, "qty": qty}),
-        );
-    }
-
-    pub fn claim_dividends(&mut self, recipe_id: String) -> U128 {
-        let account = env::predecessor_account_id();
-        let amount = self.harvest(&recipe_id, &account);
-        emit(
-            "dividends_claimed",
-            json!({"recipe_id": recipe_id, "account_id": account, "amount": U128(amount)}),
-        );
-        U128(amount)
-    }
-
-    // ------------------------------------------------ batch auctions (shares)
-
-    fn new_order(&mut self, recipe_id: &str, owner: &AccountId, side: Side, price: u128, qty: u128) -> Order {
-        let id = self.next_order_id;
-        self.next_order_id += 1;
-        Order {
-            id,
-            recipe_id: recipe_id.to_string(),
-            owner: owner.clone(),
-            side,
-            price: U128(price),
-            qty: U128(qty),
-            created_ns: U64(env::block_timestamp()),
-        }
-    }
-
-    fn book_full(&self, recipe_id: &str) -> bool {
-        self.books
-            .get(recipe_id)
-            .map(|b| b.bids.len() + b.asks.len() >= MAX_ORDERS_PER_BOOK)
-            .unwrap_or(false)
-    }
-
-    /// Inserts a resting order keeping each side sorted best-first (price, then age).
-    fn rest_order(&mut self, order: Order) {
-        let recipe_id = order.recipe_id.clone();
-        self.order_index.insert(order.id, recipe_id.clone());
-        emit("order_placed", json!(order));
-        let mut book = self.books.get(&recipe_id).cloned().unwrap_or_default();
-        let price = order.price.0;
-        match order.side {
-            Side::Bid => {
-                let pos = book.bids.iter().position(|o| o.price.0 < price).unwrap_or(book.bids.len());
-                book.bids.insert(pos, order);
-            }
-            Side::Ask => {
-                let pos = book.asks.iter().position(|o| o.price.0 > price).unwrap_or(book.asks.len());
-                book.asks.insert(pos, order);
-            }
-        }
-        self.books.insert(recipe_id, book);
-    }
-
-    /// Bids only join the current batch; nothing matches until `clear_batch`.
-    fn internal_place_bid(&mut self, buyer: AccountId, amount: u128, recipe_id: String, price: u128, qty: u128) -> Result<(), String> {
-        if !self.recipes.contains_key(&recipe_id) {
-            return Err("unknown recipe".into());
-        }
-        if price == 0 || qty == 0 {
-            return Err("price and qty must be > 0".into());
-        }
-        let escrow = price.checked_mul(qty).ok_or("price * qty overflows")?;
-        if amount < escrow {
-            return Err("deposit below price * qty".into());
-        }
-        if self.book_full(&recipe_id) {
-            return Err("order book full".into());
-        }
-        if amount > escrow {
-            self.credit(&buyer, amount - escrow);
-        }
-        let order = self.new_order(&recipe_id, &buyer, Side::Bid, price, qty);
-        self.rest_order(order);
-        Ok(())
-    }
-
-    /// Locks shares and joins the current batch.
-    pub fn place_ask(&mut self, recipe_id: String, price: U128, qty: U128) -> u64 {
-        let seller = env::predecessor_account_id();
-        let (price, qty) = (price.0, qty.0);
-        require!(price > 0 && qty > 0, "price and qty must be > 0");
-        require!(self.recipes.contains_key(&recipe_id), "unknown recipe");
-        require!(!self.book_full(&recipe_id), "order book full");
-        // Escrow (lock) the shares; they keep earning dividends until filled.
-        let mut h = self.holding(&recipe_id, &seller);
-        require!(h.shares - h.locked >= qty, "insufficient shares");
-        h.locked += qty;
-        self.holdings.insert((recipe_id.clone(), seller.clone()), h);
-        let order = self.new_order(&recipe_id, &seller, Side::Ask, price, qty);
-        let id = order.id;
-        self.rest_order(order);
-        id
-    }
-
-    fn auction_orders(book: &Book) -> Vec<AuctionOrder> {
-        book.bids
-            .iter()
-            .map(|o| AuctionOrder { id: o.id, side: AuctionSide::Bid, price: o.price.0, qty: o.qty.0 })
-            .chain(book.asks.iter().map(|o| AuctionOrder { id: o.id, side: AuctionSide::Ask, price: o.price.0, qty: o.qty.0 }))
-            .collect()
-    }
-
-    /// Permissionless: closes the recipe's batch once `batch_interval_ns` has elapsed and clears
-    /// every crossing order at one uniform price. Always opens the next batch.
-    pub fn clear_batch(&mut self, recipe_id: String) -> ClearSummary {
-        let batch = self
-            .batches
-            .get(&recipe_id)
-            .cloned()
-            .unwrap_or_else(|| env::panic_str("unknown recipe"));
-        let now = env::block_timestamp();
-        require!(now >= batch.opened_ns.0 + self.batch_interval_ns, "batch still open");
-        let mut book = self.books.get(&recipe_id).cloned().unwrap_or_default();
-        let result = clear_auction(&Self::auction_orders(&book));
-        let acc = self.acc(&recipe_id);
-        let mut fills = Vec::with_capacity(result.fills.len());
-        if let Some(p) = result.price {
-            for f in &result.fills {
-                let side_vec = if f.side == AuctionSide::Bid { &mut book.bids } else { &mut book.asks };
-                let idx = side_vec.iter().position(|o| o.id == f.order_id).unwrap();
-                let owner = side_vec[idx].owner.clone();
-                if side_vec[idx].qty.0 == f.qty {
-                    side_vec.remove(idx);
-                    self.order_index.remove(&f.order_id);
-                } else {
-                    side_vec[idx].qty = U128(side_vec[idx].qty.0 - f.qty);
-                }
-                // harvest before the share balance changes (acc is constant during clearing)
-                self.harvest(&recipe_id, &owner);
-                let mut h = self.holding(&recipe_id, &owner);
-                match f.side {
-                    AuctionSide::Bid => {
-                        h.shares += f.qty;
-                        let improvement = (f.limit - p) * f.qty;
-                        if improvement > 0 {
-                            self.credit(&owner, improvement);
-                        }
-                    }
-                    AuctionSide::Ask => {
-                        h.shares -= f.qty;
-                        h.locked -= f.qty;
-                        self.credit(&owner, f.qty * p);
-                    }
-                }
-                h.reward_debt = dividends::rebase(h.shares, acc);
-                self.holdings.insert((recipe_id.clone(), owner.clone()), h);
-                fills.push(FillView {
-                    order_id: f.order_id,
-                    owner,
-                    side: if f.side == AuctionSide::Bid { Side::Bid } else { Side::Ask },
-                    qty: U128(f.qty),
-                });
-            }
-        }
-        self.books.insert(recipe_id.clone(), book);
-        let summary = ClearSummary {
-            recipe_id: recipe_id.clone(),
-            batch_id: batch.id,
-            price: result.price.map(U128),
-            volume: U128(result.volume),
-            fills,
-        };
-        emit("batch_cleared", json!(summary));
-        self.batches.insert(recipe_id, Batch { id: batch.id + 1, opened_ns: U64(now) });
-        summary
-    }
-
-    pub fn cancel_order(&mut self, order_id: u64) {
-        let recipe_id = self
-            .order_index
-            .get(&order_id)
-            .cloned()
-            .unwrap_or_else(|| env::panic_str("unknown order"));
-        let mut book = self.books.get(&recipe_id).cloned().unwrap_or_default();
-        let caller = env::predecessor_account_id();
-        let order = if let Some(i) = book.bids.iter().position(|o| o.id == order_id) {
-            book.bids.remove(i)
-        } else if let Some(i) = book.asks.iter().position(|o| o.id == order_id) {
-            book.asks.remove(i)
-        } else {
-            env::panic_str("unknown order")
-        };
-        require!(order.owner == caller, "order owner only");
-        match order.side {
-            Side::Bid => self.credit(&caller, order.price.0 * order.qty.0),
-            Side::Ask => {
-                let mut h = self.holding(&recipe_id, &caller);
-                h.locked -= order.qty.0;
-                self.holdings.insert((recipe_id.clone(), caller.clone()), h);
-            }
-        }
-        self.order_index.remove(&order_id);
-        self.books.insert(recipe_id.clone(), book);
-        emit("order_cancelled", json!(order));
-    }
-
     // ----------------------------------------------------------------- views
 
     pub fn get_config(&self) -> ConfigView {
@@ -1600,7 +1191,6 @@ impl Contract {
             payment_token: self.payment_token.clone(),
             protocol_account: self.protocol_account.clone(),
             protocol_fee_bps: self.protocol_fee_bps,
-            batch_interval_ns: U64(self.batch_interval_ns),
             update_delay_ns: U64(self.update_delay_ns),
         }
     }
@@ -1639,44 +1229,6 @@ impl Contract {
         self.runs.get(&run_id).cloned()
     }
 
-    pub fn get_book(&self, recipe_id: String) -> Book {
-        self.books.get(&recipe_id).cloned().unwrap_or_default()
-    }
-
-    pub fn get_batch(&self, recipe_id: String) -> Option<BatchView> {
-        self.batches.get(&recipe_id).map(|b| BatchView {
-            id: b.id,
-            opened_ns: b.opened_ns,
-            closes_ns: U64(b.opened_ns.0 + self.batch_interval_ns),
-        })
-    }
-
-    /// What would clear if the batch closed now.
-    pub fn indicative_clearing(&self, recipe_id: String) -> IndicativeView {
-        let book = self.books.get(&recipe_id).cloned().unwrap_or_default();
-        let r = clear_auction(&Self::auction_orders(&book));
-        IndicativeView {
-            price: r.price.map(U128),
-            volume: U128(r.volume),
-            demand: U128(r.demand),
-            supply: U128(r.supply),
-        }
-    }
-
-    pub fn shares_of(&self, recipe_id: String, account_id: AccountId) -> ShareView {
-        let h = self.holding(&recipe_id, &account_id);
-        ShareView {
-            shares: U128(h.shares),
-            locked: U128(h.locked),
-        }
-    }
-
-    pub fn pending_dividends(&self, recipe_id: String, account_id: AccountId) -> U128 {
-        let acc = self.recipes.get(&recipe_id).map(|r| r.acc_per_share.0).unwrap_or(0);
-        let h = self.holding(&recipe_id, &account_id);
-        U128(dividends::pending(h.shares, h.reward_debt, acc))
-    }
-
     pub fn balance_of(&self, account_id: AccountId) -> U128 {
         U128(self.balances.get(&account_id).copied().unwrap_or(0))
     }
@@ -1698,9 +1250,7 @@ impl Contract {
             self.protocol_fee_bps,
             runner_fee,
             &fees,
-            recipe.royalty_bps,
-            recipe.total_shares.0,
-            recipe.acc_per_share.0,
+            recipe.reserve_bps,
         )
         .unwrap_or_else(|| env::panic_str("fees exceed price"));
         SplitView {
@@ -1709,11 +1259,8 @@ impl Contract {
             runner: U128(s.runner),
             parts: s.parts.iter().map(|b| U128(*b)).collect(),
             remainder: U128(s.remainder),
+            reserve: U128(s.reserve),
             creator: U128(s.creator),
-            pool: U128(s.pool),
-            acc_increment: U128(s.acc_increment),
-            distributed: U128(s.distributed),
-            dust_to_protocol: U128(s.dust_to_protocol),
         }
     }
 }

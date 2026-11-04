@@ -8,20 +8,15 @@ Source of truth: `contracts/fungible-recipes/src/lib.rs`. The TS mirror (`core/s
 |---|---|---|
 | `runner_added` | `add_runner` | the full `Runner`: `id: AccountId, signing_pk: string, enc_pk_hex: string, codehash: string, fee_per_run: U128, active: bool` |
 | `part_registered` | `register_part` | the full `Part`: `id: string, version: string, author: AccountId, fee_per_call: U128, manifest_hash: string, active: bool` |
-| `recipe_published` | `publish_recipe` | the full `Recipe`: `id: string, name: string, creator: AccountId, sealed_hash: string, runner_id: AccountId, parts: string[], price_per_run: U128, royalty_bps: u16, total_shares: U128, acc_per_share: U128 ("0"), runs: u64 (0), revenue: U128 ("0"), listed: bool (true), failed: u64 (0), aborted: u64 (0), promised_total: U128 ("0"), delivered_total: U128 ("0"), compensated_total: U128 ("0"), bond_available: U128 ("0"), bond_locked: U128 ("0"), settle_mode: "final" \| "checkpoint", version: u32 (1), pending_sealed_hash: string (""), update_effective_ns: U64 ("0")` |
+| `recipe_published` | `publish_recipe` | the full `Recipe`: `id: string, name: string, creator: AccountId, sealed_hash: string, runner_id: AccountId, parts: string[], price_per_run: U128, reserve_bps: u16, runs: u64 (0), revenue: U128 ("0"), listed: bool (true), failed: u64 (0), aborted: u64 (0), promised_total: U128 ("0"), delivered_total: U128 ("0"), compensated_total: U128 ("0"), bond_available: U128 ("0"), bond_locked: U128 ("0"), settle_mode: "final" \| "checkpoint", version: u32 (1), pending_sealed_hash: string (""), update_effective_ns: U64 ("0")` |
 | `recipe_update_scheduled` | `update_sealed` (new version announced; takes effect after `update_delay_ns`) | `recipe_id: string, sealed_hash: string, version: u32 (the number it will get), effective_ns: U64` |
 | `recipe_update_cancelled` | `cancel_update` | `recipe_id: string, sealed_hash: string` |
 | `recipe_updated` | activation of a due update (`apply_update`, or lazily in `ft_on_transfer` run / `update_sealed`) | `recipe_id: string, sealed_hash: string, version: u32` |
 | `run_checkpoint` | `checkpoint_run` (progress, optional partial billing in checkpoint mode) | `run_id: string, seq: u32, state_hash: string, parts_done: string[], billed: U128 (run total after), payouts: [{account_id: AccountId, role: string, amount: U128}] (part payments made by this call, role `part:<id>`)` |
 | `run_requested` | `ft_on_transfer` action `run` accepted | the full `Run`: `run_id: string, recipe_id: string, buyer: AccountId (on_behalf_of or sender_id), amount: U128 (= price_per_run, any excess already credited to buyer), inputs_hash: string, sealed_hash: string (snapshot of the recipe's sealed_hash), status: "Pending", created_ns: U64, job_hash: string ("" when unquoted), expected: U128 ("0" when unquoted), promised: U128 ("0" when unquoted), covered: U128 (the bond amount set aside = the quote's signed cover; "0" when unquoted), checkpoint_seq: u32 (0), state_hash: string (""), parts_billed: string[] ([]), billed: U128 ("0"), last_progress_ns: U64 (= created_ns)` |
-| `transfer_rejected` | `ft_on_transfer` with `on_behalf_of` where the run/bid/bond failed a business rule (including quote checks); full amount credited to `on_behalf_of` | `on_behalf_of: AccountId, sender_id: AccountId, amount: U128, reason: string` |
-| `frs_settlement` | `report_run` outcome `ok` | `run_id: string, recipe_id: string, buyer: AccountId, price: U128, output_hash: string, payouts: [{account_id: AccountId, role: string, amount: U128}], shareholder_pool: U128 (= distributed), acc_increment: U128, delivered: U128 (as signed by the runner), compensation: U128 (bond paid to the buyer: min(max(0, promised - delivered), covered))` |
+| `transfer_rejected` | `ft_on_transfer` with `on_behalf_of` where the run/bond failed a business rule (including quote checks); full amount credited to `on_behalf_of` | `on_behalf_of: AccountId, sender_id: AccountId, amount: U128, reason: string` |
+| `frs_settlement` | `report_run` outcome `ok` | `run_id: string, recipe_id: string, buyer: AccountId, price: U128, output_hash: string, payouts: [{account_id: AccountId, role: string, amount: U128}], reserve: U128 (added to the recipe's guarantee deposit), delivered: U128, compensation: U128` |
 | `run_refunded` | `report_run` outcome `fail` or `abort` / `reclaim_run` (the run's `covered` returns to `bond_available`) | `run_id: string, buyer: AccountId, amount: U128 (= run amount - billed), reason: "runner_reported_failure" \| "runner_aborted" \| "timeout"` |
-| `order_placed` | every accepted bid (via `ft_on_transfer`) and every `place_ask`; the order rests in the current batch (nothing matches on placement) | the full `Order` as created: `id: u64, recipe_id: string, owner: AccountId, side: "Bid" \| "Ask", price: U128, qty: U128, created_ns: U64` |
-| `batch_cleared` | every `clear_batch`, including batches where nothing crosses | `recipe_id: string, batch_id: u64 (the batch that closed), price: U128 \| null (uniform clearing price; null when nothing crosses), volume: U128 ("0" when null), fills: [{order_id: u64, owner: AccountId, side: "Bid" \| "Ask", qty: U128}]` (bids first, price desc then id asc; then asks, price asc then id asc) |
-| `order_cancelled` | `cancel_order` | the full `Order` as it rested (remaining `qty`) |
-| `shares_transferred` | `transfer_shares` | `recipe_id: string, from: AccountId, to: AccountId, qty: U128` |
-| `dividends_claimed` | `claim_dividends` (emitted even when amount is "0") | `recipe_id: string, account_id: AccountId, amount: U128` |
 | `withdrawn` | `on_withdraw` after a successful `ft_transfer` | `account_id: AccountId, amount: U128` |
 | `bond_posted` | `ft_on_transfer` action `bond` | `recipe_id: string, from: AccountId (on_behalf_of or sender_id), amount: U128, bond_available: U128 (after)` |
 | `bond_withdrawn` | `withdraw_bond` (creator only; amount credited to the creator's withdrawable balance) | `recipe_id: string, amount: U128, bond_available: U128 (after)` |
@@ -33,18 +28,10 @@ Always in this order, one entry each, **including zero amounts**:
 1. `protocol` → `protocol_account`, amount = protocol fee + rounding dust
 2. `runner` → runner account id, `fee_per_run`
 3. `part:<part id>` → part author, one entry per element of `parts_used` that was not already billed at a checkpoint, in `parts_used` order (billed parts are removed from the front of the match: the first occurrences)
-4. `creator_royalty` → recipe creator
+4. `creator` → recipe creator (the remainder after `reserve`)
 
-No event is emitted for individual shareholders; their share is `shareholder_pool` via `acc_increment`.
+The `reserve` goes to the recipe's guarantee deposit (`bond_available`), not to an account.
 Bond compensation is not a payout entry: it is credited to `buyer` and reported as `compensation`.
-
-## Order ids and batches
-
-- A single counter `next_order_id` starts at **1** and is incremented for every accepted order (bids and asks). Every accepted order rests.
-- A partially filled order keeps its id and rests into the next batch with the remaining qty. Fully filled orders leave the book.
-- Rejected bids (`transfer_rejected`) and rejected asks (panic) do **not** consume an id.
-- Batch ids start at **1** per recipe (batch 1 = opening auction, opened at `publish_recipe`). `clear_batch` emits `batch_cleared` with the closing batch's id and opens `id + 1` at the current block timestamp.
-- At most one bid and one ask are partially filled per clearing. Price improvement `(limit - P) * qty` is credited to each filled bidder; each filled seller is credited `qty * P` and their locked shares drop by `qty`.
 
 ## Validation rules that produce rejections
 
@@ -57,11 +44,6 @@ Bond compensation is not a payout entry: it is credited to `buyer` and reported 
 | unknown recipe | `unknown recipe` |
 | recipe not listed | `recipe not listed` |
 | underpayment | `payment below price_per_run` |
-| bid price or qty 0 | `price and qty must be > 0` |
-| bid escrow overflow | `price * qty overflows` |
-| bid underpayment | `deposit below price * qty` |
-| book holds `MAX_ORDERS_PER_BOOK` (200) orders | `order book full` (bid: rejection reason; ask: panic) |
-| `clear_batch` before `opened_ns + batch_interval_ns` | `batch still open` (panic) |
 | job_hash 64 lowercase hex (quoted run) | `job_hash must be 64 lowercase hex` |
 | quote `sealed_hash` equals the recipe's current `sealed_hash` | `quote for an outdated recipe version` |
 | the recipe's runner is active | `runner inactive` |
@@ -75,4 +57,4 @@ Bond compensation is not a payout entry: it is credited to `buyer` and reported 
 | output_hash 64 lowercase hex (`report_run`) | `output_hash must be 64 lowercase hex` (panic) |
 | empty `parts` in `publish_recipe` | `recipe needs at least one part` (panic) |
 
-Checks run in the order listed for runs: run_id, inputs_hash, duplicate, recipe exists, listed, amount, then (quoted runs only) job_hash, recipe version, runner active, quote signature, expiry, single use, cover <= promise, bond >= cover. Only an accepted quote is marked used; a rejected one can still be paid by its buyer. Bonds: recipe exists (`unknown recipe`). For bids: recipe exists, price/qty, overflow, amount, book full. For asks: price/qty, recipe exists, book full, available shares.
+Checks run in the order listed for runs: run_id, inputs_hash, duplicate, recipe exists, listed, amount, then (quoted runs only) job_hash, recipe version, runner active, quote signature, expiry, single use, cover <= promise, bond >= cover. Only an accepted quote is marked used; a rejected one can still be paid by its buyer. Bonds: recipe exists (`unknown recipe`).

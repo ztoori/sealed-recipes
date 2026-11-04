@@ -1,11 +1,11 @@
 import { usd } from '../api';
 
-const COLORS: Record<string, string> = { protocol: '#8592a8', runner: '#5b6b84', creator_royalty: '#b77a06', shareholders: '#0f7a66' };
+const COLORS: Record<string, string> = { protocol: '#8592a8', runner: '#5b6b84', creator: '#b77a06', reserve: '#0f7a66' };
 
 /** Where one run's payment went: a single settlement split into every payee. */
-export function SettlementFlow({ price, payouts, pool }: { price: number; payouts: { account_id: string; role: string; amount: string }[]; pool: number }) {
+export function SettlementFlow({ price, payouts, reserve }: { price: number; payouts: { account_id: string; role: string; amount: string }[]; reserve: number }) {
   const items = [...payouts.map((p) => ({ label: p.role.startsWith('part:') ? `${p.account_id}` : p.account_id, sub: p.role.startsWith('part:') ? p.role.slice(5).split('@')[0] : p.role.replace('_', ' '), amount: Number(p.amount), color: p.role.startsWith('part:') ? '#2f6fdb' : COLORS[p.role] ?? '#5b6b84' })),
-    { label: 'all shareholders', sub: 'dividend, pro rata', amount: pool, color: COLORS.shareholders }];
+    ...(reserve > 0 ? [{ label: 'guarantee deposit', sub: 'creator’s reserve, backs future quotes', amount: reserve, color: COLORS.reserve }] : [])];
   const H = 430, W = 660, gap = 5, x0 = 150, x1 = 400;
   const total = items.reduce((s, i) => s + i.amount, 0) || 1;
   const usable = H - gap * (items.length - 1);
@@ -21,7 +21,7 @@ export function SettlementFlow({ price, payouts, pool }: { price: number; payout
     return b;
   });
   return (
-    <svg className="sankey" viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Settlement split">
+    <svg className="sankey" viewBox={`0 0 ${W} ${H + 16}`} width="100%" role="img" aria-label="Settlement split">
       <rect x={x0 - 18} y={(H - usable * 0.9) / 2} width={18} height={usable * 0.9} fill="#15233f" rx={2} />
       <text x={x0 - 26} y={H / 2 - 8} textAnchor="end" style={{ fontWeight: 650, fontSize: 15 }}>{usd(price, 2)}</text>
       <text x={x0 - 26} y={H / 2 + 10} textAnchor="end" className="muted">one run</text>

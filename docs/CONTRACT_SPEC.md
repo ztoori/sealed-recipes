@@ -8,11 +8,50 @@ This file is the single source of truth shared by the Rust contract
 All token amounts are integers in the payment token's smallest unit
 (USDC on NEAR: 6 decimals, NEP-141 `17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1`
 on mainnet; any NEP-141 on testnet). JSON amounts are strings (`U128`).
-Shares are integer units (no decimals).
 
 ## Changelog
 
-The body of this file (from **Roles** on) is written in v3 terms. Newest first.
+The body of this file (from **Roles** on) describes the current contract (v5). The changelog below records how it got there, newest first; its older entries mention removed features.
+
+### v5 changes (no investment features: revenue shares removed)
+
+To keep every recipe a plain service purchase, the contract no longer has anything that looks like an investment:
+no shares, no dividends, no share trading. (The removed design is preserved at git tag `archive/revenue-shares`.)
+
+**Removed.**
+- `Recipe` fields `royalty_bps`, `total_shares`, `acc_per_share`.
+- Holdings and all share and order state.
+- Methods `transfer_shares`, `claim_dividends`, `place_ask`, `cancel_order`, `clear_batch`.
+- The `ft_on_transfer` action `bid`.
+- Views on shares, dividends, orders and batches.
+- Events `order_placed`, `batch_cleared`, `order_cancelled`, `shares_transferred`, `dividends_claimed`.
+- `new()` loses `batch_interval_ns`: `new(owner, payment_token, protocol_account, protocol_fee_bps, update_delay_ns)`.
+
+**Publish.** The signature is now
+`publish_recipe(id, name, sealed_hash, runner_id, parts, price_per_run, reserve_bps: u16, settle_mode: Option<String>)`.
+`reserve_bps <= 10000`, otherwise it panics `reserve_bps must be <= 10000`.
+
+**Settlement.** Given price `P`, protocol fee bps `f`, runner fee `r` and the part fees `b_i`:
+```
+protocol = floor(P * f / 10000)
+R        = P - protocol - r - Σ b_i
+reserve  = floor(R * reserve_bps / 10000)   -> added to the recipe's guarantee deposit (bond_available)
+creator  = R - reserve                       -> creator's withdrawable balance
+```
+Conservation is exact: `protocol + r + Σ b_i + creator + reserve = P`.
+
+The reserve is the creator's own money held as collateral. It grows the deposit that backs the recipe's quotes, and the creator can withdraw the free part with `withdraw_bond` like any other deposit.
+
+**`frs_settlement` data.** `run_id, recipe_id, buyer, price, output_hash, payouts, reserve, delivered, compensation`.
+`payouts` lists, in order: `protocol`, `runner`, the `part:<id>` entries not yet billed, then `creator`. `shareholder_pool` and `acc_increment` are removed.
+
+**`Recipe` field order.** `id, name, creator, sealed_hash, runner_id, parts, price_per_run, reserve_bps, runs, revenue, listed, failed, aborted, promised_total, delivered_total, compensated_total, bond_available, bond_locked, settle_mode, version, pending_sealed_hash, update_effective_ns`.
+
+**Checkpoint mode.** `billed + Σ payouts + reserve = price` (replaces the v4 identity with `shareholder_pool`).
+
+**`quote_settlement` view.** Returns `{price, protocol, runner, parts, remainder, reserve, creator}`.
+
+**Terminology.** `bond_*` stays the field name in code. In the product it is called the **guarantee deposit**: a performance bond. It is collateral the creator posts so that buyers are paid if a run under-delivers. Nobody invests in it and it pays no return.
 
 ### v4 changes (durable runs, partial settlement, versioned recipes)
 
@@ -184,41 +223,42 @@ Unquoted runs have `promised = covered = 0`.
 |---|---|---|
 | owner | contract admin (DAO in production) | sets protocol fee, approves TEE runners |
 | part author | builder account | registers parts (code, specialist agents, data sources) with a per-call fee |
-| creator | recipe author | publishes a sealed recipe, receives 100% of its shares + royalty |
-| buyer | anyone | pays per run via NEAR Intents (`ft_transfer_call` from 1Click) |
-| runner | TEE worker key | executes sealed recipes, signs run reports |
-| shareholder | anyone holding recipe shares | earns pro-rata dividends from every run |
+| creator | recipe author | publishes a sealed recipe, is paid per run, posts the recipe's guarantee deposit (bond) |
+| buyer | anyone | pays per run via NEAR Intents (`ft_transfer_call` from 1Click); compensated from the deposit on a shortfall |
+| runner | TEE worker key | executes sealed recipes, signs quotes, checkpoints and run reports |
+
+There is no holder or investor role: nothing can be bought except a run.
 
 ## State objects
 
 ```
 Part    { id, version, author, fee_per_call, manifest_hash, active }
 Runner  { id, signing_pk: ed25519 (base58 "ed25519:..."), enc_pk_hex (x25519), codehash, fee_per_run, active }
-Recipe  { id (ticker, ^[A-Z0-9]{3,6}$), name, creator, sealed_hash, runner_id, parts: [part_id],
-          price_per_run, royalty_bps, total_shares, acc_per_share (u128, scaled 1e18), runs, revenue, listed,
-          failed, aborted, promised_total, delivered_total, compensated_total, bond_available, bond_locked }
-Run     { run_id, recipe_id, buyer, amount, inputs_hash, sealed_hash (snapshot at payment), status: Pending|Settled|Refunded, created_ns,
-          job_hash ("" if unquoted), expected, promised, covered }
-Order   { id (u64), recipe_id, owner, side: Bid|Ask, price (per share), qty (remaining shares), created_ns }
-Batch   { id (u64, 1 = opening auction), opened_ns }   (one per recipe; closes at opened_ns + batch_interval_ns)
+Recipe  { id (^[A-Z0-9]{3,6}$), name, creator, sealed_hash, runner_id, parts: [part_id], price_per_run, reserve_bps,
+          runs, revenue, listed, failed, aborted, promised_total, delivered_total, compensated_total,
+          bond_available, bond_locked, settle_mode, version, pending_sealed_hash, update_effective_ns }
+Run     { run_id, recipe_id, buyer, amount, inputs_hash, sealed_hash (snapshot at payment), status: Pending|Settled|Refunded,
+          created_ns, job_hash ("" if unquoted), expected, promised, covered,
+          checkpoint_seq, state_hash, parts_billed, billed, last_progress_ns }
 ```
 
 ## Methods
 
 ### Admin
-- `new(owner, payment_token, protocol_account, protocol_fee_bps, batch_interval_ns)` — `#[init]`. `protocol_fee_bps <= 1000`, `batch_interval_ns > 0`.
+- `new(owner, payment_token, protocol_account, protocol_fee_bps, update_delay_ns)` — `#[init]`. `protocol_fee_bps <= 1000`.
 - `add_runner(id, signing_pk, enc_pk_hex, codehash, fee_per_run)` — owner only.
 - `set_runner_active(id, active)` — owner only.
 
 ### Builders & creators
 - `register_part(id, version, fee_per_call, manifest_hash)` — author = predecessor. Id unique and must match `^[a-z0-9._@-]{1,64}$` (no `,` or `|`, which delimit the signed report).
-- `publish_recipe(id, name, sealed_hash, runner_id, parts, price_per_run, royalty_bps, total_shares)`
-  - creator = predecessor; mints `total_shares` to creator.
+- `publish_recipe(id, name, sealed_hash, runner_id, parts, price_per_run, reserve_bps, settle_mode?)`
+  - creator = predecessor.
   - rejects if `price_per_run < protocol_fee(price) + runner.fee_per_run + Σ part.fee_per_call` (minimum viable price).
-  - `parts` must be non-empty.
-  - `royalty_bps <= 5000`, `total_shares > 0`, every part exists & active, runner active.
-- `withdraw_bond(recipe_id, amount)` — creator only, `amount <= bond_available`; credited to the creator's balance.
-- `update_sealed(id, sealed_hash)` — creator only (new version of the sealed graph, same interface).
+  - `parts` must be non-empty; every part exists & active; runner active.
+  - `reserve_bps <= 10000` (`reserve_bps must be <= 10000`): the share of the creator's cut kept in the guarantee deposit.
+  - `settle_mode` is `"final"` (default) or `"checkpoint"` (see v4).
+- `withdraw_bond(recipe_id, amount)` — creator only, `amount <= bond_available`; credited to the creator's balance. Locked cover cannot be withdrawn.
+- `update_sealed(id, sealed_hash)`, `cancel_update(id)`, `apply_update(id)` — versions with a notice period (see v4).
 
 ### Pay-per-run (NEAR Intents)
 The buyer's 1Click quote targets the payment token on NEAR with
@@ -242,17 +282,15 @@ delivery arrives as `ft_transfer_call` → `ft_on_transfer(sender_id, amount, ms
   - the run records the recipe's current `sealed_hash`; a later `update_sealed` only affects new runs.
   - `amount` must be `>= price_per_run`; excess is credited to the owner's (`on_behalf_of` or sender) withdrawable balance.
   - creates `Run{status:Pending}`. Returns `"0"` (nothing refunded to the token contract).
-- `{"action":"bid","recipe_id":"CLNP","price":"<per share>","qty":"<shares>"}`
-  - escrows `price*qty`; excess credited to balance; then matches (see order book).
 - `{"action":"bond","recipe_id":"CLNP"}` — adds `amount` to the recipe's `bond_available` (`unknown recipe` otherwise). Event `bond_posted`.
-- All three accept an optional `"on_behalf_of":"<account>"`. With NEAR Intents the
+- Both accept an optional `"on_behalf_of":"<account>"`. With NEAR Intents the
   `sender_id` of `ft_transfer_call` is the solver, not the buyer, so the 1Click
-  `customRecipientMsg` names the buyer here; the run (refunds, `reclaim_run`) or the
-  bid (shares, refunds) belongs to `on_behalf_of`, defaulting to `sender_id`.
-- **Business-rule failures** (unknown/unlisted recipe, duplicate `run_id`, malformed `run_id`/`inputs_hash`, underpayment, quote checks, bid price/qty 0, overflow, bid underpayment, full book):
+  `customRecipientMsg` names the buyer here; the run (refunds, `reclaim_run`) belongs to
+  `on_behalf_of`, defaulting to `sender_id`.
+- **Business-rule failures** (unknown/unlisted recipe, duplicate `run_id`, malformed `run_id`/`inputs_hash`, underpayment, quote checks, overflow):
   - with `on_behalf_of`: **no panic**. The full `amount` is credited to `on_behalf_of`'s withdrawable balance, event `transfer_rejected {on_behalf_of, sender_id, amount, reason}`, returns `"0"`. (A panic would refund the Intents/solver side, not the buyer.)
   - without `on_behalf_of`: panics, so the token contract refunds `sender_id`.
-- Unparseable `msg` or unknown action → panics → token contract refunds the full amount.
+- Unparseable `msg` or unknown action (including the removed `bid`) → panics → token contract refunds the full amount.
 - Only calls from `payment_token` are accepted.
 
 `report_run(run_id, outcome, parts_used, output_hash, delivered, signature)` — callable by anyone
@@ -278,83 +316,26 @@ delivery arrives as `ft_transfer_call` → `ft_on_transfer(sender_id, amount, ms
 ### Settlement (one receipt, all parties)
 Given `P = run.amount_charged (= price_per_run)`, protocol bps `f`, runner fee `r`, part fees `b_i` for each entry of `parts_used`:
 ```
-protocol  = floor(P * f / 10000)
-runner    = r                         -> runner account (runner id is a NEAR account)
-parts_i   = b_i                       -> part author
-R         = P - protocol - r - Σ b_i  (guaranteed >= 0 by publish check)
-creator   = floor(R * royalty_bps / 10000)
-pool      = R - creator
-inc       = floor(pool * 1e18 / total_shares)
-acc'      = acc_per_share + inc
-distributed = floor(acc' * total_shares / 1e18) - floor(acc_per_share * total_shares / 1e18)
-dust      = pool - distributed        -> protocol
-acc_per_share = acc'
+protocol  = floor(P * f / 10000)       -> protocol account
+runner    = r                          -> runner account (runner id is a NEAR account)
+parts_i   = b_i                        -> part author
+R         = P - protocol - r - Σ b_i   (guaranteed >= 0 by publish check)
+reserve   = floor(R * reserve_bps / 10000)  -> recipe's guarantee deposit (bond_available)
+creator   = R - reserve                -> creator
 ```
-`distributed` telescopes: the total ever set aside for holders is exactly `floor(acc * total_shares / 1e18)`,
-the most holders can ever claim in total. (Before the formal-verification pass it was
-`floor(inc * total_shares / 1e18)` per run, which Z3 showed could set aside less than holders can claim:
-3 shares, two runs of 1 unit → 2 units to the protocol, 1 claimable, 2 received. See `verification/`.)
-Any checked multiplication that would exceed u128 makes the split `None` and `report_run` panics; this is proven
-impossible while a recipe's lifetime settled revenue stays below 3.4e20 payment-token units.
+Conservation is exact, `protocol + r + Σ b_i + reserve + creator = P`, and `reserve + creator = R`: the reserve is
+part of the creator's own cut, held as collateral. Both are proved for every input in `verification/`.
+Any checked operation that would exceed u128 makes the split `None` and `report_run` panics; this cannot happen
+once the publish minimum holds and `P < 2^128 / 10^4`.
 All payouts are credited to internal withdrawable balances inside the same receipt
 and a single NEP-297 event `frs_settlement` lists every payout.
 `withdraw(amount?)` (requires exactly 1 yoctoNEAR attached) sends `ft_transfer` of the caller's balance; the `#[private]` callback `on_withdraw` checks the promise result with `env::promise_result_checked` (ft_transfer returns no value): success emits `withdrawn`, failure restores the credit and emits `withdraw_failed`.
 
-### Shares & dividends
-Pending dividends for an account: `max(0, floor(shares * acc_per_share / 1e18) - reward_debt)`.
-Before any change to an account's share balance the contract **harvests** pending dividends into
-that account's withdrawable balance (the debt only ever rises) and then resets
-`reward_debt = ceil(new_shares * acc / 1e18)` (`src/dividends.rs`). Rounding the debt **up** keeps the contract
-solvent across transfers and auction fills: at most 1 unit per holder per share movement stays in the
-contract. Solvency over any history is proved by induction in `verification/smt/prove_money.py`.
-- `transfer_shares(recipe_id, receiver_id, qty)`
-- `claim_dividends(recipe_id)` → harvested into balance.
-
-### Share trading: frequent batch auctions (per recipe, shares vs payment token)
-
-Shares never trade continuously. Orders collect into the recipe's current **batch**. When the batch
-closes, everything that crosses clears at **one uniform price**. Nobody gains from reacting a block
-earlier than someone else, and a thin book cannot be walked by a single order.
-
-- `new(..., batch_interval_ns: U64)` sets the batch length (demo: 12 s; testnet suggestion: 60 s).
-- A recipe's first batch opens at `publish_recipe` and is its **opening auction**. The creator offers the
-  float as asks at a reserve price, and bids accumulate until the first clearing.
-- Order ids are `u64`, starting at 1, shared by both sides. Every accepted order rests in the book; nothing
-  fills on placement. A book holds at most `MAX_ORDERS_PER_BOOK = 200` orders (bounds clearing gas; a full book
-  rejects new orders with `order book full`).
-- `place_ask(recipe_id, price, qty) -> u64`: escrows shares by **locking** them in the seller's own holding
-  (`locked += qty`). Locked shares keep earning dividends until they fill. `available = shares - locked`;
-  `place_ask` and `transfer_shares` require `available >= qty`.
-- Bids arrive via `ft_on_transfer` (`action: bid`), escrowing `price * qty` payment tokens.
-- `cancel_order(order_id)`: order owner only, any time before the order fills. Bids refund
-  `price * remaining_qty`; asks unlock.
-- `clear_batch(recipe_id)`: **anyone** may call it once `now >= batch.opened_ns + batch_interval_ns`. It always
-  closes the batch (`batch.id += 1`, `batch.opened_ns = now`), even when nothing crosses.
-
-**Clearing price.** For a candidate price `p`: demand `D(p) = Σ qty of bids with price >= p`, supply
-`S(p) = Σ qty of asks with price <= p`, volume `V(p) = min(D(p), S(p))`. Candidates are all distinct order prices.
-1. Keep the candidates with the largest `V` (if the largest `V` is 0, nothing clears: `price = null`, `volume = 0`).
-2. Among those, keep the ones with the smallest imbalance `|D(p) - S(p)|`.
-3. `P = floor((min + max) / 2)` of the remaining candidates. `V(P)` equals the maximum volume (proof in the
-   batch-auction vectors file).
-
-**Allocation at `P`, volume `V`.** Eligible bids (`price >= P`) are sorted by price desc, then id asc. Eligible asks
-(`price <= P`) are sorted by price asc, then id asc. Each side fills greedily up to `V`; at most one order per side is
-partially filled, and the remainder rests for the next batch. For each filled bid: harvest dividends, add `q` shares
-to the buyer, and credit the buyer `(bid.price - P) * q` (price improvement). For each filled ask: harvest dividends,
-remove `q` shares and `q` locked from the seller, and credit the seller `q * P`. Shares and tokens are conserved
-exactly. Self-matching is allowed and nets out. There are no trading fees in v1.
-
-Shared vectors: `contracts/test-vectors/batch-auction.json` (generated by `scripts/gen-auction-vectors.py`,
-an independent Python reference implementation).
-
 ### Views
-`get_config`, `get_recipe` (includes the track record and bond), `list_recipes`, `get_part`, `list_parts`, `get_runner`, `get_run`, `get_book(recipe_id)`,
-`get_batch(recipe_id) -> {id, opened_ns, closes_ns}`, `indicative_clearing(recipe_id) -> {price, volume, demand, supply}` (what would clear now),
-`shares_of(recipe_id, account_id)`, `pending_dividends(recipe_id, account_id)`, `balance_of(account_id)`,
-`quote_settlement(recipe_id, parts_used?)` (returns the split above without state change).
+`get_config`, `get_recipe` (includes the track record and guarantee deposit), `list_recipes`, `get_part`, `list_parts`, `get_runner`, `get_run`,
+`balance_of(account_id)`, `quote_settlement(recipe_id, parts_used?)` → `{price, protocol, runner, parts, remainder, reserve, creator}` (the split above, without state change).
 
 ### Events (NEP-297, standard `fungible-recipes`, version `1.0.0`)
-Exact field shapes and order-id rules: [CONTRACT_EVENTS.md](CONTRACT_EVENTS.md).
+Exact field shapes: [CONTRACT_EVENTS.md](CONTRACT_EVENTS.md).
 `runner_added`, `part_registered`, `recipe_published`, `recipe_updated`, `run_requested`, `frs_settlement`, `run_refunded`,
-`order_placed`, `batch_cleared`, `order_cancelled`, `shares_transferred`, `dividends_claimed`, `withdrawn`, `withdraw_failed`, `transfer_rejected`, `bond_posted`, `bond_withdrawn`.
+`recipe_update_scheduled`, `recipe_update_cancelled`, `run_checkpoint`, `withdrawn`, `withdraw_failed`, `transfer_rejected`, `bond_posted`, `bond_withdrawn`.

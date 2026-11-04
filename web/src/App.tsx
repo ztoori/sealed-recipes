@@ -1,13 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { ACCOUNTS, pct, px, usePoll } from './api';
-import { Exchange } from './pages/Exchange';
+import { ACCOUNTS, usePoll } from './api';
+import { Recipes } from './pages/Recipes';
 import { Compose } from './pages/Compose';
 import { Run } from './pages/Run';
 import { Trust } from './pages/Trust';
 import { Landscape } from './pages/Landscape';
 import { Wallet } from './pages/Wallet';
 
-export type Tab = 'exchange' | 'compose' | 'run' | 'trust' | 'wallet' | 'landscape';
+export type Tab = 'recipes' | 'compose' | 'run' | 'trust' | 'wallet' | 'landscape';
 export interface Story { step: number; next: () => void; stop: () => void }
 interface Ctx {
   acting: string; setActing: (a: string) => void;
@@ -23,10 +23,10 @@ export const useApp = () => useContext(AppCtx);
 
 const STEPS = [
   null,
-  { title: 'A creator chains parts into “Clean up and protect” and publishes it privately', body: 'Five parts from five authors, type-checked as they snap together. The recipe is sealed in the browser to the attested runner key and backed by a $25 bond.' },
+  { title: 'A creator chains parts into “Clean up and protect” and publishes it privately', body: 'Five parts from five authors, type-checked as they snap together. The recipe is sealed in the browser to the attested runner key and backed by a $25 guarantee deposit.' },
   { title: 'A buyer posts a job, recipes compete, and the buyer pays per run through Intents', body: 'One short form, sealed once. Every recipe that does this job quotes from a sealed dry run. SWPR promises more USDC but routes publicly and also sweeps your wNEAR; Bob picks CLNP and pays from Arbitrum.' },
   { title: 'The workflow sweeps dust and swaps privately to a fresh address', body: 'The runner verifies the on-chain commitments, decrypts, quarantines scam airdrops with a signed private-AI verdict, then routes confidential 1Click swaps to a never-used address.' },
-  { title: 'The creator and every part author are paid in the same settlement', body: 'One signed report, one receipt: protocol, runner, five part authors, the creator’s royalty and every shareholder’s dividend. Delivery is checked against the signed promise.' },
+  { title: 'The creator and every part author are paid in the same settlement', body: 'One signed report, one receipt: protocol, runner, five part authors and the creator, with 10% of the creator’s cut topping up the recipe’s guarantee deposit. Delivery is checked against the signed promise.' },
 ];
 
 export function App() {
@@ -37,7 +37,7 @@ export function App() {
   const [step, setStep] = useState(0);
   const [toastMsg, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [mode] = usePoll<any>('/api/mode', 30000);
-  const [tickers] = usePoll<any[]>('/api/tickers', 2000);
+  const [tickers] = usePoll<any[]>('/api/recipes/summary', 2000);
 
   const toast = useCallback((msg: string, err?: boolean) => { setToast({ msg, err }); setTimeout(() => setToast(null), 4200); }, []);
   const go = useCallback((t: Tab, tk?: string) => { setTab(t); if (tk) setTicker(tk); setOnlyTicker(t === 'run' && tk ? tk : ''); window.scrollTo({ top: 0 }); }, []);
@@ -61,7 +61,7 @@ export function App() {
           <b>Fungible Recipes</b>
         </a>
         <nav className="nav" aria-label="Sections">
-          {([['run', 'Post a job'], ['compose', 'Compose'], ['wallet', 'Wallet'], ['exchange', 'Revenue shares'], ['trust', 'Trust & privacy'], ['landscape', 'Landscape']] as [Tab, string][]).map(([t, l]) => (
+          {([['run', 'Post a job'], ['compose', 'Compose'], ['wallet', 'Wallet'], ['recipes', 'Recipes'], ['trust', 'Trust & privacy'], ['landscape', 'Landscape']] as [Tab, string][]).map(([t, l]) => (
             <button key={t} aria-current={tab === t ? 'page' : undefined} onClick={() => go(t)}>{l}</button>
           ))}
         </nav>
@@ -74,16 +74,16 @@ export function App() {
         <button className="mode" title={mode ? Object.entries(mode.services).map(([k, v]) => `${k}: ${v}`).join('\n') : ''} onClick={() => go('trust')}>Local mode</button>
         <button className="story-btn" disabled={step > 0 && step < 5} onClick={() => setStep(1)}>{step > 0 && step < 5 ? `Story ${step}/4` : 'Play the demo story'}</button>
       </div>
-      <div className="tape" aria-label="Ticker tape">
+      <div className="tape" aria-label="Recipe activity">
         {(tickers ?? []).map((t) => (
-          <button key={t.ticker} onClick={() => go('exchange', t.ticker)}>
-            <b>{t.ticker}</b><span>${t.pricePerRun.toFixed(2)} per run</span><span className="muted">{t.runs} {t.runs === 1 ? 'run' : 'runs'}</span><span className="muted">share {px(t.last)}</span><span className={t.change24h >= 0 ? 'gain' : 'loss'}>{pct(t.change24h)}</span>
+          <button key={t.ticker} onClick={() => go('recipes', t.ticker)}>
+            <b>{t.ticker}</b><span>${t.pricePerRun.toFixed(2)} per run</span><span className="muted">{t.runs} {t.runs === 1 ? 'run' : 'runs'}</span>{t.keptPromise != null && <span className={t.keptPromise >= 1 ? 'gain' : 'loss'}>{Math.round(t.keptPromise * 100)}% of promise</span>}<span className="muted">${t.deposit.available.toFixed(0)} deposit</span>
           </button>
         ))}
         {!tickers?.some((t) => t.ticker === 'CLNP') && <span className="muted">CLNP not listed yet — compose it, or play the demo story</span>}
       </div>
       <main>
-        {tab === 'exchange' && <Exchange />}
+        {tab === 'recipes' && <Recipes />}
         {tab === 'compose' && <Compose />}
         {tab === 'run' && <Run />}
         {tab === 'wallet' && <Wallet />}
@@ -100,8 +100,8 @@ export function App() {
       {step === 5 && (
         <div className="caption" role="status">
           <div className="stepno">✓</div>
-          <div><h3>That was one job, end to end</h3><p>Everything you saw is in the ledger. CLNP’s track record now shows one run that kept its promise; Wallet, Revenue shares and Trust & privacy show the money, the funding side and the proofs.</p></div>
-          <button onClick={() => { setStep(0); go('exchange', 'CLNP'); }}>Open CLNP</button>
+          <div><h3>That was one job, end to end</h3><p>Everything you saw is in the ledger. CLNP’s track record now shows one run that kept its promise; Wallet, Recipes and Trust & privacy show the money, the guarantee deposit and the proofs.</p></div>
+          <button onClick={() => { setStep(0); go('recipes', 'CLNP'); }}>Open CLNP</button>
         </div>
       )}
       {toastMsg && <div className={'toast' + (toastMsg.err ? ' err' : '')} role="alert">{toastMsg.msg}</div>}

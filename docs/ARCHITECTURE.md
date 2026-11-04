@@ -5,7 +5,7 @@
 | Process | Code | Holds secrets? | Talks to |
 |---|---|---|---|
 | Creator / buyer client | `web/` (also `scripts/lib/client.ts` for the CLI) | buyer's fresh-address key (browser only) | marketplace, runner attestation (via marketplace) |
-| Marketplace + exchange | `server/` | none (ciphertext only) | contract, runner, 1Click |
+| Marketplace | `server/` | none (ciphertext only) | contract, runner, 1Click |
 | TEE runner | `runner/` | X25519 sealing key, ed25519 report key (from dstack `getKey` in production) | contract (views + relayed report), FastNEAR, NEAR RPC, 1Click, NEAR AI Cloud |
 | Contract | `contracts/fungible-recipes` (mirror: `core/src/ledger.ts`) | none | payment token (NEP-141), 1Click solver deliveries |
 
@@ -45,7 +45,7 @@ sequenceDiagram
   B->>I: signed deposits
   R->>I: poll /v0/status → SUCCESS
   R->>K: report_run(…, ed25519 signature)
-  K->>K: verify signature, split: protocol, runner, part authors, creator, acc_per_share += …
+  K->>K: verify signature, split: protocol, runner, part authors, creator; reserve → guarantee deposit; shortfall → buyer
 ```
 
 ## Durable multi-step runs
@@ -102,19 +102,19 @@ Each run keeps the version it paid for. The marketplace vault stores every versi
 
 | Payee | Rule | Amount |
 |---|---|---|
-| Protocol | 2% of price (+ rounding dust) | $0.0150 |
+| Protocol | 2% of price, rounded down | $0.0150 |
 | TEE runner | fixed `fee_per_run` | $0.0300 |
 | Part authors | each part's `fee_per_call`, for parts actually used | $0.1400 (5 authors) |
-| Creator | royalty 10% of the remainder | $0.0565 |
-| Shareholders | the rest, pro rata through `acc_per_share` | $0.5085 |
+| Creator | the remainder, minus the reserve | $0.5085 |
+| Guarantee deposit | `reserve_bps` (10% for CLNP) of the remainder, added to `bond_available` | $0.0565 |
 
-Publishing is rejected unless `price ≥ protocol + runner + Σ part fees`. Fees cannot be changed after a recipe is published, so a published recipe can never go under water.
+Publishing is rejected unless `price ≥ protocol + runner + Σ part fees`. Fees cannot be changed after a recipe is published, so a published recipe can never go under water. The five lines sum to the price exactly, proved for every input (verification/).
 
-## Why shares make the price "fair"
+## Track record instead of a share price
 
-Each share earns `pool / total_shares` per run, so a share's value tracks expected future runs. The exchange shows **runs to pay back a share** (`price / dividend per share per run`), a P/E analogue. A recipe with a real edge (CLNP: private AI guard + confidential routing) can charge more per run and attract more runs than a public copycat (SWPR). Both effects show up in its share price. Nobody has to reveal the recipe for the market to price it.
+There is no tradable asset, so there is no market price to read a recipe's quality from. Buyers and agents compare recipes on what the contract records instead: runs, refunds and aborts, delivered value against signed promises, compensation paid, the guarantee deposit backing new quotes, and the version history. A recipe with a real edge (CLNP: private AI guard + confidential routing) can charge more per run than a public copycat (SWPR) and still win jobs on net value. Nobody has to reveal the recipe for that comparison.
 
-Shares trade in **frequent batch auctions** rather than on a continuous order book. Orders collect for one batch interval (12 s in the demo), then `clear_batch` fills everything that crosses at a single uniform price, chosen to maximise volume, then minimise imbalance, then take the midpoint. A new recipe's first batch is its opening auction, so the creator doesn't have to guess the price. Recipe markets will usually be thin. In a batch auction, speed doesn't earn an edge, one order can't walk the book, and a batch's indicative price is a steadier fair-value signal than the last trade. Clearing rules are tested against vectors from an independent Python reference (`scripts/gen-auction-vectors.py`).
+The guarantee deposit is the creator's collateral. Each quote locks part of it as cover; a shortfall is paid from that cover in the run's settlement, the rest is released. It grows by top-ups (`ft_transfer_call` with `{"action":"bond"}`) and by the creator's `reserve_bps` share of each run, and only the creator can withdraw the unlocked part. It pays no return and nobody but shorted buyers can claim from it. Revenue shares, dividends and batch auctions existed in earlier builds and were removed so that no part of the product is an investment (git tag `archive/revenue-shares`).
 
 ## Local mode wiring
 

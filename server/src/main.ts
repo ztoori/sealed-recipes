@@ -1,7 +1,7 @@
 /**
- * Marketplace + exchange server (local mode).
+ * Marketplace server (local mode).
  *  - /api/chain/*  : view/relay surface of the fungible-recipes contract (backed by LocalLedger)
- *  - /api/*        : marketplace (listings, sealed vault, runs, market data, portfolio)
+ *  - /api/*        : marketplace (listings, sealed vault, runs, track records, wallet)
  *  - /mock/*       : offline stand-ins for FastNEAR, NEAR RPC, 1Click, NEAR AI Cloud
  *  - /             : the web app (web/dist)
  *
@@ -25,7 +25,6 @@ import { computeCodehash, loadCatalog } from '../../core/src/codehash.js';
 import { runPaymentQuoteRequest, USDC_NEAR, type Token, type QuoteResponse } from '../../core/src/oneclick.js';
 import { World } from './world.js';
 import { mockRouter } from './mocks.js';
-import { Market } from './market.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const env = process.env;
@@ -35,7 +34,6 @@ const CONTRACT_ID = env.CONTRACT_ID ?? 'fungible-recipes.testnet';
 const RUNNER_ID = env.RUNNER_ID ?? 'tee-runner-1.testnet';
 const PAYMENT_TOKEN = USDC_NEAR.replace(/^nep141:/, '');
 const SOLVER = 'solver-relay.intents.testnet';
-const BOTS = env.FRS_BOTS !== '0';
 const RUNNER_TOKEN = env.RUNNER_TOKEN ?? '';
 const RUNNER_PUBLIC_URL = env.RUNNER_PUBLIC_URL ?? RUNNER; // browsers fetch attestation from the runner directly
 /** the execution backend (server/src/backends.ts); the marketplace never calls the runner any other way */
@@ -44,11 +42,9 @@ const backend = new TeeRunnerBackend(RUNNER, RUNNER_ID, RUNNER_TOKEN);
 const catalog = loadCatalog(ROOT);
 const tokens = JSON.parse(readFileSync(resolve(ROOT, 'fixtures/oneclick-tokens.json'), 'utf8')).tokens as Token[];
 const world = new World(resolve(ROOT, 'fixtures/wallets.json'), resolve(ROOT, 'fixtures/oneclick-tokens.json'));
-const BATCH_MS = Number(env.FRS_BATCH_MS ?? 12000);
 /** notice period before a new recipe version takes effect (24 h is the suggested mainnet value; short for the demo) */
 const UPDATE_DELAY_S = Number(env.FRS_UPDATE_DELAY_S ?? 30);
-const ledger = new LocalLedger({ contractId: CONTRACT_ID, owner: 'frs-dao.testnet', paymentToken: PAYMENT_TOKEN, protocolAccount: 'frs-treasury.testnet', protocolFeeBps: 200, batchIntervalNs: BigInt(BATCH_MS) * 1_000_000n, updateDelayNs: BigInt(UPDATE_DELAY_S) * 1_000_000_000n });
-const market = new Market(ledger);
+const ledger = new LocalLedger({ contractId: CONTRACT_ID, owner: 'frs-dao.testnet', paymentToken: PAYMENT_TOKEN, protocolAccount: 'frs-treasury.testnet', protocolFeeBps: 200, updateDelayNs: BigInt(UPDATE_DELAY_S) * 1_000_000_000n });
 
 // ---------- runs: per-run event log merged from payment (server) + execution (runner) ----------
 type Ev = { seq: number; at: number; source: 'market' | 'intents' | 'runner' | 'chain'; type: string; data: Record<string, unknown> };
@@ -166,7 +162,26 @@ const vaultPut = (ticker: string, sealed: SealedEnvelope, creatorCopy?: SealedEn
 };
 const vault = { get: (ticker: string) => ({ get: (h: string) => (vaultIndex.recipes[ticker]?.versions.includes(h) ? store.get(h) : undefined) }) };
 const currentSealed = (ticker: string) => vault.get(ticker).get(ledger.recipes.get(ticker)?.sealed_hash ?? '');
-const listings = new Map<string, PublicListing & { ipo_price: number; published_at: string; settle_mode?: string }>();
+const listings = new Map<string, PublicListing & { published_at: string; settle_mode?: string }>();
+const USDC = 1e6;
+const settlementsOf = (t: string) => ledger.events.filter((e) => e.event === 'frs_settlement' && (e.data[0] as { recipe_id: string }).recipe_id === t);
+/** A recipe's public track record, read from the contract mirror. No prices of anything but the run itself:
+ *  nothing here is an investment, so there is nothing to quote but the service. */
+const record = (t: string) => {
+  const r = ledger.recipes.get(t)!;
+  const q = ledger.quote_settlement(t, r.parts);
+  const settled = settlementsOf(t);
+  const reserved = settled.reduce((a, e) => a + Number((e.data[0] as { reserve: string }).reserve), 0) / USDC;
+  return {
+    ticker: t, name: r.name, creator: r.creator, pricePerRun: Number(r.price_per_run) / USDC,
+    runs: Number(r.runs), failed: Number(r.failed), aborted: Number(r.aborted), revenue: Number(r.revenue) / USDC,
+    keptPromise: r.promised_total > 0n ? Number((r.delivered_total * 10000n) / r.promised_total) / 10000 : null,
+    deposit: { available: Number(r.bond_available) / USDC, locked: Number(r.bond_locked) / USDC, paidToBuyers: Number(r.compensated_total) / USDC, fromRuns: reserved },
+    perRun: { price: Number(q.price) / USDC, protocol: Number(q.protocol) / USDC, runner: Number(q.runner) / USDC, parts: q.parts.map((x, i) => ({ part: r.parts[i], amount: Number(x) / USDC })), creator: Number(q.creator) / USDC, reserve: Number(q.reserve) / USDC, reserveBps: r.reserve_bps },
+    /** runs per hour over the last 24 hours (settlement timestamps), for the activity sparkline */
+    activity: Array.from({ length: 24 }, (_, h) => { const end = BigInt(Date.now() - (23 - h) * 3_600_000) * 1_000_000n; const start = end - 3_600_000_000_000n; return settled.filter((e) => BigInt(e.timestamp_ns) > start && BigInt(e.timestamp_ns) <= end).length; }),
+  };
+};
 
 const app = express();
 app.use('/mock', mocks.router);
@@ -237,14 +252,14 @@ if (env.FRS_ALLOW_CRASH === '1') app.post('/api/dev/verifier-withdraw', guard((r
 app.get('/api/intents/verifier/:account', (req, res) => j(res, { account: req.params.account, balances: Object.fromEntries(mocks.verifier.balances.get(String(req.params.account)) ?? []), log: mocks.verifier.log.slice(-20) }));
 
 /** demo wallet: sign "as" an account. Local mode only — testnet mode uses a real NEAR wallet. */
-const ALLOWED = new Set(['register_part', 'place_ask', 'cancel_order', 'transfer_shares', 'claim_dividends', 'withdraw', 'bid', 'clear_batch']);
+const ALLOWED = new Set(['register_part', 'withdraw', 'withdraw_bond']);
 app.post('/api/chain/tx', guard((req, res) => {
   const { signer, method, args } = req.body as { signer: string; method: string; args: Record<string, string> };
-  if (!ALLOWED.has(method)) throw new LedgerError('method not allowed from demo wallet');
+  if (!ALLOWED.has(method) && method !== 'bond') throw new LedgerError('method not allowed from demo wallet');
   let out: unknown;
-  if (method === 'bid') {
-    const amount = (BigInt(args.price) * BigInt(args.qty)).toString();
-    out = ledger.call(PAYMENT_TOKEN, (l) => l.ft_on_transfer({ sender_id: signer, amount, msg: JSON.stringify({ action: 'bid', recipe_id: args.recipe_id, price: args.price, qty: args.qty }) }));
+  if (method === 'bond') {
+    // top up a recipe's guarantee deposit: ft_transfer_call with {"action":"bond"} (anyone may add; only the creator withdraws)
+    out = ledger.call(PAYMENT_TOKEN, (l) => l.ft_on_transfer({ sender_id: signer, amount: args.amount, msg: JSON.stringify({ action: 'bond', recipe_id: args.recipe_id }) }));
   } else {
     out = ledger.call(signer, (l) => (l as unknown as Record<string, (a: unknown) => unknown>)[method](args));
   }
@@ -254,12 +269,12 @@ app.post('/api/chain/tx', guard((req, res) => {
 
 // ---- marketplace ----
 app.get('/api/mode', (_, res) => j(res, {
-  mode: 'local', batch_ms: BATCH_MS, contract_id: CONTRACT_ID, runner_id: RUNNER_ID, runner_url: RUNNER_PUBLIC_URL, bots: BOTS ? market.bots : [],
+  mode: 'local', contract_id: CONTRACT_ID, runner_id: RUNNER_ID, runner_url: RUNNER_PUBLIC_URL,
   services: { fastnear: 'mock', rpc: 'mock', oneclick: 'fixture (frozen token sample)', nearai: 'mock (real secp256k1 signatures, no hardware quote)', tee: 'local-dev runner (no hardware quote)' },
   ai_signing_address: mocks.aiSigningAddress,
 }));
 app.get('/api/catalog', (_, res) => j(res, { ...catalog, onchain: Object.fromEntries([...ledger.parts].map(([k, b]) => [k, { author: b.author, manifest_hash: b.manifest_hash, fee_per_call: b.fee_per_call, active: b.active }])) }));
-app.get('/api/listings', (_, res) => j(res, [...listings.values()].map((l) => ({ ...l, market: market.ticker(l.ticker), onchain: ledger.recipes.get(l.ticker) }))));
+app.get('/api/listings', (_, res) => j(res, [...listings.values()].map((l) => ({ ...l, record: record(l.ticker), onchain: ledger.recipes.get(l.ticker) }))));
 app.get('/api/vault/:ticker', (req, res) => { const v = currentSealed(String(req.params.ticker)); v ? res.json({ envelope: v, sealed_hash: sealedHash(v) }) : res.status(404).json({ error: 'not found' }); });
 app.get('/api/vault/:ticker/versions', (req, res) => { const t = String(req.params.ticker); const r = ledger.recipes.get(t); if (!r) { res.status(404).json({ error: 'not found' }); return; }
   const e = vaultIndex.recipes[t];
@@ -278,50 +293,33 @@ app.get('/api/runner/attestation', guard(async (req, res) => {
 }));
 
 app.post('/api/publish', guard((req, res) => {
-  const { listing, sealed, ipo, bond, settle_mode, creator_copy } = req.body as { listing: PublicListing; sealed: SealedEnvelope; ipo?: { price: number; float_pct: number }; bond?: string; settle_mode?: string; creator_copy?: SealedEnvelope };
+  const { listing, sealed, bond, settle_mode, creator_copy } = req.body as { listing: PublicListing; sealed: SealedEnvelope; bond?: string; settle_mode?: string; creator_copy?: SealedEnvelope };
   if (sealed?.v !== 'frs-seal-v1' || sealed.purpose !== 'recipe') throw new LedgerError('expected a sealed recipe envelope');
   const runner = ledger.runners.get(RUNNER_ID)!;
   if (sealed.to !== runner.enc_pk_hex) throw new LedgerError('envelope is not sealed to the registered runner key');
   if ((listing as unknown as Record<string, unknown>).nodes) throw new LedgerError('refusing plaintext recipe: only the public listing may be sent');
   try { labelsFromParts(listing.parts, catalog); } catch (e) { throw new LedgerError((e as Error).message); }
   const sh = sealedHash(sealed);
-  ledger.call(listing.creator, (l) => l.publish_recipe({ id: listing.ticker, name: listing.name, sealed_hash: sh, runner_id: RUNNER_ID, parts: listing.parts, price_per_run: listing.price_per_run, royalty_bps: listing.royalty_bps, total_shares: listing.total_shares, settle_mode: settle_mode ?? 'final' }));
+  ledger.call(listing.creator, (l) => l.publish_recipe({ id: listing.ticker, name: listing.name, sealed_hash: sh, runner_id: RUNNER_ID, parts: listing.parts, price_per_run: listing.price_per_run, reserve_bps: listing.reserve_bps ?? 0, settle_mode: settle_mode ?? 'final' }));
   const tx = ledger.events.at(-1)!;
-  // the creator backs the recipe's quotes with a bond (ft_transfer_call with {"action":"bond"})
+  // the creator backs the recipe's quotes with a guarantee deposit (ft_transfer_call with {"action":"bond"})
   if (bond && BigInt(bond) > 0n) ledger.call(PAYMENT_TOKEN, (l) => l.ft_on_transfer({ sender_id: listing.creator, amount: bond, msg: JSON.stringify({ action: 'bond', recipe_id: listing.ticker }) }));
   vaultPut(listing.ticker, sealed, creator_copy);
-  const ipoPrice = ipo?.price ?? 0.01;
   // trust labels are recomputed from the on-chain parts (the runner refuses sealed recipes whose parts differ),
   // so what a creator writes in the listing cannot make a closed-model recipe look low-risk or confidential
   const labels = labelsFromParts(listing.parts, catalog);
-  listings.set(listing.ticker, { ...listing, risk: labels.risk, disclosures: labels.disclosures, privacy: labels.privacy, capabilities: labels.capabilities, settle_mode: settle_mode ?? 'final', ipo_price: ipoPrice, published_at: new Date().toISOString() });
-  market.seedHistory(listing.ticker, ipoPrice, 0.0004, 0.02, [...listing.ticker].reduce((s, c) => s * 31 + c.charCodeAt(0), 7));
-  if (ipo && ipo.float_pct > 0) {
-    const qty = (BigInt(listing.total_shares) * BigInt(Math.round(ipo.float_pct * 100))) / 10000n;
-    const px = Math.round(ipoPrice * 1_000_000);
-    // opening auction: the float is offered across 5 price levels from the reserve price up
-    for (let k = 0; k < 5; k++) ledger.call(listing.creator, (l) => l.place_ask({ recipe_id: listing.ticker, price: String(Math.round(px * (1 + k * 0.01))), qty: (qty / 5n).toString() }));
-  }
-  if (BOTS) setTimeout(() => market.openingBids(listing.ticker, ipoPrice), 1500);
+  listings.set(listing.ticker, { ...listing, risk: labels.risk, disclosures: labels.disclosures, privacy: labels.privacy, capabilities: labels.capabilities, settle_mode: settle_mode ?? 'final', published_at: new Date().toISOString() });
   j(res, { ok: true, sealed_hash: sh, tx: tx.tx_hash, height: tx.block_height });
 }));
 
-app.get('/api/market/:ticker', guard((req, res) => {
+app.get('/api/recipe/:ticker', guard((req, res) => {
   const t = String(req.params.ticker);
-  if (!ledger.recipes.has(t)) { res.status(404).json({ error: 'unknown ticker' }); return; }
-  const book = ledger.get_book(t);
-  const agg = (os: typeof book.bids) => { const m = new Map<string, { price: number; qty: number; orders: number }>(); for (const o of os) { const k = o.price.toString(); const x = m.get(k) ?? { price: Number(o.price) / 1e6, qty: 0, orders: 0 }; x.qty += Number(o.qty); x.orders++; m.set(k, x); } return [...m.values()]; };
-  const cleared = ledger.events.filter((e) => e.event === 'batch_cleared' && (e.data[0] as { recipe_id: string }).recipe_id === t);
-  // the latest 30 batches, plus the opening auction (batch #1) so the IPO clearing stays visible
-  const shown = cleared.length > 30 ? [cleared[0], ...cleared.slice(-29)] : cleared;
-  const auctions = shown.reverse().map((e) => {
-    const d = e.data[0] as { batch_id: number; price: string | null; volume: string; fills: unknown[] };
-    return { batch_id: d.batch_id, price: d.price, volume: d.volume, fills: d.fills.length, tx: e.tx_hash, ts: e.timestamp_ns };
-  });
-  const settlements = ledger.events.filter((e) => e.event === 'frs_settlement' && (e.data[0] as { recipe_id: string }).recipe_id === t).slice(-20).reverse().map((e) => ({ ...(e.data[0] as Record<string, unknown>), tx: e.tx_hash, height: e.block_height }));
-  j(res, { stats: market.ticker(t), candles: market.candles.get(t), book: { bids: agg(book.bids), asks: agg(book.asks) }, auctions, settlements, onchain: ledger.recipes.get(t), holders: ledger.holders(t).slice(0, 10), listing: listings.get(t) });
+  if (!ledger.recipes.has(t)) { res.status(404).json({ error: 'unknown recipe' }); return; }
+  const settlements = settlementsOf(t).slice(-20).reverse().map((e) => ({ ...(e.data[0] as Record<string, unknown>), tx: e.tx_hash, height: e.block_height }));
+  const deposits = ledger.events.filter((e) => (e.event === 'bond_posted' || e.event === 'bond_withdrawn') && (e.data[0] as { recipe_id: string }).recipe_id === t).slice(-10).reverse().map((e) => ({ event: e.event, ...(e.data[0] as Record<string, unknown>), tx: e.tx_hash }));
+  j(res, { record: record(t), settlements, deposits, onchain: ledger.recipes.get(t), listing: listings.get(t) });
 }));
-app.get('/api/tickers', (_, res) => j(res, [...ledger.recipes.keys()].map((t) => market.ticker(t))));
+app.get('/api/recipes/summary', (_, res) => j(res, [...ledger.recipes.keys()].map((t) => record(t))));
 /** Local world only: the account owner moves tokens out of their own wallet (stands in for a signed ft_transfer).
  *  Used by `npm run attack:drain` to show that emptying a wallet after a quote gets an abort, not the bond. */
 app.post('/api/world/transfer', guard((req, res) => {
@@ -330,12 +328,12 @@ app.post('/api/world/transfer', guard((req, res) => {
   world.debit(from, token, BigInt(amount)); world.credit(to, token, BigInt(amount));
   j(res, { ok: true });
 }));
-app.get('/api/portfolio/:account', (req, res) => {
+app.get('/api/account/:account', (req, res) => {
   const a = String(req.params.account);
   j(res, {
     account: a, balance: ledger.balance_of(a),
-    positions: [...ledger.recipes.keys()].map((t) => ({ ticker: t, shares: ledger.shares_of(t, a), locked: ledger.locked_of(t, a), pending: ledger.pending_dividends(t, a), last: market.lastPrice(t) })).filter((p) => p.shares > 0n || p.pending > 0n),
-    orders: [...ledger.orders.values()].filter((o) => o.owner === a),
+    /** recipes this account created: what they earned and the guarantee deposit backing them */
+    created: [...ledger.recipes.values()].filter((r) => r.creator === a).map((r) => ({ ticker: r.id, name: r.name, runs: r.runs, earned: settlementsOf(r.id).reduce((s, e) => s + BigInt(((e.data[0] as { payouts: { account_id: string; role: string; amount: string }[] }).payouts.find((p) => p.role === 'creator')?.amount) ?? 0), 0n), deposit_available: r.bond_available, deposit_locked: r.bond_locked })),
     wallet: world.tokensOf(a).map((t) => ({ ...t, ...world.meta.get(t.contract_id) })),
   });
 });
@@ -471,12 +469,10 @@ async function boot() {
   ledger.call('frs-dao.testnet', (l) => l.add_runner({ id: RUNNER_ID, signing_pk: att!.signing_pk, enc_pk_hex: att!.enc_pk_hex, codehash: audited, fee_per_run: '30000' }));
   for (const b of catalog.parts) ledger.call(b.author, (l) => l.register_part({ id: b.id, version: b.id.split('@')[1], fee_per_call: b.fee_per_call, manifest_hash: hashObject(b) }));
   app.listen(PORT, '127.0.0.1', () => console.log(`[server] marketplace on http://127.0.0.1:${PORT}  (contract mirror ${CONTRACT_ID}, runner ${RUNNER})`));
-  setInterval(() => market.keeperTick(), 500);
   // keeper: activate recipe versions whose notice period has passed (anyone may call apply_update)
   setInterval(() => {
     const now = BigInt(Date.now()) * 1_000_000n;
     for (const r of ledger.recipes.values()) if (r.pending_sealed_hash && now >= r.update_effective_ns) { try { ledger.call('keeper.frs.testnet', (l) => l.apply_update({ id: r.id })); } catch { /* raced */ } }
   }, 1000);
-  if (BOTS) setInterval(() => market.botTick(), 1200);
 }
 void boot();

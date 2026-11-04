@@ -93,7 +93,7 @@ A part that goes over fails the run, and the contract refunds the buyer. The buy
               { "id": "fresh", "part": "addr.fresh-check@1.0.0",  "inputs": { "recipient": "form.recipient" } }, "…" ],
   "consts": { "usdc": { "type": "asset.id", "value": "nep141:…" } },
   "output": "swap.receipts",
-  "listing": { "price_per_run": "750000", "royalty_bps": 1000, "total_shares": "1000000" }
+  "listing": { "price_per_run": "750000", "reserve_bps": 1000, "bond": "25000000" }
 }
 ```
 
@@ -128,8 +128,10 @@ The validator also returns `partsUsed` (the billable list, in execution order), 
 ## 4. Public listing
 
 `publicListing(recipe)` is the only recipe-derived data the marketplace and the chain receive:
-`ticker, name, creator, description, form, parts, capabilities, output_type, price_per_run, royalty_bps, total_shares, interface_hash`.
+`ticker, name, creator, description, form, parts, capabilities, output_type, price_per_run, reserve_bps, interface_hash`.
 Wiring, params and consts are **not** included, so the listing shows what a buyer must provide and which builders get paid, but not how the recipe works.
+
+`listing.reserve_bps` (0–10000) is the share of the creator's cut of each run that is added to the recipe's guarantee deposit instead of paid out. `listing.bond` is the deposit the creator posts at publish. Both are the creator's own collateral; a listing has no shares, supply or other investment fields.
 
 ## 5. Sealing
 
@@ -150,6 +152,8 @@ frs-run-v3|<contract>|<run_id>|<recipe_id>|<ok|fail|abort>|<output_hash>|<delive
 `report_run` verifies the signature with `env::ed25519_verify`. `parts_used` must be a sub-multiset of the recipe's registered parts, so a runner cannot bill parts the recipe doesn't contain.
 
 ## 7. Recipe intents: job types, quotes and bonds
+
+A recipe's **bond** (shown to users as its *guarantee deposit*) is collateral the creator posts; it pays buyers shortfalls and nothing else.
 
 A **job type** is a standard request that recipes compete to fulfil:
 

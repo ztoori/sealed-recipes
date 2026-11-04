@@ -9,7 +9,7 @@
  *   - the run completed and settled once;
  *   - the buyer was asked to sign exactly twice (once per tranche), never again after a crash;
  *   - every token left the wallet exactly once per tranche (no double deposit);
- *   - each part's author was paid at its checkpoint, never twice, and billed + payouts + shareholders == price;
+ *   - each part's author was paid at its checkpoint, never twice, and billed + payouts + reserve == price;
  *   - the wait resumed with the time that was left, not from zero.
  */
 import { open, type SealedEnvelope } from '../core/src/index.js';
@@ -21,7 +21,7 @@ const usd = (u: string | number | bigint) => '$' + (Number(u) / 1e6).toFixed(4);
 
 const runner = await verifiedRunner();
 const fresh = freshImplicitAccount();
-const before = await api<{ wallet: { contract_id: string; symbol: string; balance: string }[] }>(`/api/portfolio/${BUYER}`);
+const before = await api<{ wallet: { contract_id: string; symbol: string; balance: string }[] }>(`/api/account/${BUYER}`);
 const job = await postJob('job.wallet-exit@1.0.0', { wallet: BUYER, recipient: fresh.account }, runner.onchain, BUYER, 'TRCH');
 const q = job.quotes.find((x) => x.ok);
 if (!q) { say('TRCH did not quote: ' + JSON.stringify(job.quotes.map((x) => x.error))); process.exit(1); }
@@ -76,8 +76,8 @@ const recipeParts = (await api<{ parts: string[] }>('/api/chain/recipes/TRCH')).
 const settle = (await api<{ events: any[] }>('/api/chain/events?last=400')).events.filter((x) => x.event === 'frs_settlement' && x.data[0].run_id === r.run_id);
 const ckpts = (await api<{ events: any[] }>('/api/chain/events?last=400')).events.filter((x) => x.event === 'run_checkpoint' && x.data[0].run_id === r.run_id);
 const paidParts = [...ckpts.flatMap((x) => x.data[0].payouts.map((p: any) => p.role)), ...settle.flatMap((x) => x.data[0].payouts.filter((p: any) => p.role.startsWith('part:')).map((p: any) => p.role))];
-const total = BigInt(chainRun.billed) + settle.reduce((s, x) => s + x.data[0].payouts.reduce((a: bigint, p: any) => a + BigInt(p.amount), 0n) + BigInt(x.data[0].shareholder_pool), 0n);
-const after = await api<{ wallet: { contract_id: string; balance: string }[] }>(`/api/portfolio/${BUYER}`);
+const total = BigInt(chainRun.billed) + settle.reduce((s, x) => s + x.data[0].payouts.reduce((a: bigint, p: any) => a + BigInt(p.amount), 0n) + BigInt(x.data[0].reserve), 0n);
+const after = await api<{ wallet: { contract_id: string; balance: string }[] }>(`/api/account/${BUYER}`);
 const moved = before.wallet.map((b) => ({ ...b, delta: BigInt(b.balance) - BigInt(after.wallet.find((a) => a.contract_id === b.contract_id)?.balance ?? '0') })).filter((x) => x.delta > 0n);
 const exactlyTwoHalves = moved.every((m) => m.delta === 2n * (BigInt(m.balance) / 2n));
 
@@ -87,7 +87,7 @@ const checks: [string, boolean][] = [
   ['buyer signed exactly twice (once per tranche), never again after a crash', approvals === 2],
   [`every swapped token left the wallet exactly once per tranche (${moved.length} tokens)`, moved.length > 0 && exactlyTwoHalves],
   ['every part paid exactly once across checkpoints and the final receipt', JSON.stringify(paidParts.map((p) => p.slice(5)).sort()) === JSON.stringify([...recipeParts].sort())],
-  [`billed at checkpoints + final payouts + shareholders == price (${usd(total)})`, total === BigInt(chainRun.amount)],
+  [`billed at checkpoints + final payouts + reserve == price (${usd(total)})`, total === BigInt(chainRun.amount)],
   [`the wait resumed with the time left (${waitLeft ?? '?'} s of 20), not from zero`, waitLeft !== null && waitLeft < 20],
 ];
 for (const [label, ok] of checks) say(`${ok ? '✔' : '✘'} ${label}`);

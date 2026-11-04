@@ -93,7 +93,7 @@ export function Run() {
     } catch (e) { toast((e as Error).message, true); } finally { setBusy(false); }
   };
 
-  /** buyer picks a quote: the signed promise goes into the run msg, so the contract can enforce the bond */
+  /** buyer picks a quote: the signed promise goes into the run msg, so the contract can enforce the guarantee */
   const choose = async (q: any, guaranteed = true) => {
     if (!jobRef.current) return;
     setBusy(true); setChosen({ ...q, guaranteed });
@@ -152,7 +152,7 @@ export function Run() {
   const rows = timeline(events);
   const settlement = completed?.data?.settlement;
   const settleEv = events.find((e) => e.type === 'frs_settlement')?.data;
-  const pool = settlement ? Number(settleEv?.shareholder_pool ?? 0) : 0;
+  const reserve = settlement ? Number(settleEv?.reserve ?? 0) : 0;
   const net = (q: any) => Number(q.expected) - Number(q.listing.price_per_run);
   const RISK: Record<string, number> = { low: 0, medium: 1, high: 2 };
   const sorted = [...(quotes ?? [])].sort((a, b) => (!a.ok ? 1 : !b.ok ? -1 : sortBy === 'price' ? Number(a.listing.price_per_run) - Number(b.listing.price_per_run) : sortBy === 'value' ? Number(b.expected) - Number(a.expected) : sortBy === 'risk' ? RISK[a.listing.risk] - RISK[b.listing.risk] || net(b) - net(a) : net(b) - net(a)));
@@ -201,7 +201,7 @@ export function Run() {
               <dl className="kv">
                 <dt>You send</dt><dd>{quote.quote.quote.amountInFormatted} {PAY_ASSETS.find((p) => p.id === payAsset)?.label}</dd>
                 <dt>Contract receives</dt><dd>{usd(quote.quote.quote.amountOut, 2)} USDC</dd>
-                <dt>Guarantee</dt><dd>{chosen.guaranteed ? <>{usd(chosen.promised, 2)} promised; the bond covers a shortfall up to {usd(chosen.cover, 2)}<div className="small muted">The promise and the delivered value are written on-chain: that is what makes them enforceable.</div></> : <>none: no promise, no bond<div className="small muted">Nothing about your wallet's value is written on-chain for this run.</div></>}</dd>
+                <dt>Guarantee</dt><dd>{chosen.guaranteed ? <>{usd(chosen.promised, 2)} promised; the guarantee deposit covers a shortfall up to {usd(chosen.cover, 2)}<div className="small muted">The promise and the delivered value are written on-chain: that is what makes them enforceable.</div></> : <>none: no promise, no bond<div className="small muted">Nothing about your wallet's value is written on-chain for this run.</div></>}</dd>
                 <dt>Deposit address</dt><dd className="hash">{short(quote.quote.quote.depositAddress, 10, 8)}</dd>
                 <dt>Run ticket</dt><dd className="hash">{quote.run_id}</dd>
               </dl>
@@ -231,20 +231,20 @@ export function Run() {
                       <td><b>{q.listing.ticker}</b> {q.listing.name}<div className="small muted">by {q.listing.creator}{swaps !== null ? ` · ${swaps} swap${swaps === 1 ? '' : 's'} planned` : ''}</div></td>
                       {q.ok ? <>
                         <td className="r">{job.metric ? usd(q.expected, 2) : '—'}</td>
-                        <td className="r">{job.metric ? usd(q.promised, 2) : '—'}<div className="small muted">{job.metric ? (Number(q.cover) > 0 ? `bond covers ${usd(q.cover, 2)}` : 'no bond') : 'no value metric'}</div></td>
+                        <td className="r">{job.metric ? usd(q.promised, 2) : '—'}<div className="small muted">{job.metric ? (Number(q.cover) > 0 ? `deposit covers ${usd(q.cover, 2)}` : 'no guarantee') : 'no value metric'}</div></td>
                         <td className="r">{usd(q.listing.price_per_run, 2)}</td>
                         <td><span className={'pill ' + (q.listing.privacy === 'confidential' ? 'sealed' : '')}>{q.listing.privacy}</span></td>
                         <td><span className={'pill ' + (q.listing.risk === 'low' ? 'ok' : q.listing.risk === 'high' ? 'bad' : 'warn')} title={q.listing.disclosures.map((d: any) => `${d.part}: ${d.model.kind}${d.model.name ? ' ' + d.model.name : ''}, ${d.runtime}`).join('\n')}>{q.listing.risk}</span></td>
                         <td className="small">{t.runs} run{t.runs === 1 ? '' : 's'}{Number(t.failed) ? `, ${t.failed} failed` : ''}{Number(t.aborted) ? `, ${t.aborted} aborted` : ''}{quoted ? <div className="muted">delivered {(Number(t.delivered_total) / quoted * 100).toFixed(0)}% of promises</div> : <div className="muted">no quoted runs yet</div>}</td>
                         <td><div className="grid" style={{ gap: 4 }}><button id={'choose-' + q.listing.ticker} className="btn sm" disabled={busy || !!runId && !completed && !failed} onClick={() => choose(q)} title="Pay with the signed quote: the promise is enforced by the bond">Choose</button>
-                          {job.metric && <button className="btn ghost sm" disabled={busy || !!runId && !completed && !failed} onClick={() => choose(q, false)} title="Pay without the quote: no bond, and no promised or delivered value written on-chain">No guarantee</button>}</div></td>
+                          {job.metric && <button className="btn ghost sm" disabled={busy || !!runId && !completed && !failed} onClick={() => choose(q, false)} title="Pay without the quote: no guarantee, and no promised or delivered value written on-chain">No guarantee</button>}</div></td>
                       </> : <td colSpan={7} className="small muted">could not quote: {q.error}</td>}
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-            <div className="body small muted">Recipes stay sealed: you compare results, not methods. Each quote was sealed to this browser and its runner signature checked here. A promise is bound to your account and this job, and backed by the recipe's bond up to the cover shown. If a run delivers less, the contract pays the shortfall in the same settlement. Right before executing, the runner re-prices the job; if the wallet changed since the quote, it aborts and you are refunded.</div>
+            <div className="body small muted">Recipes stay sealed: you compare results, not methods. Each quote was sealed to this browser and its runner signature checked here. A promise is bound to your account and this job, and backed by the recipe's guarantee deposit up to the cover shown. If a run delivers less, the contract pays the shortfall in the same settlement. Right before executing, the runner re-prices the job; if the wallet changed since the quote, it aborts and you are refunded.</div>
           </div>
         )}
         <div className="panel">
@@ -272,9 +272,9 @@ export function Run() {
           <div className="panel" id="settlement">
             <header><h2>Settlement</h2><span className="small muted">tx {short(settlement.tx, 8, 6)} · block {settlement.height} · one receipt</span></header>
             <div className="body">
-              {chosen?.guaranteed && settleEv && <p className="small" style={{ marginTop: 0 }}>Delivered <b>{usd(settleEv.delivered, 2)}</b> against a signed promise of {usd(chosen.promised, 2)}{Number(settleEv.compensation) > 0 ? <>: the bond paid you <b>{usd(settleEv.compensation, 2)}</b>.</> : ': promise kept, the bond is untouched.'}</p>}
-              <SettlementFlow price={Number(chosen?.listing.price_per_run ?? 0)} payouts={settlement.payouts} pool={pool} />
-              <div className="row wrap"><button className="btn ghost sm" onClick={() => go('exchange', chosen?.listing.ticker)}>See {chosen?.listing.ticker} revenue shares</button><button className="btn ghost sm" onClick={() => go('trust')}>Inspect the proofs</button></div>
+              {chosen?.guaranteed && settleEv && <p className="small" style={{ marginTop: 0 }}>Delivered <b>{usd(settleEv.delivered, 2)}</b> against a signed promise of {usd(chosen.promised, 2)}{Number(settleEv.compensation) > 0 ? <>: the guarantee deposit paid you <b>{usd(settleEv.compensation, 2)}</b>.</> : ': promise kept, the deposit is untouched.'}</p>}
+              <SettlementFlow price={Number(chosen?.listing.price_per_run ?? 0)} payouts={settlement.payouts} reserve={reserve} />
+              <div className="row wrap"><button className="btn ghost sm" onClick={() => go('recipes', chosen?.listing.ticker)}>See {chosen?.listing.ticker}’s track record</button><button className="btn ghost sm" onClick={() => go('trust')}>Inspect the proofs</button></div>
             </div>
           </div>
         )}
@@ -344,7 +344,7 @@ function timeline(events: Ev[]): Row[] {
       case 'approval_required': part?.logs.push(`wallet approval requested: ${d.transactions.length} transfers`); break;
       case 'approval_result': part?.logs.push(d.approved ? `approved, ${d.transfers} transfers sent` : 'rejected by buyer'); break;
       case 'signed': rows.push({ title: 'Runner signed the report', sub: d.message.length > 100 ? d.message.slice(0, 100) + '…' : d.message, source: 'runner', logs: [] }); break;
-      case 'frs_settlement': rows.push({ title: 'report_run verified the ed25519 signature and settled', sub: `tx ${short(d.tx, 8, 6)} · ${d.payouts.length} payees + shareholders`, source: 'contract', logs: [] }); break;
+      case 'frs_settlement': rows.push({ title: 'report_run verified the ed25519 signature and settled', sub: `tx ${short(d.tx, 8, 6)} · ${d.payouts.length} payees + guarantee deposit`, source: 'contract', logs: [] }); break;
       case 'run_refunded': rows.push({ title: 'Run refunded to the buyer', sub: d.reason, source: 'contract', logs: [] }); break;
       case 'failed': rows.push({ title: 'Run failed', sub: d.error, source: 'runner', logs: [], state: 'fail' }); break;
       case 'completed': if (!d.ok) rows.push({ title: d.outcome === 'abort' ? 'Run aborted and refunded' : 'Run failed and was refunded', sub: d.reason ?? d.error, source: 'runner', logs: [], state: 'fail' }); break;

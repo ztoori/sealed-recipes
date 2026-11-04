@@ -6,9 +6,9 @@ import bs58 from 'bs58';
 import { hexToBytes, bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import {
   settlementSplit, LocalLedger, checkpointMessage, RUN_TIMEOUT_NS, type Outcome, runReportMessage, quoteMessage, withdrawalRisk, labelsFromParts, jobHash, base64, seal, open, sealedHash,
-  clearAuction, validateRecipe, compatibleSwaps, swapPart, publicListing, recoverSigner, signEip191, addressFromPublicKey,
+  validateRecipe, compatibleSwaps, swapPart, publicListing, recoverSigner, signEip191, addressFromPublicKey,
   verifyChat, sha256Hex, OneClick, runPaymentQuoteRequest, USDC_NEAR, reportData, verifyRunnerAttestation,
-  bondLock, bondRelease, bondSettle, pendingDividends, harvestDividends, rebaseDebt, creatorKeyFromSignature, creatorKeyMessage, demoWalletSign,
+  bondLock, bondRelease, bondSettle, bondDeposit, creatorKeyFromSignature, creatorKeyMessage, demoWalletSign,
   type Catalog, type Recipe, type RunnerAttestation,
 } from '../core/src/index.js';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
@@ -20,15 +20,11 @@ const recipe = (t: string) => json(`seed/recipes/${t}.json`) as Recipe;
 test('settlement vectors match the contract spec (shared with Rust tests)', () => {
   const v = json('contracts/test-vectors/settlement.json');
   for (const c of v.cases) {
-    const s = settlementSplit({ price: BigInt(c.input.price), protocolFeeBps: c.input.protocol_fee_bps, runnerFee: BigInt(c.input.runner_fee), partFees: c.input.part_fees.map(BigInt), royaltyBps: c.input.royalty_bps, totalShares: BigInt(c.input.total_shares) });
+    const s = settlementSplit({ price: BigInt(c.input.price), protocolFeeBps: c.input.protocol_fee_bps, runnerFee: BigInt(c.input.runner_fee), partFees: c.input.part_fees.map(BigInt), reserveBps: c.input.reserve_bps });
     const e = c.expected;
-    assert.equal(s.protocol.toString(), e.protocol, c.name);
-    assert.equal(s.remainder.toString(), e.remainder, c.name);
-    assert.equal(s.creator.toString(), e.creator, c.name);
-    assert.equal(s.pool.toString(), e.pool, c.name);
-    assert.equal(s.accIncrement.toString(), e.acc_increment, c.name);
-    assert.equal(s.dustToProtocol.toString(), e.dust_to_protocol, c.name);
-    const total = s.protocolTotal + s.runner + s.parts.reduce((a, b) => a + b, 0n) + s.creator + s.distributed;
+    assert.deepEqual([s.protocol, s.runner, s.remainder, s.reserve, s.creator].map(String), [e.protocol, e.runner, e.remainder, e.reserve, e.creator], c.name);
+    assert.deepEqual(s.parts.map(String), e.parts, c.name);
+    const total = s.protocol + s.runner + s.parts.reduce((a, b) => a + b, 0n) + s.reserve + s.creator;
     assert.equal(total, BigInt(c.input.price), `${c.name}: every unit is paid out`);
   }
 });
@@ -38,14 +34,14 @@ function keyring() {
   return { kp, pk: 'ed25519:' + bs58.encode(kp.publicKey) };
 }
 
-function setupLedger(o: { price?: string; total?: string; royalty?: number; fee?: number; runnerFee?: string; partFees?: string[]; settleMode?: 'final' | 'checkpoint' } = {}) {
+function setupLedger(o: { price?: string; reserve?: number; fee?: number; runnerFee?: string; partFees?: string[]; settleMode?: 'final' | 'checkpoint' } = {}) {
   let now = 1_000_000_000n;
   const L = new LocalLedger({ contractId: 'frs.testnet', owner: 'owner.testnet', paymentToken: 'usdc.testnet', protocolAccount: 'treasury.testnet', protocolFeeBps: o.fee ?? 200, clock: () => now });
   const { kp, pk } = keyring();
   L.call('owner.testnet', (l) => l.add_runner({ id: 'runner.testnet', signing_pk: pk, enc_pk_hex: 'ab'.repeat(32), codehash: 'c0de', fee_per_run: o.runnerFee ?? '30000' }));
   const fees = o.partFees ?? ['20000', '50000'];
   fees.forEach((f, i) => L.call(`author${i}.testnet`, (l) => l.register_part({ id: `b${i}@1.0.0`, version: '1.0.0', fee_per_call: f, manifest_hash: 'h' })));
-  L.call('creator.testnet', (l) => l.publish_recipe({ id: 'TEST', name: 'Test', sealed_hash: 'aa', runner_id: 'runner.testnet', parts: fees.map((_, i) => `b${i}@1.0.0`), price_per_run: o.price ?? '750000', royalty_bps: o.royalty ?? 1000, total_shares: o.total ?? '1000000', settle_mode: o.settleMode }));
+  L.call('creator.testnet', (l) => l.publish_recipe({ id: 'TEST', name: 'Test', sealed_hash: 'aa', runner_id: 'runner.testnet', parts: fees.map((_, i) => `b${i}@1.0.0`), price_per_run: o.price ?? '750000', reserve_bps: o.reserve ?? 0, settle_mode: o.settleMode }));
   const sign = (runId: string, outcome: Outcome, parts: string[], out = 'f'.repeat(64)) => base64.enc(nacl.sign.detached(utf8ToBytes(runReportMessage('frs.testnet', runId, 'TEST', outcome, out, '0', parts)), kp.secretKey));
   const pay = (runId: string, amount = o.price ?? '750000', buyer = 'bob.testnet') => L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: buyer, amount, msg: JSON.stringify({ action: 'run', recipe_id: 'TEST', run_id: runId, inputs_hash: '0'.repeat(64) }) }));
   const ckpt = (runId: string, seq: number, partsDone: string[], state = 'c'.repeat(64)) => L.call('relayer.testnet', (l) => l.checkpoint_run({ run_id: runId, seq, state_hash: state, parts_done: partsDone, signature: base64.enc(nacl.sign.detached(utf8ToBytes(checkpointMessage('frs.testnet', runId, 'TEST', seq, state, partsDone)), kp.secretKey)) }));
@@ -53,7 +49,7 @@ function setupLedger(o: { price?: string; total?: string; royalty?: number; fee?
 }
 
 test('pay-per-run → signed report → every party credited in one settlement', () => {
-  const { L, sign, pay, parts } = setupLedger();
+  const { L, sign, pay, parts } = setupLedger({ reserve: 1000 });
   pay('r1', '800000'); // overpay: 50000 credited back
   assert.equal(L.balance_of('bob.testnet'), 50000n);
   const payouts = L.call('relayer.testnet', (l) => l.report_run({ run_id: 'r1', outcome: 'ok', parts_used: parts, output_hash: 'f'.repeat(64), delivered: '0', signature: sign('r1', 'ok', parts) }));
@@ -62,12 +58,13 @@ test('pay-per-run → signed report → every party credited in one settlement',
   assert.equal(L.balance_of('runner.testnet'), 30000n);
   assert.equal(L.balance_of('author0.testnet'), 20000n);
   assert.equal(L.balance_of('author1.testnet'), 50000n);
-  // R = 750000-15000-30000-70000 = 635000 ; royalty 10% = 63500 ; pool 571500
-  assert.equal(L.balance_of('creator.testnet'), 63500n);
-  assert.equal(L.pending_dividends('TEST', 'creator.testnet'), 571500n);
+  // R = 750000-15000-30000-70000 = 635000 ; reserve 10% = 63500 to the guarantee deposit ; creator 571500
+  assert.equal(L.balance_of('creator.testnet'), 571500n);
+  assert.equal(L.recipes.get('TEST')!.bond_available, 63500n, 'the reserve grows the guarantee deposit');
   const ev = L.events.at(-1)!;
   assert.equal(ev.event, 'frs_settlement');
-  assert.deepEqual((ev.data[0].payouts as { role: string }[]).map((p) => p.role), ['protocol', 'runner', 'part:b0@1.0.0', 'part:b1@1.0.0', 'creator_royalty']);
+  assert.deepEqual((ev.data[0].payouts as { role: string }[]).map((p) => p.role), ['protocol', 'runner', 'part:b0@1.0.0', 'part:b1@1.0.0', 'creator']);
+  assert.equal(String((ev.data[0] as { reserve: unknown }).reserve), '63500');
 });
 
 test('forged or replayed reports are rejected; failure refunds; timeout reclaim', () => {
@@ -91,68 +88,18 @@ test('forged or replayed reports are rejected; failure refunds; timeout reclaim'
   assert.throws(() => L.call('evil.testnet', (l) => l.ft_on_transfer({ sender_id: 'bob.testnet', amount: '750000', msg: '{"action":"run"}' })), /only payment token/);
 });
 
-test('dividends vector: harvest-before-transfer keeps accounting exact', () => {
-  const v = json('contracts/test-vectors/dividends.json');
-  const { L, sign, pay } = setupLedger({ price: v.recipe.price, total: v.recipe.total_shares, royalty: 0, fee: 0, runnerFee: '0', partFees: ['0'] });
-  let n = 0;
-  for (const s of v.steps) {
-    if (s.op === 'run') { const id = 'r' + n++; pay(id); L.call('x', (l) => l.report_run({ run_id: id, outcome: 'ok', parts_used: ['b0@1.0.0'], output_hash: 'f'.repeat(64), delivered: '0', signature: sign(id, 'ok', ['b0@1.0.0']) })); }
-    if (s.op === 'transfer_shares') L.call(`${s.from}.testnet`, (l) => l.transfer_shares({ recipe_id: 'TEST', receiver_id: `${s.to}.testnet`, qty: s.qty }));
-  }
-  for (const [who, amt] of Object.entries(v.expected_pending)) {
-    assert.equal(L.balance_of(`${who}.testnet`) + L.pending_dividends('TEST', `${who}.testnet`), BigInt(amt as string), who);
-  }
-});
-
-test('batch auction vectors: TS matches the independent Python reference (shared with the Rust contract)', () => {
-  const v = json('contracts/test-vectors/batch-auction.json');
-  for (const c of v.cases) {
-    const orders = c.orders.map((o: any) => ({ id: o.id, side: o.side, owner: o.owner, price: BigInt(o.price), qty: BigInt(o.qty) }));
-    const r = clearAuction(orders);
-    assert.equal(r.price === null ? null : r.price.toString(), c.expected.price, c.name + ' price');
-    assert.equal(r.volume.toString(), c.expected.volume, c.name + ' volume');
-    assert.deepEqual(r.fills.map((f) => ({ order_id: f.order_id, qty: f.qty.toString() })), c.expected.fills, c.name + ' fills');
-    assert.deepEqual(Object.fromEntries([...r.credits].filter(([, x]) => x !== 0n).map(([k, x]) => [k, x.toString()])), c.expected.credits, c.name + ' credits');
-    assert.deepEqual(Object.fromEntries([...r.shareDeltas].map(([k, x]) => [k, x.toString()])), c.expected.share_deltas, c.name + ' deltas');
-  }
-  assert.ok(v.cases.length >= 30);
-});
-
-test('ledger batch auction: nothing fills on placement, one uniform price at clearing, everything conserved', () => {
-  const { L, advance } = setupLedger();
-  L.call('creator.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: '2000', qty: '100' }));
-  L.call('creator.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: '2500', qty: '100' }));
-  L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'alice.testnet', amount: String(150 * 3000), msg: JSON.stringify({ action: 'bid', recipe_id: 'TEST', price: '3000', qty: '150' }) }));
-  assert.equal(L.shares_of('TEST', 'alice.testnet'), 0n, 'no continuous matching');
-  assert.equal(L.indicative_clearing('TEST').volume, 150n);
-  assert.throws(() => L.call('anyone.testnet', (l) => l.clear_batch({ recipe_id: 'TEST' })), /batch still open/);
-  assert.throws(() => L.call('creator.testnet', (l) => l.transfer_shares({ recipe_id: 'TEST', receiver_id: 'z.testnet', qty: '999900' })), /insufficient available/);
-  advance(12n * 1_000_000_000n);
-  const out = L.call('anyone.testnet', (l) => l.clear_batch({ recipe_id: 'TEST' }));
-  // candidates 2000 (V=100) 2500 (V=150, imbalance 50) 3000 (V=150, imbalance 50) → P = 2750
-  assert.equal(out.price, 2750n); assert.equal(out.volume, 150n);
-  assert.equal(L.shares_of('TEST', 'alice.testnet'), 150n);
-  assert.equal(L.balance_of('creator.testnet'), 150n * 2750n, 'both asks paid the same uniform price');
-  assert.equal(L.balance_of('alice.testnet'), 150n * 250n, 'price improvement refunded');
-  assert.equal(L.locked_of('TEST', 'creator.testnet'), 50n, 'partially filled ask keeps resting');
-  assert.equal(L.get_batch('TEST').id, 2);
-  // cancel before the next clearing returns escrow
-  const rest = L.get_book('TEST').asks[0];
-  L.call('creator.testnet', (l) => l.cancel_order({ order_id: rest.id }));
-  assert.equal(L.locked_of('TEST', 'creator.testnet'), 0n);
-  // an empty batch still advances
-  advance(12n * 1_000_000_000n);
-  assert.equal(L.call('k', (l) => l.clear_batch({ recipe_id: 'TEST' })).price, null);
-  assert.equal(L.get_batch('TEST').id, 3);
-});
-
-test('book is bounded: a full book rejects Intents bids into the buyer balance', () => {
-  const { L } = setupLedger();
-  for (let i = 0; i < 200; i++) L.call('creator.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: String(5000 + i), qty: '1' }));
-  assert.throws(() => L.call('creator.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: '9999', qty: '1' })), /order book full/);
-  L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'solver', amount: '100', msg: JSON.stringify({ action: 'bid', recipe_id: 'TEST', price: '10', qty: '10', on_behalf_of: 'bob.testnet' }) }));
-  assert.equal(L.balance_of('bob.testnet'), 100n);
-  assert.equal((L.events.at(-1)!.data[0] as { reason: string }).reason, 'order book full');
+test('no investment features: the reserve is the creator\'s collateral, and share/trading messages are refused', () => {
+  const { L, sign, pay, parts } = setupLedger({ reserve: 2500 });
+  for (const id of ['r1', 'r2']) { pay(id); L.call('x', (l) => l.report_run({ run_id: id, outcome: 'ok', parts_used: parts, output_hash: 'f'.repeat(64), delivered: '0', signature: sign(id, 'ok', parts) })); }
+  // R = 635000 per run ; reserve 25% = 158750 per run
+  assert.equal(L.recipes.get('TEST')!.bond_available, 2n * 158750n);
+  assert.throws(() => L.call('bob.testnet', (l) => l.withdraw_bond({ recipe_id: 'TEST', amount: '1' })), /creator only/, 'nobody else has a claim on it');
+  L.call('creator.testnet', (l) => l.withdraw_bond({ recipe_id: 'TEST', amount: String(2n * 158750n) }));
+  assert.equal(L.balance_of('creator.testnet'), 2n * 635000n, 'the creator keeps every unit of the remainder: paid now or held as collateral');
+  // the removed v4 actions are gone from the message protocol and the method surface
+  assert.throws(() => L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'a.testnet', amount: '100', msg: JSON.stringify({ action: 'bid', recipe_id: 'TEST', price: '10', qty: '10' }) })), /invalid msg/);
+  for (const m of ['place_ask', 'clear_batch', 'cancel_order', 'transfer_shares', 'claim_dividends', 'shares_of', 'pending_dividends', 'get_book']) assert.equal((L as unknown as Record<string, unknown>)[m], undefined, m);
+  assert.throws(() => setupLedger({ reserve: 10001 }), /reserve_bps must be <= 10000/);
 });
 
 test('sealed envelopes open only inside the runner and hash deterministically', () => {
@@ -260,17 +207,9 @@ test('every mirror event has exactly the fields documented for the contract (doc
     const fields = [...code.matchAll(/(?<![A-Za-z_])([a-z_]+): /g)].map((x) => x[1]);
     if (fields.length) spec.set(m[1], [...new Set(fields)].sort());
   }
-  spec.set('order_cancelled', spec.get('order_placed')!);
   const { L, sign, pay, parts, advance, ckpt } = setupLedger();
   pay('r1'); L.call('x', (l) => l.report_run({ run_id: 'r1', outcome: 'ok', parts_used: parts, output_hash: 'f'.repeat(64), delivered: '0', signature: sign('r1', 'ok', parts) }));
   pay('r2'); L.call('x', (l) => l.report_run({ run_id: 'r2', outcome: 'fail', parts_used: [], output_hash: 'f'.repeat(64), delivered: '0', signature: sign('r2', 'fail', []) }));
-  L.call('creator.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: '10', qty: '5' }));
-  L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'a.testnet', amount: '100', msg: JSON.stringify({ action: 'bid', recipe_id: 'TEST', price: '10', qty: '10' }) }));
-  advance(12n * 1_000_000_000n);
-  L.call('k', (l) => l.clear_batch({ recipe_id: 'TEST' }));
-  L.call('a.testnet', (l) => l.cancel_order({ order_id: [...L.orders.values()][0].id }));
-  L.call('creator.testnet', (l) => l.transfer_shares({ recipe_id: 'TEST', receiver_id: 'z.testnet', qty: '1' }));
-  L.call('creator.testnet', (l) => l.claim_dividends({ recipe_id: 'TEST' }));
   L.call('creator.testnet', (l) => l.update_sealed({ id: 'TEST', sealed_hash: 'b'.repeat(64) }));
   L.call('creator.testnet', (l) => l.cancel_update({ id: 'TEST' }));
   L.call('creator.testnet', (l) => l.update_sealed({ id: 'TEST', sealed_hash: 'd'.repeat(64) }));
@@ -288,7 +227,9 @@ test('every mirror event has exactly the fields documented for the contract (doc
     assert.deepEqual(Object.keys(e.data[0]).sort(), want, `fields of ${e.event}`);
     seen.add(e.event);
   }
-  assert.ok(seen.size >= 16, `covered ${seen.size} event types`);
+  const missed = [...spec.keys()].filter((k) => !seen.has(k));
+  assert.ok(seen.size >= 14, `covered ${seen.size} event types; not exercised: ${missed.join(', ')}`);
+  console.log(`   event parity: ${seen.size}/${spec.size} event types exercised; not here: ${missed.join(', ')}`);
 });
 
 const INPUTS_HASH = '0'.repeat(64);
@@ -408,61 +349,28 @@ test('trust labels come from part ids, so a listing cannot claim a lower risk th
 });
 
 // ---- conformance with the proved models (verification/smt): the mirror must agree with the proofs' models ----
-test('conformance: settlement, bonds and dividends match the models proved in verification/smt', () => {
+test('conformance: settlement and bonds match the models proved in verification/smt', () => {
   const v = json('contracts/test-vectors/conformance-money.json');
   const B = BigInt;
   v.settlement.forEach((c: any, k: number) => {
     const i = c.input;
     let s: ReturnType<typeof settlementSplit> | null = null;
-    try { s = settlementSplit({ price: B(i.price), protocolFeeBps: i.protocol_fee_bps, runnerFee: B(i.runner_fee), partFees: i.part_fees.map(B), royaltyBps: i.royalty_bps, totalShares: B(i.total_shares), accBefore: B(i.acc_before) }); } catch { s = null; }
+    try { s = settlementSplit({ price: B(i.price), protocolFeeBps: i.protocol_fee_bps, runnerFee: B(i.runner_fee), partFees: i.part_fees.map(B), reserveBps: i.reserve_bps }); } catch { s = null; }
     if (c.expected === null) { assert.equal(s, null, `settlement ${k}: mirror split, model None`); return; }
     assert.ok(s, `settlement ${k}: mirror threw, model split`);
     const e = c.expected;
-    assert.deepEqual([s.protocol, s.remainder, s.creator, s.pool, s.accIncrement, s.distributed, s.dustToProtocol].map(String),
-      [e.protocol, e.remainder, e.creator, e.pool, e.acc_increment, e.distributed, e.dust], `settlement ${k}`);
+    assert.deepEqual([s.protocol, s.remainder, s.reserve, s.creator].map(String), [e.protocol, e.remainder, e.reserve, e.creator], `settlement ${k}`);
   });
   v.bonds.forEach((c: any, k: number) => {
     const b = { available: B(c.available), locked: B(c.locked) }, x = B(c.amount);
     let got: any;
-    try { got = c.op === 'lock' ? bondLock(b, x) : c.op === 'release' ? bondRelease(b, x) : bondSettle(b, x, B(c.promised), B(c.delivered)); } catch { got = null; }
-    if (c.expected === null) { assert.equal(got, null, `bond ${k}`); return; }
+    try { got = c.op === 'lock' ? bondLock(b, x) : c.op === 'release' ? bondRelease(b, x) : c.op === 'deposit' ? bondDeposit(b, x) : bondSettle(b, x, B(c.promised), B(c.delivered)); } catch { got = null; }
+    if (c.expected === null) { assert.ok(got === null || got === undefined, `bond ${k}`); return; }
     const [nb, comp] = Array.isArray(got) ? got : [got, undefined];
     assert.equal(String(nb.available), c.expected.available, `bond ${k}`); assert.equal(String(nb.locked), c.expected.locked, `bond ${k}`);
     if (comp !== undefined) assert.equal(String(comp), c.expected.compensation, `bond ${k}`);
   });
-  v.dividends.forEach((c: any, k: number) => {
-    const [s, a, d] = [B(c.shares), B(c.acc), B(c.debt)];
-    assert.equal(String(pendingDividends(s, d, a)), c.expected.pending, `div ${k}`);
-    assert.deepEqual(harvestDividends(s, d, a).map(String), [c.expected.harvest_paid, c.expected.harvest_debt], `div ${k}`);
-    assert.equal(String(rebaseDebt(s, a)), c.expected.rebase, `div ${k}`);
-  });
-});
-
-test('conformance: the batch auction matches the Z3 encoding it was proved on', () => {
-  for (const [k, c] of json('contracts/test-vectors/conformance-auction.json').cases.entries()) {
-    const r = clearAuction(c.orders.map((o: any) => ({ id: o.id, side: o.side === 'bid' ? 'Bid' : 'Ask', owner: 'o' + o.id, price: BigInt(o.price), qty: BigInt(o.qty) })));
-    assert.equal(r.price === null ? null : String(r.price), c.expected.price, `auction ${k}`);
-    assert.equal(String(r.volume), c.expected.volume, `auction ${k}`);
-    assert.deepEqual(Object.fromEntries(r.fills.map((f) => [String(f.order_id), String(f.qty)])), c.expected.fills, `auction ${k}`);
-  }
-});
-
-test('solvency scenarios found by the proofs: the contract never owes more than it received', () => {
-  for (const c of json('contracts/test-vectors/solvency.json').cases) {
-    const { L, sign, pay } = setupLedger({ price: c.recipe.price, total: c.recipe.total_shares, royalty: 0, fee: 0, runnerFee: '0', partFees: ['0'] });
-    let n = 0;
-    for (const s of c.steps) {
-      if (s.op === 'run') { const id = 'r' + n++; pay(id); L.call('x', (l) => l.report_run({ run_id: id, outcome: 'ok', parts_used: ['b0@1.0.0'], output_hash: 'f'.repeat(64), delivered: '0', signature: sign(id, 'ok', ['b0@1.0.0']) })); }
-      else L.call(`${s.from}.testnet`, (l) => l.transfer_shares({ recipe_id: 'TEST', receiver_id: `${s.to}.testnet`, qty: s.qty }));
-    }
-    let owed = L.balance_of('treasury.testnet');
-    assert.equal(String(owed), c.expected_protocol, c.name + ' protocol');
-    for (const [who, want] of Object.entries(c.expected_holders)) {
-      const got = L.balance_of(`${who}.testnet`) + L.pending_dividends('TEST', `${who}.testnet`);
-      assert.equal(String(got), want, `${c.name} ${who}`); owed += got;
-    }
-    assert.ok(owed <= BigInt(c.paid_in), `${c.name}: owes ${owed}, received ${c.paid_in}`);
-  }
+  assert.ok(v.settlement.length >= 50 && v.bonds.length >= 50);
 });
 
 
@@ -509,7 +417,7 @@ test('durable runs: checkpoints are ordered and signed, extend the timeout, and 
   const payouts = cp.L.call('x', (l) => l.report_run({ run_id: 'r1', outcome: 'ok', parts_used: cp.parts, output_hash: 'f'.repeat(64), delivered: '0', signature: cp.sign('r1', 'ok', cp.parts) }));
   assert.ok(!payouts.some((p) => p.role === 'part:b0@1.0.0'), 'billed parts are not paid twice');
   const settle = cp.L.events.at(-1)!.data[0] as any;
-  assert.equal(payouts.reduce((a, p) => a + p.amount, 0n) + BigInt(settle.shareholder_pool) + cp.L.runs.get('r1')!.billed, 750000n, 'billed + payouts + shareholders == price');
+  assert.equal(payouts.reduce((a, p) => a + p.amount, 0n) + BigInt(settle.reserve) + cp.L.runs.get('r1')!.billed, 750000n, 'billed + payouts + reserve == price');
   assert.equal(cp.L.balance_of('author0.testnet'), 20000n);
 
   cp.pay('r2');

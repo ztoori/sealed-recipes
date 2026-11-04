@@ -49,4 +49,4 @@ A narrower first step is to run individual untrusted parts as OutLayer WASM jobs
 
 ## Why this matters
 
-These parts are the same on every backend: competing quotes, bonds, per-part payouts, revenue shares, durable runs and versions. They live in the contract and the FRS-1 standard, not in any one executor. A workflow engine that comes to NEAR becomes another place to run recipes, not a replacement for the marketplace and settlement layer.
+These parts are the same on every backend: competing quotes, guarantee deposits, per-part payouts, durable runs and versions. They live in the contract and the FRS-1 standard, not in any one executor. A workflow engine that comes to NEAR becomes another place to run recipes, not a replacement for the marketplace and settlement layer.

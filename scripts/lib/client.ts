@@ -24,12 +24,12 @@ export async function verifiedRunner() {
   return { attestation, onchain, checks: v.checks, hardware: v.hardware };
 }
 
-export async function publish(recipe: Recipe, catalog: Catalog, encPkHex: string, ipo: { price: number; float_pct: number }) {
+export async function publish(recipe: Recipe, catalog: Catalog, encPkHex: string) {
   const v = validateRecipe(recipe, catalog);
   if (!v.ok) throw new Error('invalid recipe: ' + JSON.stringify(v.diagnostics));
   const listing = publicListing(recipe, catalog);
   const sealed = seal(recipe, encPkHex, 'recipe');
-  return api<{ sealed_hash: string; tx: string; height: number }>('/api/publish', { listing, sealed, ipo, bond: recipe.listing.bond ?? '0', settle_mode: recipe.listing.settle_mode ?? 'final', creator_copy: creatorCopy(recipe) });
+  return api<{ sealed_hash: string; tx: string; height: number }>('/api/publish', { listing, sealed, bond: recipe.listing.bond ?? '0', settle_mode: recipe.listing.settle_mode ?? 'final', creator_copy: creatorCopy(recipe) });
 }
 
 /** a copy only the creator can reopen: sealed to a key derived from the creator's wallet signature (core/src/creator.ts) */

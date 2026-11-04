@@ -6,7 +6,8 @@ import { loadCatalog } from '../core/src/codehash.js';
  *   2. buyer posts a job with one short form; sealed recipes compete with signed, bonded quotes; the buyer picks one
  *      and pays per run through NEAR Intents (1Click EXACT_OUTPUT → ft_transfer_call to the contract)
  *   3. the sealed workflow sweeps dust and swaps it confidentially to a fresh address
- *   4. creator, every part author, runner, protocol and shareholders are paid in one settlement
+ *   4. creator, every part author, runner and protocol are paid in one settlement; the creator's reserve tops up
+ *      the recipe's guarantee deposit
  * Exits non-zero if any step fails.
  */
 import { readFileSync } from 'node:fs';
@@ -29,7 +30,7 @@ for (const c of runner.checks) console.log(`  ${c.status === 'pass' ? '✔' : c.
 const listings = await api<{ ticker: string }[]>('/api/listings');
 if (listings.some((l) => l.ticker === 'CLNP')) console.log('  CLNP already published — reusing it');
 else {
-  const p = await publish(recipe, catalog, runner.onchain.enc_pk_hex, { price: 0.085, float_pct: 20 });
+  const p = await publish(recipe, catalog, runner.onchain.enc_pk_hex);
   console.log(`  sealed in the client to runner key ${runner.onchain.enc_pk_hex.slice(0, 12)}…; server received ciphertext only`);
   console.log(`  publish_recipe → tx ${p.tx} (block ${p.height}) · on-chain sealed_hash ${p.sealed_hash.slice(0, 20)}…`);
   console.log(`  ${usd(recipe.listing.bond ?? '0')} bond posted to back CLNP's quotes`);
@@ -39,7 +40,7 @@ h('STEP 2 · buyer posts a job, recipes compete with signed quotes, buyer picks 
 const fresh = freshImplicitAccount();
 const inputs = { wallet: 'bob.testnet', threshold_usd: 25, target: USDC_NEAR, recipient: fresh.account };
 console.log('  job: "Clean up my wallet"', JSON.stringify({ ...inputs, recipient: fresh.account.slice(0, 12) + '… (fresh, generated client-side)' }));
-const before = await api<{ wallet: { symbol: string; balance: string; decimals: number }[] }>('/api/portfolio/bob.testnet');
+const before = await api<{ wallet: { symbol: string; balance: string; decimals: number }[] }>('/api/account/bob.testnet');
 const job = await postJob('job.wallet-cleanup@1.0.0', inputs, runner.onchain, 'bob.testnet');
 for (const qt of job.quotes) if (!qt.ok) console.log(`  quote ${qt.listing.ticker.padEnd(5)} rejected: ${qt.error}`); else console.log(`  quote ${qt.listing.ticker.padEnd(5)} expects ${usd(qt.expected).padStart(9)}  promises ${usd(qt.promised).padStart(9)} (bond covers ${usd(qt.cover ?? '0')})  price ${usd(qt.listing.price_per_run)}  ${qt.listing.privacy.padEnd(12)} risk ${qt.listing.risk}`);
 const policy = { requirePrivacy: 'confidential' as const, maxRisk: 'medium' as const, sort: 'net' as const };
@@ -90,30 +91,22 @@ if (final?.type !== 'completed' || !final.data.ok) { console.error('\n✘ run fa
 console.log('  (part logs, the wallet request and the result above were sealed to the buyer\'s reply key; the marketplace relayed ciphertext)');
 const receipts = result.output as { symbol: string; amountIn: string; amountOut: string; status: string }[];
 for (const r of receipts) console.log(`  ✔ ${r.symbol.padEnd(12)} ${r.amountIn.padStart(14)} → ${Number(r.amountOut).toFixed(4)} USDC  ${r.status} (confidential)`);
-const after = await api<{ wallet: { symbol: string; balance: string; contract_id: string }[] }>(`/api/portfolio/${fresh.account}`);
+const after = await api<{ wallet: { symbol: string; balance: string; contract_id: string }[] }>(`/api/account/${fresh.account}`);
 console.log(`  fresh address ${fresh.account.slice(0, 12)}… now holds: ${after.wallet.map((w) => `${(Number(w.balance) / 1e6).toFixed(4)} ${w.symbol}`).join(', ')}`);
-const bob = await api<{ wallet: { symbol: string; balance: string }[] }>('/api/portfolio/bob.testnet');
+const bob = await api<{ wallet: { symbol: string; balance: string }[] }>('/api/account/bob.testnet');
 console.log(`  bob.testnet tokens: ${before.wallet.length} → ${bob.wallet.filter((w) => w.balance !== '0').length} (scam airdrops untouched, USDC + wNEAR kept)`);
 
 h('STEP 4 · creator and each part author are paid in the same settlement');
 const s = final.data.settlement as { payouts: { account_id: string; role: string; amount: string }[]; tx: string; height: number };
 for (const p of s.payouts) console.log(`  ${usd(p.amount).padStart(10)}  ${p.account_id.padEnd(24)} ${p.role}`);
-const m = await api<{ settlements: { shareholder_pool: string }[] }>(`/api/market/${chosen.listing.ticker}`);
-console.log(`  ${usd(m.settlements[0].shareholder_pool).padStart(10)}  CLNP shareholders         pro-rata dividend (claimable)`);
+const m = await api<{ settlements: { reserve: string; price: string; payouts: { amount: string }[] }[]; record: { deposit: { available: number } } }>(`/api/recipe/${chosen.listing.ticker}`);
+console.log(`  ${usd(m.settlements[0].reserve).padStart(10)}  CLNP guarantee deposit     creator's reserve, held as collateral for future quotes`);
+const paidOut = m.settlements[0].payouts.reduce((a, p) => a + BigInt(p.amount), 0n) + BigInt(m.settlements[0].reserve);
+if (paidOut !== BigInt(m.settlements[0].price)) { console.error(`✘ payouts + reserve ${paidOut} != price ${m.settlements[0].price}`); process.exit(1); }
+console.log(`  payouts + reserve == price (${usd(m.settlements[0].price)}): every unit accounted for`);
 console.log(`  one receipt: tx ${s.tx} at block ${s.height}`);
 const st = m.settlements[0] as unknown as { delivered: string; compensation: string };
-console.log(`  delivered ${usd(st.delivered)} vs promised ${usd(chosen.promised)} → bond compensation ${usd(st.compensation)}`);
+console.log(`  delivered ${usd(st.delivered)} vs promised ${usd(chosen.promised)} → compensation from the guarantee deposit ${usd(st.compensation)}`);
 if (BigInt(st.delivered) < BigInt(chosen.promised) && st.compensation === '0') { console.error('✘ shortfall not compensated'); process.exit(1); }
 
-h('MARKET · CLNP shares opened with a batch auction');
-let opening: { batch_id: number; price: string | null; volume: string; fills: number } | undefined;
-for (let i = 0; i < 40 && !opening; i++) {
-  const mk = await api<{ auctions: { batch_id: number; price: string | null; volume: string; fills: number }[] }>('/api/market/CLNP');
-  opening = mk.auctions.find((a) => a.batch_id === 1);
-  if (!opening) await new Promise((r) => setTimeout(r, 500));
-}
-if (!opening) { console.error('✘ opening auction did not clear'); process.exit(1); }
-console.log(opening.price === null
-  ? '  batch #1 closed with no crossing orders; the float keeps resting for the next batch'
-  : `  batch #1 cleared ${Number(opening.volume).toLocaleString()} shares at one price, ${(Number(opening.price) / 1e6).toFixed(5)} USDC, across ${opening.fills} fills`);
 console.log('\n✔ story complete');

@@ -1,13 +1,15 @@
 # Fungible Recipes
 
-**Intents for workflows.** A buyer describes a job. Sealed workflows built from other people's parts compete to do it, each quoting the result it expects. The buyer picks one and pays per run from any chain through NEAR Intents. The workflow runs inside secure hardware, so its method can't be copied. One settlement pays every part author, the runner and the creator, and a bond pays the buyer if the result falls short of the signed quote.
+**Intents for workflows.** A buyer describes a job. Sealed workflows built from other people's parts compete to do it, each quoting the result it expects. The buyer picks one and pays per run from any chain through NEAR Intents. The workflow runs inside secure hardware, so its method can't be copied. One settlement pays every part author, the runner and the creator, and the creator's guarantee deposit pays the buyer if the result falls short of the signed quote.
 
 NEAR Intents lets solvers compete to fill a swap. Fungible Recipes applies the same idea to whole workflows, which needs three things a swap doesn't:
 - a no-code standard for building workflows from other people's parts;
 - sealing, so a workflow's method can't be copied while it competes;
 - attribution, so every part author is paid, not just the winner.
 
-It uses Intents for payment and for the swaps inside workflows. Creators who want funding can also sell **revenue shares** in a recipe through batch auctions. That is an optional funding tool, not the main product.
+It uses Intents for payment and for the swaps inside workflows.
+
+**No investment features.** A buyer pays for one run of a service. A creator posts collateral that pays buyers when a run falls short. Nothing is sold that gives anyone a share of profits: there are no recipe shares, dividends, tokens or trading. This keeps the product usable by any wallet in any country, and it is deliberate (see [No investment features](#no-investment-features)).
 
 Built for the [NEAR Hackathon](https://nearhackathon.com) (Nov 1–14, 2026). Suggested tracks: `privacy`, `agents`, `defi` and `open`.
 
@@ -22,8 +24,8 @@ Businesses and agents run on workflows that chain several tools, bots and AI cal
 | Specialized builders deploy utility apps and bots | **Parts**: code, specialist agents or data sources, with typed ports, declared network capabilities, a per-call fee, **disclosure of model, instructions, harness and verification**, and **per-run resource limits**, registered on-chain ([standard/parts.json](standard/parts.json)) |
 | A no-code / low-code standard to compose and swap parts | **FRS-1** ([docs/FRS-1.md](docs/FRS-1.md)): a typed graph with subtyping, validation, drop-in swap search, a withdrawal-risk label and standard **job types**. The visual composer is the Compose tab |
 | Users create recipes without patents or licences | The recipe is **sealed** (X25519 + XSalsa20-Poly1305) to the runner's attested key. Only `sha256(envelope)` goes on-chain. See [What the sealing protects](#what-the-sealing-protects-and-what-it-doesnt) for its limits |
-| A decentralized exchange where recipes are listed, bought and traded | **Recipe intents**: a buyer posts a job, every recipe that implements its type quotes from a sealed dry run, and the buyer (or an agent's policy) picks one. Optional **revenue shares** sell in frequent batch auctions |
-| Attribution that pays everyone involved | **`report_run`**: an ed25519-signed runner report is verified on-chain and splits the payment in one receipt. It also compares delivery with the signed quote and compensates any shortfall from the recipe's **bond** |
+| A decentralized exchange where recipes are listed, bought and traded | **Recipe intents**: a buyer posts a job, every recipe that implements its type quotes from a sealed dry run, and the buyer (or an agent's policy) picks one. Recipes are listed and bought **per run**; what competes is the service, not an asset, so nothing here is a security (see [No investment features](#no-investment-features)) |
+| Attribution that pays everyone involved | **`report_run`**: an ed25519-signed runner report is verified on-chain and splits the payment in one receipt. It also compares delivery with the signed quote and compensates any shortfall from the recipe's **guarantee deposit** (a performance bond the creator posts) |
 | Deploy on NEAR's privacy platform (TEE) | Runner container for a **dstack Intel TDX CVM** (the NEAR Shade Agent / Phala stack). AI parts call **NEAR AI Cloud** private models and verify their TEE signatures |
 | Pay through NEAR Intents | **1Click** `EXACT_OUTPUT` quote with `customRecipientMsg`, so the solver's delivery *is* the `ft_transfer_call` that opens the run. Swaps inside the workflow use **confidential intents** (`confidentiality: "basic"`) |
 
@@ -39,15 +41,15 @@ Businesses and agents run on workflows that chain several tools, bots and AI cal
    | verification | open, sealed or closed |
 
    Parts on open-weights models are labelled **low** withdrawal risk, because anyone can re-host the weights. Parts on closed models are **high** risk, because their provider can retire, change or reprice the model at any time.
-2. **Creators compose recipes** in a no-code canvas, declare which job type they compete for, back their quotes with a bond, and publish the recipe sealed.
+2. **Creators compose recipes** in a no-code canvas, declare which job type they compete for, back their quotes with a guarantee deposit, and publish the recipe sealed.
 3. **Buyers post a job.** They fill one short form, sealed once to the attested runner. Every recipe implementing the job type quotes from a dry run inside the runner, with:
-   - the value it expects to deliver, a conservative **signed promise**, and how much of it the bond covers;
+   - the value it expects to deliver, a conservative **signed promise**, and how much of it the guarantee deposit covers;
    - its price, privacy, withdrawal risk and on-chain track record.
 
    Each quote is sealed to the buyer's browser, which checks the runner's signature before paying. The signature binds the quote to that buyer, that job and that recipe version, and it can be used once. Recipes stay sealed: buyers compare results, not methods. A job nobody serves yet is recorded as **open demand** for builders.
 4. **The buyer picks a quote and pays** from any chain through NEAR Intents. The signed promise travels with the payment, so the contract can enforce it (it is then public on-chain; a buyer who prefers privacy can choose "No guarantee" and skip the promise and the bond).
-5. **The sealed workflow runs.** First the runner re-prices the job: if the wallet changed since the quote, it aborts and refunds instead of letting the bond pay for an emptied wallet (`npm run attack:drain` shows this). Each part runs under declared limits on time, HTTP calls, model calls and output size; a run that goes over is cancelled and refunded. Part logs, wallet requests and the result leave the runner encrypted to a one-time key in the buyer's browser.
-6. **One settlement** pays the protocol, the runner, every part author used, the creator's royalty and the shareholders' dividend. Delivery is checked against the promise, and any shortfall is paid to the buyer from the bond, up to the cover in the quote.
+5. **The sealed workflow runs.** First the runner re-prices the job: if the wallet changed since the quote, it aborts and refunds instead of letting the deposit pay for an emptied wallet (`npm run attack:drain` shows this). Each part runs under declared limits on time, HTTP calls, model calls and output size; a run that goes over is cancelled and refunded. Part logs, wallet requests and the result leave the runner encrypted to a one-time key in the buyer's browser.
+6. **One settlement** pays the protocol, the runner, every part author used and the creator. A share of the creator's cut that the creator chose (`reserve_bps`) tops up the recipe's guarantee deposit. Delivery is checked against the promise, and any shortfall is paid to the buyer from the deposit, up to the cover in the quote.
 
 ## Try it in two minutes (no keys, no network needed)
 
@@ -65,15 +67,15 @@ Then follow these steps. Each one says what you should see.
    1. **Compose.** Five parts snap together into *Clean up and protect* (CLNP). The seal dialog verifies the runner attestation: 6 checks pass, and "Hardware TDX quote" shows as skipped in local mode. The plaintext turns into ciphertext and gets a wax seal. `publish_recipe` returns a tx hash, and a $25 bond backs CLNP's quotes.
    2. **Post a job.**
       - As `bob.testnet`, a fresh address is generated in the browser and the job *Clean up my wallet* is sealed and posted.
-      - Two recipes quote. **SWPR** expects $37.54 and promises $36.98, but it is *public* and also sweeps the wallet's wNEAR. **CLNP** expects $28.02 and promises $27.81, is *confidential* and its $25 bond covers $25.00 of the promise.
+      - Two recipes quote. **SWPR** expects $37.54 and promises $36.98, but it is *public* and also sweeps the wallet's wNEAR. **CLNP** expects $28.02 and promises $27.81, is *confidential* and its $25 guarantee deposit covers $25.00 of the promise.
       - Bob chooses CLNP. A 1Click quote shows *0.75188 USDC on Arbitrum → $0.75 delivered to the contract*, with the signed promise in the `customRecipientMsg`.
    3. **Execute.**
       - The runner checks the paid run against its on-chain commitments, decrypts, and runs each part, showing its author and fee. Part details carry a *sealed to you* tag.
       - The AI Spam Shield quarantines two scam airdrops, with its signature verified.
       - A wallet dialog, decrypted in the browser, asks to approve four `ft_transfer`s. Four confidential swaps then reach `SUCCESS`.
-   4. **Settle.** "Delivered $28.02 against a signed promise of $27.81: promise kept, the bond is untouched." Below that, a diagram shows $0.75 split between the protocol, the runner, five part authors, the creator's royalty and **$0.5085 to all CLNP shareholders**, in one tx.
-3. **Revenue shares → CLNP.** The track record shows 1 successful run, delivery at 101% of the promise and a $25 bond. Batch #1 is tagged *opening*: the float was sold in an opening auction at one price.
-4. **Acting as → chef.testnet, then Wallet.** Income shows `creator royalty CLNP +$0.0565`. Withdraw works.
+   4. **Settle.** "Delivered $28.02 against a signed promise of $27.81: promise kept, the deposit is untouched." Below that, a diagram shows $0.75 split between the protocol, the runner, five part authors, **$0.5085 to the creator** and **$0.0565 into CLNP's guarantee deposit** (the creator's 10% reserve), in one tx.
+3. **Recipes → CLNP.** The track record shows 1 successful run, delivery at 101% of the promise and a guarantee deposit of $25.06: the $25 the creator posted plus the reserve from the run. "Where each run's price goes" itemizes the split, which sums to exactly $0.75.
+4. **Acting as → chef.testnet, then Wallet.** Income shows `creator earnings CLNP +$0.5085`, and *Recipes you created* lists CLNP with its deposit. Withdraw works; the creator can also top up or withdraw the free part of the deposit from the Recipes tab.
 5. **Compose → "Load Dust sweeper", then select the *Allowlist Shield* node.**
    - The inspector shows the part's disclosure (model none, bundled, low risk) and its limits.
    - Drop-in replacements list *AI Spam Shield* (low risk) and *AI Spam Shield Pro* (**high** risk: closed model, closed harness, remote). Swap in Pro: Checks now shows *high withdrawal risk* and warns that the closed model can be withdrawn or repriced.
@@ -94,12 +96,13 @@ npm run test:e2e        # boots everything and runs the 4-step story in the term
 Expected tail of the output:
 
 ```
-  quote SWPR  expects  $37.5416  promises  $36.9785 (bond $10.0000)  price $0.2000  public       risk low
-  quote CLNP  expects  $28.0249  promises  $27.8147 (bond $25.0000)  price $0.7500  confidential risk low
+  quote SWPR  expects  $37.5416  promises  $36.9785 (deposit $10.0000)  price $0.2000  public       risk low
+  quote CLNP  expects  $28.0249  promises  $27.8147 (deposit $25.0000)  price $0.7500  confidential risk low
   policy {"requirePrivacy":"confidential","maxRisk":"medium","sort":"net"} → CLNP
   ...
-     $0.5085  CLNP shareholders         pro-rata dividend (claimable)
-  delivered $28.0249 vs promised $27.8147 → bond compensation $0.0000
+     $0.0565  CLNP guarantee deposit     creator's reserve, held as collateral for future quotes
+  payouts + reserve == price ($0.7500): every unit accounted for
+  delivered $28.0249 vs promised $27.8147 → compensation from the guarantee deposit $0.0000
 ✔ story complete
 ```
 
@@ -141,10 +144,9 @@ This project treats them as places to run recipes and channels to sell them, not
 What none of them offers, and this project does:
 - secret recipes sold to strangers, hidden from buyers and from the operators;
 - recipes competing on standard jobs with signed quotes;
-- bond-backed outcome guarantees whose safety is machine-checked;
+- outcome guarantees backed by the creator's deposit, with machine-checked safety;
 - every part author paid in the same settlement;
 - typed, swappable parts that disclose their withdrawal risk;
-- revenue shares;
 - durable runs with partial settlement, and versions with a notice period.
 
 Where others are ahead is listed too:
@@ -159,41 +161,52 @@ Two more pieces make recipes manageable over time:
 - **Durable storage.** Every sealed version and checkpoint is kept in a content-addressed store (`server/src/store.ts`). A blob's id is the hash committed on-chain, and every read is integrity-checked.
 - **Creator copies.** Each version is also sealed to a key derived from the creator's wallet signature. The creator can reopen and edit any published version from any device ("Reopen my published recipe…" in Compose), and nothing is kept in the browser.
 
+## No investment features
+
+Earlier builds let creators sell revenue shares in a recipe, with dividends and share trading in batch auctions. They were removed (archived at git tag `archive/revenue-shares`), for two reasons:
+- **Reach.** A token that pays holders a share of a recipe's revenue looks like an investment contract under tests such as Howey in the US, and similar rules elsewhere. That could limit who may list, buy or even see a recipe. Pay-per-run use of a service does not.
+- **Little value.** Per-run dividends would be tiny, and taxable as income in most places.
+
+What remains is ordinary commerce plus collateral:
+- **Buyers** pay a fixed price for one run. They get the result, plus compensation if it falls short of the signed quote.
+- **Creators, part authors, the runner and the protocol** are paid for work actually done, in the settlement of that run.
+- **The guarantee deposit** is the creator's own money, posted as collateral (a performance bond, like a contractor's or an escrow). It pays nothing to anyone except buyers who were shorted, earns no return, and only the creator can withdraw it. A creator can let it grow automatically by keeping a share of each run's cut in it (`reserve_bps`).
+
+This is a design choice, not legal advice: anyone launching this commercially should get advice for the countries they operate in.
+
 ## Formal verification
 
 The money logic and the protocol are machine-checked, not only tested ([verification/README.md](verification/README.md)):
 
-- **Z3 proofs (97 theorems)** for every input in the u128 range:
-  - settlement conserves the price exactly (also when parts are paid at checkpoints) and never overflows below 3.4×10¹⁴ USDC of lifetime revenue;
-  - bond accounting can't be overdrawn, and its ledger invariant holds by induction over any history;
-  - dividends stay solvent by induction over any sequence of runs, claims, transfers and auction fills;
-  - batch auctions clear at a maximum-volume uniform price, respect limits and price-time priority, and leave no residual cross.
+- **Z3 proofs (58 theorems)** for every input in the u128 range:
+  - settlement conserves the price exactly, to the unit, for 0 to 8 parts (also when parts are paid at checkpoints), the creator's reserve is the creator's own money, and a split never fails once the fees fit the price;
+  - guarantee-deposit accounting can't be overdrawn, and its ledger invariant (including reserves added at settlement) holds by induction over any history.
 - **Three TLA+ models**, checked exhaustively by TLC:
   - the bond lifecycle with an adversarial buyer: bond conservation, single-use quotes and **no bond drain**, over 22.7M states;
   - durable runs with a runner that crashes at any point: **deposits exactly once**, every part paid exactly once, and the run always finishes;
   - versions with notice: every run executes the version it paid for, and no version goes live early.
 
   Each model also has a variant without the safeguard (the old bond rule, no write-ahead checkpoint, a vault that keeps only the current version), and TLC is expected to find a counterexample in each.
-- **Conformance vectors** generated by the proved models (855 money cases, 60 auction books) must be reproduced exactly by both the Rust contract and the TypeScript mirror. This keeps the proofs tied to the shipped code.
+- **Conformance vectors** generated by the proved models (400 settlement cases, 200 deposit operations) must be reproduced exactly by both the Rust contract and the TypeScript mirror. This keeps the proofs tied to the shipped code.
 
-The proofs found three real bugs, all now fixed:
-- two rounding paths that could leave the contract owing holders more than it held;
-- a way to drain the bond by depositing less than asked after the re-check.
+The proofs found three real bugs, all fixed:
+- a way to drain the bond by depositing less than asked after the re-check (TLA+; the model and the fix are still here);
+- two rounding paths that could have left the contract owing revenue-share holders more than it held. That design was later removed (see [No investment features](#no-investment-features)); its proofs are archived with it.
 
 What is *not* proven is listed plainly in the verification README. That covers the compiled Rust itself (Kani is the next step), and the UI, server and runner, which are tested, not proven.
 
 ```bash
-npm run verify          # Z3 proofs + conformance freshness (~10 s; pip install z3-solver)
+npm run verify          # Z3 proofs + conformance freshness (~5 s; pip install z3-solver)
 npm run verify:tla      # also the TLC model check (~10 min; Java + tla2tools.jar)
 ```
 
 ## Tests
 
 ```bash
-npm test                # 39 TypeScript tests: settlement, batch-auction and bond vectors; quote signatures and expiry;
+npm test                # 34 TypeScript tests: settlement and bond vectors; quote signatures and expiry;
                         # event parity with the contract; FRS-1 typing, swaps, job types and withdrawal risk;
                         # sealing; per-part resource limits; EIP-191; 1Click shapes; attestation; capability guard; code hash
-npm run test:rust       # 102 Rust tests for the NEAR contract (same vectors, conformance with the proved models,
+npm run test:rust       # 93 Rust tests for the NEAR contract (same vectors, conformance with the proved models,
                         # versions with notice, checkpoints and partial settlement)
 npm run typecheck
 npm run live-check      # optional, needs internet: real 1Click dry quotes (incl. confidential), FastNEAR, NEAR RPC,
@@ -226,9 +239,8 @@ These are kept separate so nothing here needs to be taken on faith.
 | NEAR Intents 1Click | `/mock/1click`: same request and response shapes, a frozen token-price sample, the real status names | `core/src/oneclick.ts` live mode; `npm run live-check` gets real dry quotes. **NEAR Intents has no testnet**, so the demo cannot move real funds |
 | NEAR AI Cloud | `/mock/nearai` signs responses with a real secp256k1 key in the provider-TEE format. The "model" is a transparent heuristic, and there is no hardware quote (reported as skipped) | The same part code calls `cloud-api.near.ai`, and `live-check` verifies a real completion end to end |
 | FastNEAR / NEAR RPC | `/mock/fastnear`, `/mock/rpc`, backed by fictional wallets in `fixtures/wallets.json` | Same URLs unmocked |
-| Wallet signing | A local demo wallet "signs as" the selected account. Demo accounts and sim traders have unlimited demo USDC, so bonds, share prices and market caps are illustrative | **Not built yet.** The approval dialog shows the exact `signAndSendTransactions` payload a NEAR wallet would sign |
+| Wallet signing | A local demo wallet "signs as" the selected account. Demo accounts have unlimited demo USDC, so deposit sizes are illustrative | **Not built yet.** The approval dialog shows the exact `signAndSendTransactions` payload a NEAR wallet would sign |
 | Chain view for attestation checks | The browser gets the attestation **directly from the runner**, but the registered keys come from the server's contract mirror, so the marketplace is trusted for that comparison | Clients read `get_runner` from NEAR RPC; the runner reads `get_run` / `get_recipe` over NEAR RPC when `NEAR_RPC_URL` is set |
-| Revenue-share market | Grey candles before server start are **synthetic**. Labelled "sim traders" place real orders into each batch, and a local keeper calls `clear_batch` | Real clearings only; anyone can call `clear_batch` |
 
 The runner never sees mock-specific code. It always builds URLs for the real hosts, and `FRS_REWRITE` (set by `scripts/demo.mjs`) maps them to the local mocks.
 
@@ -237,9 +249,8 @@ The runner never sees mock-specific code. It always builds URLs for the real hos
 - **NEAR smart contract** (`contracts/fungible-recipes`):
   - a part and runner registry, and sealed recipe commitments;
   - pay-per-run escrow, with signed quotes checked by `env::ed25519_verify`;
-  - bonds that compensate shortfalls, and an on-chain track record per recipe;
+  - guarantee deposits (performance bonds) that compensate shortfalls, and an on-chain track record per recipe;
   - one-receipt settlement with NEP-297 events;
-  - revenue shares with dividend accounting, sold in uniform-price batch auctions.
 - **NEAR Intents / 1Click**:
   - Pay-per-run uses `swapType: EXACT_OUTPUT` to the payment token, with `recipient = contract` and `customRecipientMsg = {"action":"run",…,"on_behalf_of":buyer,"quote":{…}}`. The solver's delivery is the `ft_transfer_call` that escrows the run.
   - Swaps inside workflows use `confidentiality: "basic"`. When quoting, recipes price their swaps with `dry: true` 1Click quotes.
@@ -257,13 +268,13 @@ flowchart LR
   R -- "quotes: expected, promised, signature" --> B
   B -- "pay any chain, signed quote in msg" --> I[NEAR Intents 1Click]
   I -- "ft_transfer_call + customRecipientMsg" --> K[(fungible-recipes<br/>NEAR contract)]
-  K -- "verify quote, lock bond cover" --> K
+  K -- "verify quote, lock deposit cover" --> K
   M -- "sealed recipe + sealed job" --> R
   R -- "AI parts" --> A[NEAR AI Cloud]
   R -- "confidential swaps" --> I
   R -- "report_run(delivered, ed25519 sig)" --> K
-  K -- "one receipt: protocol, runner, part authors, creator, shareholders + bond compensation" --> P((payees))
-  C[Creator<br/>FRS-1 composer] -- "sealed recipe, listing, bond" --> M
+  K -- "one receipt: protocol, runner, part authors, creator, reserve + shortfall compensation" --> P((payees))
+  C[Creator<br/>FRS-1 composer] -- "sealed recipe, listing, guarantee deposit" --> M
 ```
 
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · threat model: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) · contract interface: [docs/CONTRACT_SPEC.md](docs/CONTRACT_SPEC.md) · standard: [docs/FRS-1.md](docs/FRS-1.md)
@@ -271,13 +282,13 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · threat model: [docs/THR
 ## Repository map
 
 ```
-contracts/fungible-recipes/   Rust NEAR contract + 102 unit tests
-contracts/test-vectors/       settlement, dividend, batch-auction and bond vectors shared by Rust and TS; conformance vectors from the proofs
-verification/                 Z3 proofs (money, billing, auction), TLA+ models (bonds, durable runs, versions), results
-core/src/                     FRS-1 (parts, disclosure, job types), sealing, settlement, ledger mirror, auctions, job hashing, clients, attestation
+contracts/fungible-recipes/   Rust NEAR contract + 93 unit tests
+contracts/test-vectors/       settlement and bond vectors shared by Rust and TS; conformance vectors from the proofs
+verification/                 Z3 proofs (settlement, billing, guarantee deposits), TLA+ models (bonds, durable runs, versions), results
+core/src/                     FRS-1 (parts, disclosure, job types), sealing, settlement, ledger mirror, job hashing, clients, attestation
 runner/                       sealed TEE runner: dry-run quotes, durable execution (checkpoints, resume), resource limits, 11 parts (9 implementation files)
-server/                       marketplace API (jobs, quotes, runs, revenue shares) and local mocks of external services
-web/                          React UI: Post a job, Compose, Wallet, Revenue shares, Trust & privacy, story mode
+server/                       marketplace API (jobs, quotes, runs, track records) and local mocks of external services
+web/                          React UI: Post a job, Compose, Wallet, Recipes, Trust & privacy, story mode
 standard/parts.json           FRS-1 part catalog (ports, capabilities, fees, disclosure, limits)
 standard/jobs.json            FRS-1 job types (inputs, output, value metric)
 seed/recipes/                 plaintext of the demo recipes (in the app they only ever travel sealed)
@@ -295,8 +306,6 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 | `NEAR_AI_API_KEY` | runner, live-check | NEAR AI Cloud private inference |
 | `ONECLICK_JWT` | runner, live-check | authenticated 1Click fee tier |
 | `TEE_MODE` | runner | `local-dev` (default) or `dstack` |
-| `FRS_BOTS` | server | `0` disables the sim traders |
-| `FRS_BATCH_MS` | server | revenue-share batch length (default 12000) |
 | `PORT`, `RUNNER_PORT` | launcher | default 8080 / 8787 |
 
 ## Limitations and next steps
@@ -304,12 +313,12 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 - **Durable storage is in-memory in the demo.** The vault and checkpoint store would be a database or IPFS in production, keyed by `sealed_hash` and run id. The runner and the contract already behave as if it were durable.
 - **One runner.** Runners are approved by the contract owner. A permissionless set of staked runners, and recipes sealed to several of them, are next.
 - **No triggers or schedules yet.** A run starts when a buyer pays. A workflow can wait inside a run (`time.wait`), but nothing starts a run on a timer or an on-chain event.
-- **Not deployed yet.** The contract has 102 unit tests and the same vectors as the mirror, but it was not built to wasm or deployed from our build machine (no wasm target, no NEAR RPC access). Deploy commands are in [contracts/fungible-recipes/README.md](contracts/fungible-recipes/README.md).
+- **Not deployed yet.** The contract has 93 unit tests and the same vectors as the mirror, but it was not built to wasm or deployed from our build machine (no wasm target, no NEAR RPC access). Deploy commands are in [contracts/fungible-recipes/README.md](contracts/fungible-recipes/README.md).
 - **No live chain adapter or wallet.** The server talks to the in-process mirror. A NEAR RPC adapter and near-connect are the main pieces missing for testnet.
-- **The runner is trusted to measure delivery.** Bonds pay out on the runner's signed `delivered` value. That is sound only as far as the runner is attested; on-chain DCAP verification of the runner is the next step.
+- **The runner is trusted to measure delivery.** Guarantee deposits pay out on the runner's signed `delivered` value. That is sound only as far as the runner is attested; on-chain DCAP verification of the runner is the next step.
 - **Quotes cost compute.** Dry runs are capped at 5 recipes per job and 12 jobs per minute per client. A small quote fee would be the on-chain version.
 - **Supplier risk.** Bundled parts can't be switched off by their author, but remote and closed-model parts can. FRS-1 labels this risk; fallback parts, notice periods and supplier bonds are planned.
-- **Spam and keeper.** No storage deposits yet. Revenue-share books are capped at 200 orders, and batches need a keeper to call `clear_batch`.
+- **Spam.** No storage deposits yet.
 - **What 1Click sees.** Confidential intents hide the deposit-to-payout link from chain observers, not from the 1Click service. See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 ## Disclosures

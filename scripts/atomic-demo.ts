@@ -44,11 +44,11 @@ async function runOnce(label: string, breakAsset?: string, breakSymbol?: string)
   }
   if (breakAsset) await api('/api/dev/solver-fail', { asset: breakAsset, on: false });
   const chain = await api<any>(`/api/chain/runs/${r.run_id}`);
-  const freshBal = (await api<{ wallet: { contract_id: string; balance: string }[] }>(`/api/portfolio/${fresh.account}`)).wallet.find((w) => w.contract_id === usdc)?.balance ?? '0';
+  const freshBal = (await api<{ wallet: { contract_id: string; balance: string }[] }>(`/api/account/${fresh.account}`)).wallet.find((w) => w.contract_id === usdc)?.balance ?? '0';
   return { final, chain, freshBal, logs: swapsLogged };
 }
 
-const before = await api<{ wallet: { contract_id: string; symbol: string; balance: string }[] }>(`/api/portfolio/${BUYER}`);
+const before = await api<{ wallet: { contract_id: string; symbol: string; balance: string }[] }>(`/api/account/${BUYER}`);
 const breakable = before.wallet.find((w) => BigInt(w.balance) > 0n && w.symbol !== 'USDC' && /AURORA|REF|USDT/.test(w.symbol));
 if (!breakable) throw new Error('fixture wallet has no AURORA/REF/USDT');
 const one = await runOnce('run 1', `nep141:${breakable.contract_id}`, breakable.symbol);

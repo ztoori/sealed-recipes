@@ -9,7 +9,7 @@ import { api, runnerAttestation, short } from '../api';
 const rand = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
 
 /** The "seal" moment: verify the runner, encrypt in this browser, publish only ciphertext + listing. */
-export function SealModal({ recipe, catalog, ipo, auto, onClose }: { recipe: Recipe; catalog: Catalog; ipo: { price: number; float_pct: number }; auto: boolean; onClose: (published: boolean) => void }) {
+export function SealModal({ recipe, catalog, auto, onClose }: { recipe: Recipe; catalog: Catalog; auto: boolean; onClose: (published: boolean) => void }) {
   const [stage, setStage] = useState(0); // 0 verify, 1 seal, 2 publish, 3 done
   const [checks, setChecks] = useState<Check[]>([]);
   const [env, setEnv] = useState<SealedEnvelope>();
@@ -35,7 +35,7 @@ export function SealModal({ recipe, catalog, ipo, auto, onClose }: { recipe: Rec
       // so the creator can reopen and edit any published version from any device
       const who = recipe.meta.creator;
       const creator_copy = seal(recipe, creatorKeyFromSignature(demoWalletSign(who, creatorKeyMessage(who))).publicKeyHex, 'creator-copy');
-      const r = await api('/api/publish', { listing, sealed: e, ipo, bond: recipe.listing.bond ?? '0', settle_mode: recipe.listing.settle_mode ?? 'final', creator_copy });
+      const r = await api('/api/publish', { listing, sealed: e, bond: recipe.listing.bond ?? '0', settle_mode: recipe.listing.settle_mode ?? 'final', creator_copy });
       setTx(r); setStage(3); return true;
     } catch (x) { setErr((x as Error).message); return false; }
   };
@@ -53,7 +53,7 @@ export function SealModal({ recipe, catalog, ipo, auto, onClose }: { recipe: Rec
   }, []);
 
   const plaintext = JSON.stringify({ nodes: recipe.nodes.map((n) => ({ id: n.id, part: n.part, inputs: n.inputs, params: n.params })) }, null, 1);
-  const listItems = ['Verify the runner attestation', 'Seal the recipe in this browser', 'Publish listing and commitment', 'Listed on the exchange'];
+  const listItems = ['Verify the runner attestation', 'Seal the recipe in this browser', 'Publish listing and commitment', 'Listed on the marketplace'];
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Seal and publish">
       <div className="sealer">
@@ -77,7 +77,7 @@ export function SealModal({ recipe, catalog, ipo, auto, onClose }: { recipe: Rec
           <div className="row wrap">
             {stage === 1 && !auto && <button className="btn seal" onClick={() => doSeal(encPk)}>Seal in this browser</button>}
             {stage === 2 && !auto && env && <button className="btn" onClick={() => publish(env)}>Publish {recipe.meta.ticker}</button>}
-            {stage === 3 && <button className="btn" onClick={() => onClose(true)}>Open on the exchange</button>}
+            {stage === 3 && <button className="btn" onClick={() => onClose(true)}>Open the listing</button>}
             {stage < 3 && !auto && <button className="btn ghost" onClick={() => onClose(false)}>Cancel</button>}
           </div>
         </div>

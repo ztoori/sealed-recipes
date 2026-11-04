@@ -2,7 +2,7 @@
   "name": "fungible-recipes",
   "version": "0.1.0",
   "private": true,
-  "description": "Fungible Recipes: sealed, composable workflows traded like stocks and paid per run through NEAR Intents.",
+  "description": "Fungible Recipes: sealed, composable workflows, paid per run through NEAR Intents, with bonded delivery guarantees.",
   "license": "MIT",
   "type": "module",
   "engines": {

@@ -24,10 +24,10 @@ const ROWS: { name: string; what: string; overlap: string; integrate: string; st
 const VALUE = [
   ['Sealed recipes sold to third parties', 'Buyers pay to run a workflow they never see; the marketplace stores only ciphertext. (Requires the runner in a TEE; local mode has none.)'],
   ['Competing signed quotes', 'Recipes implementing a job type quote from dry runs; quotes are signed, bound to buyer, job and version, and single use.'],
-  ['Bonded outcome guarantees', 'The bond pays any shortfall up to the quoted cover. Bond safety is model-checked (TLA+) and its arithmetic proved (Z3), on models tied to the code by conformance tests.'],
-  ['One receipt, every contributor', 'Part authors, runner, creator and shareholders paid in the same settlement, with conservation proved.'],
+  ['Guaranteed outcomes', 'The creator’s guarantee deposit pays any shortfall up to the quoted cover. Deposit safety is model-checked (TLA+) and its arithmetic proved (Z3), on models tied to the code by conformance tests.'],
+  ['One receipt, every contributor', 'Part authors, runner and creator paid in the same settlement, with conservation proved.'],
   ['FRS-1 typed parts', 'Swappable parts with typed ports, capability and resource limits, and model/harness disclosure with a withdrawal-risk label.'],
-  ['Revenue shares', 'Optional creator funding, traded in uniform-price batch auctions.'],
+  ['No investment features', 'Buyers pay for a service, creators post collateral. No shares, dividends or trading, so any wallet anywhere can use it.'],
   ['Durable runs, partial settlement', 'Runs survive runner crashes with exactly-once deposits; in checkpoint mode each part is paid when it finishes.'],
   ['Versions with notice', 'Updates take effect after an on-chain notice period; each run executes the version it paid for.'],
 ];

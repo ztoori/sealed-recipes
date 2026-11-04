@@ -7,42 +7,24 @@ Each function mirrors a Rust function line by line; the Rust source is named in 
 """
 from __future__ import annotations
 
-from common import BPS, E, U128, Ctx
+from common import BPS, U128, Ctx
 
 
-def settlement(c: Ctx, price, bps, runner, fees, roy, ts, acc_before):
-    """contracts/fungible-recipes/src/settlement.rs :: settlement_split
+def settlement(c: Ctx, price, bps, runner, fees, rbps):
+    """contracts/fungible-recipes/src/settlement.rs :: settlement_split (contract v5)
 
-    Returns the split and `ok`, the condition under which Rust returns Some: the fixed fees fit in the price,
-    `total_shares > 0`, and every checked multiplication stays below 2^128.
-    The shareholders' share is `distributed = floor(acc_after*TS/E) - floor(acc_before*TS/E)`, so the total
-    ever set aside telescopes to floor(acc*TS/E): exactly what holders can claim in total (see dividends).
+    Returns the split and `ok`, the condition under which Rust returns Some: both bps values are at most 10000,
+    the fixed fees fit in the price, and every checked operation stays below 2^128.
+    The reserve is the creator's own money, added to the recipe's guarantee deposit (bond_available).
     """
     protocol = c.div(price * bps, BPS)
     part_sum = sum(fees) if fees else 0
     rem = price - protocol - runner - part_sum
-    creator = c.div(rem * roy, BPS)
-    pool = rem - creator
-    inc = c.div(pool * E, ts)
-    acc_after = acc_before + inc
-    distributed = c.div(acc_after * ts, E) - c.div(acc_before * ts, E)
-    dust = pool - distributed
-    conds = [ts > 0, rem >= 0, price * bps < U128, rem * roy < U128, pool * E < U128, acc_before * ts < U128, acc_after * ts < U128,
-             part_sum < U128]
-    return dict(protocol=protocol, protocol_total=protocol + dust, runner=runner, parts=list(fees), remainder=rem,
-                creator=creator, pool=pool, acc_increment=inc, acc_after=acc_after, distributed=distributed,
-                dust=dust, conds=conds)
-
-
-def settlement_v1(c: Ctx, price, bps, runner, fees, roy, ts):
-    """The previous settlement_split (before this verification pass): distributed = floor(inc*TS/E)."""
-    protocol = c.div(price * bps, BPS)
-    rem = price - protocol - runner - (sum(fees) if fees else 0)
-    creator = c.div(rem * roy, BPS)
-    pool = rem - creator
-    inc = c.div(pool * E, ts)
-    distributed = c.div(inc * ts, E)
-    return dict(pool=pool, acc_increment=inc, distributed=distributed, dust=pool - distributed)
+    reserve = c.div(rem * rbps, BPS)
+    creator = rem - reserve
+    conds = [bps <= BPS, rbps <= BPS, price * bps < U128, part_sum < U128, rem >= 0, rem * rbps < U128]
+    return dict(protocol=protocol, runner=runner, parts=list(fees), remainder=rem, reserve=reserve, creator=creator,
+                conds=conds)
 
 
 # ---- bonds (contracts/fungible-recipes/src/bond.rs) ----
@@ -71,33 +53,6 @@ def bond_withdraw(c: Ctx, available, locked, amount):
                 available=available - amount, locked=locked)
 
 
-# ---- dividends (lib.rs :: harvest / move_shares / rebase, via src/dividends.rs) ----
-
-def accrued(c: Ctx, shares, acc):
-    return c.div(shares * acc, E)
-
-
-def harvest(c: Ctx, shares, debt, acc):
-    """dividends::harvest — pays what has accrued above the debt (never negative), raises the debt to it."""
-    a = accrued(c, shares, acc)
-    pending = c.max(a - debt, 0)
-    return dict(pending=pending, debt=c.max(debt, a))
-
-
-def rebase(c: Ctx, shares, acc):
-    """dividends::rebase — debt after a share-count change, rounded UP so rounding never favours holders."""
-    return c.ceil_div(shares * acc, E)
-
-
-def harvest_v1(c: Ctx, shares, debt, acc):
-    a = accrued(c, shares, acc)
-    return dict(pending=a - debt, debt=a)
-
-
-def rebase_v1(c: Ctx, shares, acc):
-    return c.div(shares * acc, E)
-
-
-def pending_of(c: Ctx, shares, debt, acc):
-    """dividends::pending — the view: claimable now, never negative."""
-    return c.max(accrued(c, shares, acc) - debt, 0)
+def bond_deposit(c: Ctx, available, locked, amount):
+    """bond::deposit — a top-up (ft_transfer_call {"action":"bond"}) or a settlement's reserve."""
+    return dict(ok=available + amount < U128, available=available + amount, locked=locked)

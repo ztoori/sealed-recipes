@@ -117,8 +117,7 @@
   "output": "swap.receipts",
   "listing": {
     "price_per_run": "750000",
-    "royalty_bps": 1000,
-    "total_shares": "1000000",
+    "reserve_bps": 1000,
     "bond": "25000000"
   },
   "implements": "job.wallet-cleanup@1.0.0"

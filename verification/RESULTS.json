@@ -3,7 +3,7 @@
   {
    "module": "settlement[0p]",
    "theorem": "conservation",
-   "statement": "protocol+dust + runner + parts + creator + shareholders == price",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
@@ -13,427 +13,7 @@
   {
    "module": "settlement[0p]",
    "theorem": "no-negative-payout",
-   "statement": "every payout >= 0 and shareholders' share <= pool",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[0p]",
-   "theorem": "fee-caps",
-   "statement": "protocol fee <= 10% of price, royalty <= 50% of remainder",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.013,
-   "detail": ""
-  },
-  {
-   "module": "settlement[0p]",
-   "theorem": "rounding-bound",
-   "statement": "rounding withheld from shareholders <= 1 + total_shares/1e18 units",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.002,
-   "detail": ""
-  },
-  {
-   "module": "settlement[0p]",
-   "theorem": "never-fails-when-fees-fit",
-   "statement": "fees <= price and lifetime revenue <= 3.4e20 units => no overflow, Some(split)",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[0p]",
-   "theorem": "lifetime-invariant-step",
-   "statement": "acc*TS <= lifetime_pool*E is preserved by a settlement",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.002,
-   "detail": ""
-  },
-  {
-   "module": "settlement[1p]",
-   "theorem": "conservation",
-   "statement": "protocol+dust + runner + parts + creator + shareholders == price",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[1p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout >= 0 and shareholders' share <= pool",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[1p]",
-   "theorem": "fee-caps",
-   "statement": "protocol fee <= 10% of price, royalty <= 50% of remainder",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.016,
-   "detail": ""
-  },
-  {
-   "module": "settlement[1p]",
-   "theorem": "rounding-bound",
-   "statement": "rounding withheld from shareholders <= 1 + total_shares/1e18 units",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.002,
-   "detail": ""
-  },
-  {
-   "module": "settlement[2p]",
-   "theorem": "conservation",
-   "statement": "protocol+dust + runner + parts + creator + shareholders == price",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[2p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout >= 0 and shareholders' share <= pool",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[2p]",
-   "theorem": "fee-caps",
-   "statement": "protocol fee <= 10% of price, royalty <= 50% of remainder",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.013,
-   "detail": ""
-  },
-  {
-   "module": "settlement[2p]",
-   "theorem": "rounding-bound",
-   "statement": "rounding withheld from shareholders <= 1 + total_shares/1e18 units",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.002,
-   "detail": ""
-  },
-  {
-   "module": "settlement[3p]",
-   "theorem": "conservation",
-   "statement": "protocol+dust + runner + parts + creator + shareholders == price",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[3p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout >= 0 and shareholders' share <= pool",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[3p]",
-   "theorem": "fee-caps",
-   "statement": "protocol fee <= 10% of price, royalty <= 50% of remainder",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.015,
-   "detail": ""
-  },
-  {
-   "module": "settlement[3p]",
-   "theorem": "rounding-bound",
-   "statement": "rounding withheld from shareholders <= 1 + total_shares/1e18 units",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[3p]",
-   "theorem": "never-fails-when-fees-fit",
-   "statement": "fees <= price and lifetime revenue <= 3.4e20 units => no overflow, Some(split)",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[3p]",
-   "theorem": "lifetime-invariant-step",
-   "statement": "acc*TS <= lifetime_pool*E is preserved by a settlement",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[4p]",
-   "theorem": "conservation",
-   "statement": "protocol+dust + runner + parts + creator + shareholders == price",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[4p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout >= 0 and shareholders' share <= pool",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[4p]",
-   "theorem": "fee-caps",
-   "statement": "protocol fee <= 10% of price, royalty <= 50% of remainder",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.017,
-   "detail": ""
-  },
-  {
-   "module": "settlement[4p]",
-   "theorem": "rounding-bound",
-   "statement": "rounding withheld from shareholders <= 1 + total_shares/1e18 units",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[5p]",
-   "theorem": "conservation",
-   "statement": "protocol+dust + runner + parts + creator + shareholders == price",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[5p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout >= 0 and shareholders' share <= pool",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[5p]",
-   "theorem": "fee-caps",
-   "statement": "protocol fee <= 10% of price, royalty <= 50% of remainder",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.018,
-   "detail": ""
-  },
-  {
-   "module": "settlement[5p]",
-   "theorem": "rounding-bound",
-   "statement": "rounding withheld from shareholders <= 1 + total_shares/1e18 units",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[6p]",
-   "theorem": "conservation",
-   "statement": "protocol+dust + runner + parts + creator + shareholders == price",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[6p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout >= 0 and shareholders' share <= pool",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[6p]",
-   "theorem": "fee-caps",
-   "statement": "protocol fee <= 10% of price, royalty <= 50% of remainder",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.012,
-   "detail": ""
-  },
-  {
-   "module": "settlement[6p]",
-   "theorem": "rounding-bound",
-   "statement": "rounding withheld from shareholders <= 1 + total_shares/1e18 units",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[7p]",
-   "theorem": "conservation",
-   "statement": "protocol+dust + runner + parts + creator + shareholders == price",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[7p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout >= 0 and shareholders' share <= pool",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[7p]",
-   "theorem": "fee-caps",
-   "statement": "protocol fee <= 10% of price, royalty <= 50% of remainder",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.018,
-   "detail": ""
-  },
-  {
-   "module": "settlement[7p]",
-   "theorem": "rounding-bound",
-   "statement": "rounding withheld from shareholders <= 1 + total_shares/1e18 units",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[8p]",
-   "theorem": "conservation",
-   "statement": "protocol+dust + runner + parts + creator + shareholders == price",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[8p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout >= 0 and shareholders' share <= pool",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[8p]",
-   "theorem": "fee-caps",
-   "statement": "protocol fee <= 10% of price, royalty <= 50% of remainder",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.019,
-   "detail": ""
-  },
-  {
-   "module": "settlement[8p]",
-   "theorem": "rounding-bound",
-   "statement": "rounding withheld from shareholders <= 1 + total_shares/1e18 units",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[8p]",
-   "theorem": "never-fails-when-fees-fit",
-   "statement": "fees <= price and lifetime revenue <= 3.4e20 units => no overflow, Some(split)",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement[8p]",
-   "theorem": "lifetime-invariant-step",
-   "statement": "acc*TS <= lifetime_pool*E is preserved by a settlement",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "settlement",
-   "theorem": "v1-two-runs-solvent",
-   "statement": "OLD rule: holders' claims <= amount set aside",
-   "outcome": "counterexample",
-   "expected": "counterexample",
-   "ok": true,
-   "seconds": 0.11,
-   "detail": "ts=999999, pool1=1, pool2=1"
-  },
-  {
-   "module": "settlement",
-   "theorem": "telescoping-two-runs-solvent",
-   "statement": "NEW rule: holders' claims == amount set aside",
+   "statement": "every payout and the reserve are >= 0",
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
@@ -441,9 +21,379 @@
    "detail": ""
   },
   {
+   "module": "settlement[0p]",
+   "theorem": "creator-keeps-remainder",
+   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[0p]",
+   "theorem": "caps",
+   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.007,
+   "detail": ""
+  },
+  {
+   "module": "settlement[0p]",
+   "theorem": "never-fails-when-fees-fit",
+   "statement": "fees <= price (publish minimum) and price < 2^128/10^4 => no overflow, Some(split)",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.002,
+   "detail": ""
+  },
+  {
+   "module": "settlement[1p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[1p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.012,
+   "detail": ""
+  },
+  {
+   "module": "settlement[1p]",
+   "theorem": "creator-keeps-remainder",
+   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[1p]",
+   "theorem": "caps",
+   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.012,
+   "detail": ""
+  },
+  {
+   "module": "settlement[2p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[2p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.007,
+   "detail": ""
+  },
+  {
+   "module": "settlement[2p]",
+   "theorem": "creator-keeps-remainder",
+   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[2p]",
+   "theorem": "caps",
+   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.01,
+   "detail": ""
+  },
+  {
+   "module": "settlement[3p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[3p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.009,
+   "detail": ""
+  },
+  {
+   "module": "settlement[3p]",
+   "theorem": "creator-keeps-remainder",
+   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[3p]",
+   "theorem": "caps",
+   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.009,
+   "detail": ""
+  },
+  {
+   "module": "settlement[3p]",
+   "theorem": "never-fails-when-fees-fit",
+   "statement": "fees <= price (publish minimum) and price < 2^128/10^4 => no overflow, Some(split)",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.002,
+   "detail": ""
+  },
+  {
+   "module": "settlement[4p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[4p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.008,
+   "detail": ""
+  },
+  {
+   "module": "settlement[4p]",
+   "theorem": "creator-keeps-remainder",
+   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[4p]",
+   "theorem": "caps",
+   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.008,
+   "detail": ""
+  },
+  {
+   "module": "settlement[5p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[5p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.007,
+   "detail": ""
+  },
+  {
+   "module": "settlement[5p]",
+   "theorem": "creator-keeps-remainder",
+   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[5p]",
+   "theorem": "caps",
+   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.01,
+   "detail": ""
+  },
+  {
+   "module": "settlement[6p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[6p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.009,
+   "detail": ""
+  },
+  {
+   "module": "settlement[6p]",
+   "theorem": "creator-keeps-remainder",
+   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[6p]",
+   "theorem": "caps",
+   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.01,
+   "detail": ""
+  },
+  {
+   "module": "settlement[7p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[7p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.009,
+   "detail": ""
+  },
+  {
+   "module": "settlement[7p]",
+   "theorem": "creator-keeps-remainder",
+   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[7p]",
+   "theorem": "caps",
+   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.011,
+   "detail": ""
+  },
+  {
+   "module": "settlement[8p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[8p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.007,
+   "detail": ""
+  },
+  {
+   "module": "settlement[8p]",
+   "theorem": "creator-keeps-remainder",
+   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[8p]",
+   "theorem": "caps",
+   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.02,
+   "detail": ""
+  },
+  {
+   "module": "settlement[8p]",
+   "theorem": "never-fails-when-fees-fit",
+   "statement": "fees <= price (publish minimum) and price < 2^128/10^4 => no overflow, Some(split)",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.002,
+   "detail": ""
+  },
+  {
    "module": "billing[1p]",
    "theorem": "conservation-with-checkpoints",
-   "statement": "billed at checkpoints + final payouts + shareholders == price",
+   "statement": "billed at checkpoints + final payouts + reserve == price",
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
@@ -463,7 +413,7 @@
   {
    "module": "billing[3p]",
    "theorem": "conservation-with-checkpoints",
-   "statement": "billed at checkpoints + final payouts + shareholders == price",
+   "statement": "billed at checkpoints + final payouts + reserve == price",
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
@@ -483,7 +433,7 @@
   {
    "module": "billing[5p]",
    "theorem": "conservation-with-checkpoints",
-   "statement": "billed at checkpoints + final payouts + shareholders == price",
+   "statement": "billed at checkpoints + final payouts + reserve == price",
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
@@ -517,7 +467,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.001,
+   "seconds": 0.0,
    "detail": ""
   },
   {
@@ -548,6 +498,16 @@
    "expected": "proved",
    "ok": true,
    "seconds": 0.002,
+   "detail": ""
+  },
+  {
+   "module": "bonds",
+   "theorem": "deposit-adds",
+   "statement": "a top-up or a settlement reserve only adds to available; locked cover is untouched",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
    "detail": ""
   },
   {
@@ -611,363 +571,13 @@
    "detail": ""
   },
   {
-   "module": "dividends",
-   "theorem": "K preserved by a paid run",
-   "statement": "solvency invariant survives acc += inc",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "dividends",
-   "theorem": "K preserved by harvest",
-   "statement": "solvency invariant survives a dividend claim",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "dividends",
-   "theorem": "K preserved by share transfer/auction fill",
-   "statement": "solvency invariant survives moving shares",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "dividends",
-   "theorem": "K implies solvency",
-   "statement": "paid + everything claimable <= floor(TS*acc/E) (amount set aside)",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.003,
-   "detail": ""
-  },
-  {
-   "module": "dividends",
-   "theorem": "K holds at publish",
-   "statement": "creator holds all shares, acc = 0, nothing paid",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "dividends",
-   "theorem": "claims never negative",
-   "statement": "pending >= 0 whatever the debt (saturating)",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "dividends-v1",
-   "theorem": "K preserved by a paid run",
-   "statement": "solvency invariant survives acc += inc",
+   "module": "bonds",
+   "theorem": "invariant-preserved: settle(run1)+reserve",
+   "statement": "locked == sum(pending covers) and deposited == available+locked+withdrawn+compensated",
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
    "seconds": 0.002,
-   "detail": ""
-  },
-  {
-   "module": "dividends-v1",
-   "theorem": "K preserved by harvest",
-   "statement": "solvency invariant survives a dividend claim",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.002,
-   "detail": ""
-  },
-  {
-   "module": "dividends-v1",
-   "theorem": "K preserved by share transfer/auction fill",
-   "statement": "solvency invariant survives moving shares",
-   "outcome": "counterexample",
-   "expected": "counterexample",
-   "ok": true,
-   "seconds": 0.008,
-   "detail": "acc=1, s1=1000000000000000000, s2=1000000000000000000, debt1=0, debt2=1, q=1"
-  },
-  {
-   "module": "auction[2]",
-   "theorem": "balanced",
-   "statement": "shares bought == shares sold == clearing volume",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.007,
-   "detail": ""
-  },
-  {
-   "module": "auction[2]",
-   "theorem": "price-attains-max-volume",
-   "statement": "the chosen price itself trades the maximum volume",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.006,
-   "detail": ""
-  },
-  {
-   "module": "auction[2]",
-   "theorem": "volume-is-maximal",
-   "statement": "no price at all (not only order prices) would trade more",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.005,
-   "detail": ""
-  },
-  {
-   "module": "auction[2]",
-   "theorem": "limits-respected",
-   "statement": "every filled bid has limit >= P, every filled ask limit <= P, fill <= qty",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.005,
-   "detail": ""
-  },
-  {
-   "module": "auction[2]",
-   "theorem": "price-time-priority",
-   "statement": "if an order is not completely filled, every order ranked behind it gets nothing",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.006,
-   "detail": ""
-  },
-  {
-   "module": "auction[2]",
-   "theorem": "no-residual-cross",
-   "statement": "after clearing, no remaining bid is priced at or above a remaining ask",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.006,
-   "detail": ""
-  },
-  {
-   "module": "auction[2]",
-   "theorem": "no-trade-means-no-cross",
-   "statement": "if nothing clears, every bid is below every ask",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.004,
-   "detail": ""
-  },
-  {
-   "module": "auction[2]",
-   "theorem": "uniform-price-fair",
-   "statement": "buyers pay <= their limit (escrow covers it), sellers get >= their limit",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.011,
-   "detail": ""
-  },
-  {
-   "module": "auction[2]",
-   "theorem": "price-within-book",
-   "statement": "the clearing price lies between the tied candidate prices",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.004,
-   "detail": ""
-  },
-  {
-   "module": "auction[3]",
-   "theorem": "balanced",
-   "statement": "shares bought == shares sold == clearing volume",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.044,
-   "detail": ""
-  },
-  {
-   "module": "auction[3]",
-   "theorem": "price-attains-max-volume",
-   "statement": "the chosen price itself trades the maximum volume",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.027,
-   "detail": ""
-  },
-  {
-   "module": "auction[3]",
-   "theorem": "volume-is-maximal",
-   "statement": "no price at all (not only order prices) would trade more",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.011,
-   "detail": ""
-  },
-  {
-   "module": "auction[3]",
-   "theorem": "limits-respected",
-   "statement": "every filled bid has limit >= P, every filled ask limit <= P, fill <= qty",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.009,
-   "detail": ""
-  },
-  {
-   "module": "auction[3]",
-   "theorem": "price-time-priority",
-   "statement": "if an order is not completely filled, every order ranked behind it gets nothing",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.017,
-   "detail": ""
-  },
-  {
-   "module": "auction[3]",
-   "theorem": "no-residual-cross",
-   "statement": "after clearing, no remaining bid is priced at or above a remaining ask",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.037,
-   "detail": ""
-  },
-  {
-   "module": "auction[3]",
-   "theorem": "no-trade-means-no-cross",
-   "statement": "if nothing clears, every bid is below every ask",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.006,
-   "detail": ""
-  },
-  {
-   "module": "auction[3]",
-   "theorem": "uniform-price-fair",
-   "statement": "buyers pay <= their limit (escrow covers it), sellers get >= their limit",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.032,
-   "detail": ""
-  },
-  {
-   "module": "auction[3]",
-   "theorem": "price-within-book",
-   "statement": "the clearing price lies between the tied candidate prices",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.007,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "balanced",
-   "statement": "shares bought == shares sold == clearing volume",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.173,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "price-attains-max-volume",
-   "statement": "the chosen price itself trades the maximum volume",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.089,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "volume-is-maximal",
-   "statement": "no price at all (not only order prices) would trade more",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.026,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "limits-respected",
-   "statement": "every filled bid has limit >= P, every filled ask limit <= P, fill <= qty",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.023,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "price-time-priority",
-   "statement": "if an order is not completely filled, every order ranked behind it gets nothing",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.064,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "no-residual-cross",
-   "statement": "after clearing, no remaining bid is priced at or above a remaining ask",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.479,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "no-trade-means-no-cross",
-   "statement": "if nothing clears, every bid is below every ask",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.012,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "uniform-price-fair",
-   "statement": "buyers pay <= their limit (escrow covers it), sellers get >= their limit",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.022,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "price-within-book",
-   "statement": "the clearing price lies between the tied candidate prices",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.008,
    "detail": ""
   }
  ],

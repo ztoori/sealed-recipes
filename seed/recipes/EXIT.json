@@ -89,8 +89,7 @@
   "output": "swap.receipts",
   "listing": {
     "price_per_run": "1500000",
-    "royalty_bps": 1500,
-    "total_shares": "500000",
+    "reserve_bps": 1000,
     "bond": "40000000"
   },
   "implements": "job.wallet-exit@1.0.0"
