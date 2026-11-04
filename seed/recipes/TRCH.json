@@ -1,0 +1,144 @@
+{
+  "frs": "1.0",
+  "kind": "recipe",
+  "meta": {
+    "ticker": "TRCH",
+    "name": "Exit in two tranches",
+    "creator": "calm.testnet",
+    "description": "Sells half of every non-scam token now and the other half after a wait, through confidential intents to a fresh address. A durable, multi-transaction workflow: it checkpoints after every step, survives runner restarts, and pays each part's author as soon as that part is done."
+  },
+  "form": [
+    {
+      "id": "wallet",
+      "label": "Wallet to evacuate",
+      "type": "near.account",
+      "required": true,
+      "placeholder": "bob.testnet"
+    },
+    {
+      "id": "recipient",
+      "label": "Fresh address (generated in your browser)",
+      "type": "address.near",
+      "required": true,
+      "generator": "fresh-implicit"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "scan",
+      "part": "near.wallet-scanner@1.0.0",
+      "inputs": {
+        "account": "form.wallet"
+      },
+      "params": {},
+      "ui": {
+        "x": 0,
+        "y": 120
+      }
+    },
+    {
+      "id": "shield",
+      "part": "ai.spam-shield@1.1.0",
+      "inputs": {
+        "holdings": "scan.holdings"
+      },
+      "params": {
+        "policy": "Flag SCAM tokens (URLs in symbol, reward bait, impersonation). Answer JSON only."
+      },
+      "ui": {
+        "x": 260,
+        "y": 120
+      }
+    },
+    {
+      "id": "fresh",
+      "part": "addr.fresh-check@1.0.0",
+      "inputs": {
+        "recipient": "form.recipient"
+      },
+      "params": {},
+      "ui": {
+        "x": 260,
+        "y": 300
+      }
+    },
+    {
+      "id": "first",
+      "part": "intents.confidential-swap@1.0.0",
+      "inputs": {
+        "tokens": "shield.clean",
+        "to": "fresh.fresh",
+        "target": "const.usdc"
+      },
+      "params": {
+        "slippage_bps": 120,
+        "batch_order": "largest-first",
+        "fraction_bps": 5000
+      },
+      "ui": {
+        "x": 540,
+        "y": 40
+      }
+    },
+    {
+      "id": "pause",
+      "part": "time.wait@1.0.0",
+      "inputs": {
+        "holdings": "shield.clean"
+      },
+      "params": {
+        "seconds": 20
+      },
+      "ui": {
+        "x": 540,
+        "y": 220
+      }
+    },
+    {
+      "id": "second",
+      "part": "intents.confidential-swap@1.0.0",
+      "inputs": {
+        "tokens": "pause.holdings",
+        "to": "fresh.fresh",
+        "target": "const.usdc"
+      },
+      "params": {
+        "slippage_bps": 120,
+        "batch_order": "largest-first",
+        "fraction_bps": 5000
+      },
+      "ui": {
+        "x": 800,
+        "y": 220
+      }
+    },
+    {
+      "id": "merge",
+      "part": "swap.merge@1.0.0",
+      "inputs": {
+        "a": "first.receipts",
+        "b": "second.receipts"
+      },
+      "params": {},
+      "ui": {
+        "x": 1060,
+        "y": 120
+      }
+    }
+  ],
+  "consts": {
+    "usdc": {
+      "type": "asset.id",
+      "value": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"
+    }
+  },
+  "output": "merge.receipts",
+  "listing": {
+    "price_per_run": "1200000",
+    "royalty_bps": 1500,
+    "total_shares": "400000",
+    "bond": "20000000",
+    "settle_mode": "checkpoint"
+  },
+  "implements": "job.wallet-exit@1.0.0"
+}

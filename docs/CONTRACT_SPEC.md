@@ -14,6 +14,62 @@ Shares are integer units (no decimals).
 
 The body of this file (from **Roles** on) is written in v3 terms. Newest first.
 
+### v4 changes (durable runs, partial settlement, versioned recipes)
+
+**Init.** `new(owner, payment_token, protocol_account, protocol_fee_bps, batch_interval_ns, update_delay_ns: U64)`.
+`update_delay_ns` is the notice period before a new recipe version takes effect (24 h suggested on mainnet; the
+local demo uses 30 s). `get_config` returns it.
+
+**Recipe gains** (appended after `bond_locked`, in this order, also in `recipe_published`):
+`settle_mode: "final" | "checkpoint"`, `version: u32 (1)`, `pending_sealed_hash: string ("" when none)`,
+`update_effective_ns: U64 ("0" when none)`.
+
+`publish_recipe(..., total_shares, settle_mode: Option<String>)` — default `"final"`; anything else than
+`"final"`/`"checkpoint"` panics `settle_mode must be "final" or "checkpoint"`.
+
+**Versioning with notice.**
+- `update_sealed(id, sealed_hash)` — creator only; `sealed_hash` must be 64 lowercase hex
+  (`sealed_hash must be 64 lowercase hex`) and differ from the current one (`same as current version`). Activates any
+  due pending update first, then sets `pending_sealed_hash`, `update_effective_ns = now + update_delay_ns` (replacing
+  an earlier pending update) and emits `recipe_update_scheduled {recipe_id, sealed_hash, version, effective_ns}` where
+  `version` is the number it will get. The parts list cannot change: a different parts list is a different recipe.
+- `cancel_update(id)` — creator only; requires a pending update (`no pending update`); clears it; emits
+  `recipe_update_cancelled {recipe_id, sealed_hash}`.
+- `apply_update(id)` — anyone; activates the pending update if it is due (`update not due` otherwise).
+- Activation (also done lazily in `ft_on_transfer` action `run`, before the run checks, and in `update_sealed` after the creator and hash-format checks; an activation stays even if an Intents payment is then rejected): when
+  `pending_sealed_hash != ""` and `block_timestamp >= update_effective_ns`: `sealed_hash = pending_sealed_hash`,
+  `version += 1`, pending cleared, emits `recipe_updated {recipe_id, sealed_hash, version}`.
+- A paid run keeps the `sealed_hash` it paid for (unchanged from v1), and quotes stay bound to `sealed_hash`, so a
+  quote for the previous version is rejected after activation. The marketplace retains every version a pending run
+  references.
+
+**Run gains** (appended after `covered`, in this order, also in `run_requested`):
+`checkpoint_seq: u32 (0)`, `state_hash: string ("")`, `parts_billed: string[] ([])`, `billed: U128 ("0")`,
+`last_progress_ns: U64 (= created_ns)`.
+
+**Checkpoints.** `checkpoint_run(run_id, seq: u32, state_hash, parts_done: string[], signature: Base64)` — anyone may
+relay. Checks, in order: `unknown run`, `run not pending`, runner active (`runner inactive`),
+`seq must be checkpoint_seq + 1`, `state_hash must be 64 lowercase hex`, signature over
+```
+frs-ckpt-v1|<contract>|<run_id>|<recipe_id>|<seq>|<state_hash>|<parts_done joined by ",">
+```
+(`invalid runner signature`); then, if `parts_done` is non-empty: the recipe's `settle_mode` must be `"checkpoint"`
+(`parts can only be billed at checkpoints in checkpoint mode`) and `parts_billed + parts_done` must be a sub-multiset
+of the recipe's parts (`parts_done not part of recipe`). Effects: each part in `parts_done` is paid its
+`fee_per_call` to its author now; `billed += Σ fees`; `parts_billed += parts_done`; `checkpoint_seq = seq`;
+`state_hash` stored; `last_progress_ns = now`. Emits `run_checkpoint {run_id, seq, state_hash, parts_done, billed, payouts}`
+where `payouts` lists the part payments made by this call (`[]` when none).
+A checkpoint with empty `parts_done` is a heartbeat: it records progress and extends the timeout.
+
+**Settlement with billed parts.** `report_run` outcome `ok`: `parts_billed` must be a sub-multiset of `parts_used`
+(`parts_used must include billed parts`); the split is computed on the full `parts_used` exactly as before, but
+the parts already billed are not paid again and do not appear in `payouts`. So `billed + Σ payouts + shareholder_pool = price`.
+Outcomes `fail` / `abort` and `reclaim_run` refund `amount - billed` (work already done and billed stays paid);
+`run_refunded.amount` is that refund.
+
+**Timeout.** `reclaim_run` requires `block_timestamp >= last_progress_ns + RUN_TIMEOUT_NS`, so a long workflow that
+keeps checkpointing is never reclaimable mid-way.
+
 ### v3 changes (hardened quotes and bonds, after independent review)
 
 These supersede the v2 quote, bond and report rules wherever they differ. Implemented in the Rust contract (all 7 `bonds.json` cases run end to end).

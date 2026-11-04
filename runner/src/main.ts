@@ -19,14 +19,14 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { utf8ToBytes } from '@noble/hashes/utils.js';
 import { open, seal, sealedHash, base64, type SealedEnvelope } from '../../core/src/seal.js';
-import { runReportMessage, quoteMessage, type Outcome } from '../../core/src/ledger.js';
+import { runReportMessage, quoteMessage, checkpointMessage, type Outcome } from '../../core/src/ledger.js';
 import { jobHash, type JobPayload } from '../../core/src/jobs.js';
 import { measure, fetchPrices, creditedDelivered } from './metrics.js';
 import { hashObject, sha256Hex } from '../../core/src/canonical.js';
 import { reportData, type RunnerAttestation } from '../../core/src/attestation.js';
 import { computeCodehash, loadCatalog } from '../../core/src/codehash.js';
 import { validateRecipe, type Recipe } from '../../core/src/frs.js';
-import { execute, parseRewrites } from './executor.js';
+import { execute, parseRewrites, type ResumePoint } from './executor.js';
 import { loadKeys } from './keys.js';
 import type { ApprovalRequest, ApprovalResult } from './types.js';
 
@@ -44,13 +44,23 @@ const QUOTE_TTL_NS = 10n * 60n * 1_000_000_000n;
 /** a quoted run is re-priced right before execution; below this share of the quoted promise the runner aborts
  *  (refund, bond untouched) instead of executing into a shortfall the buyer engineered by emptying the wallet */
 const RECHECK_MIN_BPS = 9800n;
+/** durable runs: where checkpoints are stored (the marketplace keeps ciphertext; only this runner can open it) */
+const MARKET = env.MARKET_URL ?? CHAIN.replace(/\/api\/chain\/?$/, '');
+/** in "final" settle mode, a heartbeat checkpoint goes on-chain at least this often so long runs never time out */
+const HEARTBEAT_MS = Number(env.FRS_HEARTBEAT_MS ?? 5 * 60_000);
+
+/** A signed, sealed checkpoint record as stored by the marketplace. */
+interface CheckpointRecord { run_id: string; local_seq: number; state_hash: string; envelope: SealedEnvelope; signature: string }
+interface DurableState { v: 1; run_id: string; recipe_id: string; local_seq: number; fresh: string; point: ResumePoint }
+const stateMessage = (runId: string, recipeId: string, seq: number, stateHash: string) => ['frs-state-v1', CONTRACT_ID, runId, recipeId, String(seq), stateHash].join('|');
+interface ResumeInput { checkpoint: CheckpointRecord | null; approvals: Record<string, ApprovalResult> }
 const catalog = loadCatalog(ROOT);
 const composeHash = sha256Hex(readFileSync(resolve(ROOT, 'runner/docker-compose.yml'), 'utf8').replace(/\r\n/g, '\n'));
 const { codehash } = computeCodehash(ROOT);
 const keys = await loadKeys(env.TEE_MODE ?? 'local-dev', resolve(ROOT, '.data/runner-dev-keys.json'), composeHash);
 
 type Ev = { seq: number; at: number; type: string; data: Record<string, unknown> };
-interface Job { runId: string; recipeId: string; events: Ev[]; listeners: Set<(e: Ev) => void>; approval?: { resolve: (r: ApprovalResult) => void; req: ApprovalRequest }; done: boolean }
+interface Job { runId: string; recipeId: string; events: Ev[]; listeners: Set<(e: Ev) => void>; approval?: { resolve: (r: ApprovalResult) => void; req: ApprovalRequest; node: string }; done: boolean }
 const jobs = new Map<string, Job>();
 
 function emit(job: Job, type: string, data: Record<string, unknown>) {
@@ -87,7 +97,7 @@ async function attestation(nonce: string): Promise<RunnerAttestation> {
   };
 }
 
-async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: SealedEnvelope) {
+async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: SealedEnvelope, resumeIn?: ResumeInput) {
   let replyTo = '';
   let reportable = false; // true once the run is verified as paid, pending and assigned to this runner
   let reported = false;
@@ -106,9 +116,9 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
   const ZERO = '0'.repeat(64);
   try {
     // the run (what was paid for) is the source of truth; the recipe is taken from it, not from the request
-    const run = await chainView<{ status: string; inputs_hash: string; recipe_id: string; buyer: string; sealed_hash?: string; job_hash?: string; promised?: string }>(`runs/${job.runId}`);
+    const run = await chainView<{ status: string; inputs_hash: string; recipe_id: string; buyer: string; sealed_hash?: string; job_hash?: string; promised?: string; checkpoint_seq?: number }>(`runs/${job.runId}`);
     if (run.recipe_id !== job.recipeId) throw new Error(`run ${job.runId} paid for ${run.recipe_id}, not ${job.recipeId}`);
-    const recipeOnChain = await chainView<{ sealed_hash: string; runner_id: string; parts: string[] }>(`recipes/${run.recipe_id}`);
+    const recipeOnChain = await chainView<{ sealed_hash: string; runner_id: string; parts: string[]; settle_mode?: string }>(`recipes/${run.recipe_id}`);
     if (run.status !== 'Pending') throw new Error(`run is ${run.status}, not Pending (was it paid?)`);
     if (recipeOnChain.runner_id !== RUNNER_ID) throw new Error('recipe is assigned to a different runner');
     reportable = true;
@@ -140,11 +150,47 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
     const jobType = catalog.jobs?.find((j) => j.id === recipe?.implements);
     const secrets = { nearAiKey: env.NEAR_AI_API_KEY, oneClickJwt: env.ONECLICK_JWT };
 
+    // ---- durable runs: open the last checkpoint (if resuming) and set up checkpointing ----
+    let localSeq = 0, onchainSeq = Number(run.checkpoint_seq ?? 0), lastOnchain = Date.now();
+    let resumePoint: ResumePoint | undefined;
+    let freshSaved: bigint | undefined;
+    const cp = resumeIn?.checkpoint;
+    if (cp) {
+      const okSig = nacl.sign.detached.verify(utf8ToBytes(stateMessage(job.runId, job.recipeId, cp.local_seq, cp.state_hash)), base64.dec(cp.signature), keys.sign.publicKey);
+      if (!okSig || sealedHash(cp.envelope) !== cp.state_hash) throw new Error('checkpoint was not signed by this runner or was altered');
+      const st = open<DurableState>(cp.envelope, keys.box.secretKey);
+      if (st.run_id !== job.runId || st.local_seq !== cp.local_seq) throw new Error('checkpoint belongs to another run');
+      resumePoint = st.point; localSeq = st.local_seq; freshSaved = BigInt(st.fresh);
+      emit(job, 'resuming', { local_seq: localSeq, completed_parts: st.point.index, mid_part: st.point.node ?? null, onchain_seq: onchainSeq });
+    }
+    const settleMode = recipeOnChain.settle_mode ?? 'final';
+    const checkpoint = async (point: ResumePoint, partsDone: string[]) => {
+      localSeq += 1;
+      const state: DurableState = { v: 1, run_id: job.runId, recipe_id: job.recipeId, local_seq: localSeq, fresh: String(fresh), point };
+      const envelope = seal(state, keys.encPkHex, 'state'); // only this runner (in its TEE) can open it
+      const state_hash = sealedHash(envelope);
+      const signature = base64.enc(nacl.sign.detached(utf8ToBytes(stateMessage(job.runId, job.recipeId, localSeq, state_hash)), keys.sign.secretKey));
+      // durable write first: the run does not move past this point until the marketplace has stored the checkpoint
+      const st = await fetch(`${MARKET}/api/internal/checkpoints`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-runner-token': TOKEN }, body: JSON.stringify({ run_id: job.runId, local_seq: localSeq, state_hash, envelope, signature } satisfies CheckpointRecord) });
+      if (!st.ok) throw new Error('checkpoint store failed: ' + (await st.text()));
+      emit(job, 'checkpoint', { local_seq: localSeq, state_hash, completed_parts: point.index, mid_part: point.node ?? null });
+      const bill = settleMode === 'checkpoint' ? partsDone : [];
+      if (bill.length || Date.now() - lastOnchain >= HEARTBEAT_MS) {
+        const seq = onchainSeq + 1;
+        const sig = base64.enc(nacl.sign.detached(utf8ToBytes(checkpointMessage(CONTRACT_ID, job.runId, job.recipeId, seq, state_hash, bill)), keys.sign.secretKey));
+        const r = await fetch(`${CHAIN}/checkpoint_run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ run_id: job.runId, seq, state_hash, parts_done: bill, signature: sig }) });
+        const out = await r.json();
+        if (!r.ok) throw new Error('checkpoint_run rejected: ' + JSON.stringify(out));
+        onchainSeq = seq; lastOnchain = Date.now();
+        emit(job, 'checkpoint_onchain', { seq, billed_parts: bill, ...out });
+      }
+    };
+
     // bonded runs: re-price the job right before executing. If the wallet no longer holds what was quoted
     // (e.g. the buyer moved funds out after paying), abort with a refund instead of paying out the bond.
     const quotedPromise = BigInt(run.promised ?? '0');
-    let fresh = 0n; // the promise re-measured right before executing (bonded runs only)
-    if (run.job_hash && quotedPromise > 0n && jobType) {
+    let fresh = freshSaved ?? 0n; // the promise re-measured right before executing (bonded runs only)
+    if (!resumePoint && run.job_hash && quotedPromise > 0n && jobType) {
       const dry = await execute(`recheck-${job.runId}`, recipe, inputs, { catalog, rewrites, mode: 'quote', emit: () => {}, secrets, requestApproval: async () => ({ approved: false, txHashes: [] }) });
       fresh = dry.ok ? measure(jobType, dry.output, await fetchPrices(ONECLICK)).promised : 0n;
       const okToRun = fresh * 10_000n >= quotedPromise * RECHECK_MIN_BPS;
@@ -160,10 +206,10 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
 
     const PUBLIC = new Set(['part_start', 'part_done']);
     const res = await execute(job.runId, recipe, inputs, {
-      catalog, rewrites, secrets,
+      catalog, rewrites, secrets, checkpoint, resume: resumePoint, priorApprovals: resumeIn?.approvals,
       emit: (t, d) => (PUBLIC.has(t) ? emit(job, t, d) : priv(t, d)),
       requestApproval: (node, req) => new Promise<ApprovalResult>((resolveApproval) => {
-        job.approval = { resolve: resolveApproval, req };
+        job.approval = { resolve: resolveApproval, req, node };
         emit(job, 'approval_pending', { node, transactions: req.transactions.length });
         priv('approval_required', { node, ...req });
         setTimeout(() => { if (job.approval?.req === req) { job.approval = undefined; resolveApproval({ approved: false, txHashes: [] }); } }, 5 * 60_000);
@@ -211,6 +257,22 @@ app.post('/runs', auth, (req, res) => {
   jobs.set(run_id, job);
   emit(job, 'accepted', { runner_id: RUNNER_ID, tee: keys.tee });
   void runJob(job, sealed_recipe, sealed_inputs);
+  res.status(202).json({ ok: true });
+});
+/**
+ * Durable runs: continue a paid run after this runner restarted. The marketplace sends the same sealed recipe and
+ * inputs, the last checkpoint it stored (signed by this runner, sealed to this runner) and the approvals it relayed.
+ */
+app.post('/runs/:id/resume', auth, (req, res) => {
+  const run_id = String(req.params.id);
+  const { recipe_id, sealed_recipe, sealed_inputs, checkpoint, approvals } = req.body ?? {};
+  if (!recipe_id || !sealed_recipe || !sealed_inputs) { res.status(400).json({ error: 'recipe_id, sealed_recipe, sealed_inputs required' }); return; }
+  const live = jobs.get(run_id);
+  if (live && !live.done) { res.status(409).json({ error: 'run is still executing here' }); return; }
+  const job: Job = { runId: run_id, recipeId: recipe_id, events: [], listeners: new Set(), done: false };
+  jobs.set(run_id, job);
+  emit(job, 'accepted', { runner_id: RUNNER_ID, tee: keys.tee, resumed: true });
+  void runJob(job, sealed_recipe, sealed_inputs, { checkpoint: checkpoint ?? null, approvals: approvals ?? {} });
   res.status(202).json({ ok: true });
 });
 /**
@@ -268,6 +330,9 @@ app.post('/runs/:id/approval', auth, (req, res) => {
   r.resolve(result);
   res.json({ ok: true });
 });
+
+/** local demo only: simulate a hard crash (process killed mid-run) to show runs resuming from checkpoints */
+if (env.FRS_ALLOW_CRASH === '1') app.post('/__crash', auth, (_, res) => { res.json({ ok: true }); setTimeout(() => process.exit(137), 20); });
 
 const HOST = env.RUNNER_HOST ?? '127.0.0.1';
 app.listen(PORT, HOST, () => {

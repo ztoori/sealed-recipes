@@ -36,7 +36,7 @@ What it does:
 ## Test
 
 ```bash
-cargo test          # 73 unit tests (including conformance with the proofs in `verification/`), including the shared vectors in ../test-vectors/*.json (settlement, dividends, batch auctions, bonds)
+cargo test          # 102 unit tests (including conformance with the proofs in `verification/`), including the shared vectors in ../test-vectors/*.json (settlement, dividends, batch auctions, bonds)
 cargo clippy --all-targets
 ```
 
@@ -67,7 +67,7 @@ export TOKEN=usdc.fakes.testnet
 near account create-account sponsor-by-faucet-service $CONTRACT autogenerate-new-keypair save-to-keychain network-config testnet create
 
 cargo near deploy build-non-reproducible-wasm $CONTRACT \
-  with-init-call new json-args "{\"owner\":\"$OWNER\",\"payment_token\":\"$TOKEN\",\"protocol_account\":\"$OWNER\",\"protocol_fee_bps\":200,\"batch_interval_ns\":\"60000000000\"}" \
+  with-init-call new json-args "{\"owner\":\"$OWNER\",\"payment_token\":\"$TOKEN\",\"protocol_account\":\"$OWNER\",\"protocol_fee_bps\":200,\"batch_interval_ns\":\"60000000000\",\"update_delay_ns\":\"86400000000000\"}" \
   prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
   network-config testnet sign-with-keychain send
 
@@ -89,16 +89,19 @@ The contract pays for its own storage in v1, so there are no per-user storage de
 
 | Method | Kind | Args |
 |---|---|---|
-| `new` | init | `owner: AccountId, payment_token: AccountId, protocol_account: AccountId, protocol_fee_bps: u16` (≤1000), `batch_interval_ns: U64` (>0) |
+| `new` | init | `owner: AccountId, payment_token: AccountId, protocol_account: AccountId, protocol_fee_bps: u16` (≤1000), `batch_interval_ns: U64` (>0), `update_delay_ns: U64` (notice before a new recipe version takes effect) |
 | `add_runner` | owner | `id: AccountId, signing_pk: String ("ed25519:…"), enc_pk_hex: String (64 hex), codehash: String, fee_per_run: U128` |
 | `set_runner_active` | owner | `id: AccountId, active: bool` |
 | `register_part` | call | `id: String, version: String, fee_per_call: U128, manifest_hash: String` |
-| `publish_recipe` | call | `id: String (^[A-Z0-9]{3,6}$), name: String, sealed_hash: String, runner_id: AccountId, parts: Vec<String>, price_per_run: U128, royalty_bps: u16 (≤5000), total_shares: U128` |
-| `update_sealed` | creator | `id: String, sealed_hash: String` |
+| `publish_recipe` | call | `id: String (^[A-Z0-9]{3,6}$), name: String, sealed_hash: String, runner_id: AccountId, parts: Vec<String>, price_per_run: U128, royalty_bps: u16 (≤5000), total_shares: U128, settle_mode: Option<String>` (`"final"` default, or `"checkpoint"`) |
+| `update_sealed` | creator | `id: String, sealed_hash: String` (64 hex): announces the next version, active after `update_delay_ns` |
+| `cancel_update` | creator | `id: String` |
+| `apply_update` | anyone, once due | `id: String` (also applied lazily by the next run payment) |
+| `checkpoint_run` | anyone relays; runner-signed `frs-ckpt-v1` | `run_id: String, seq: u32, state_hash: String, parts_done: Vec<String>, signature: Base64VecU8`: records progress (extends the timeout) and, in checkpoint mode, pays the parts done |
 | `ft_on_transfer` | payment token only | `sender_id: AccountId, amount: U128, msg: String` → `U128("0")` |
 | `report_run` | anyone (signature-gated) | `run_id: String, outcome: String ("ok" \| "fail" \| "abort"), parts_used: Vec<String>, output_hash: String, delivered: U128, signature: Base64VecU8` → `Vec<Payout>` |
 | `withdraw_bond` | creator | `recipe_id: String, amount: U128` (≤ `bond_available`; credited to the creator's balance) |
-| `reclaim_run` | buyer, after 15 min | `run_id: String` |
+| `reclaim_run` | buyer, 15 min after the last progress (payment or checkpoint) | `run_id: String`; refunds `amount - billed` |
 | `withdraw` | call, 1 yocto | `amount: Option<U128>` (default: whole balance) |
 | `on_withdraw` | private callback | `account_id, amount` |
 | `transfer_shares` | call | `recipe_id: String, receiver_id: AccountId, qty: U128` |
@@ -145,3 +148,12 @@ Events: NEP-297 `EVENT_JSON:` logs with `standard: "fungible-recipes"`, `version
 `runner_added`, `part_registered`, `recipe_published`, `recipe_updated`, `run_requested`, `frs_settlement`,
 `run_refunded`, `transfer_rejected`, `order_placed`, `batch_cleared`, `order_cancelled`, `shares_transferred`, `dividends_claimed`,
 `withdrawn`, `withdraw_failed`, `bond_posted` and `bond_withdrawn`.
+
+## v4: durable runs and versioned recipes
+
+- Runner-signed checkpoints (`checkpoint_run`) record progress on-chain and extend the reclaim timeout, so long
+  workflows can't be reclaimed mid-way. In `settle_mode: "checkpoint"` each checkpoint also pays the parts that
+  completed since the last one; the final settlement skips them, and a refund returns `amount - billed`.
+- `update_sealed` announces a version that activates after `update_delay_ns`; runs paid before then keep the
+  version they paid for. See `docs/CONTRACT_SPEC.md` ("v4 changes").
+

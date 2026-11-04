@@ -27,9 +27,14 @@ export interface LedgerRecipe {
   price_per_run: bigint; royalty_bps: number; total_shares: bigint; acc_per_share: bigint; runs: bigint; revenue: bigint; listed: boolean; created_ns: bigint;
   /** track record + bond (v2) */
   failed: bigint; aborted: bigint; promised_total: bigint; delivered_total: bigint; compensated_total: bigint; bond_available: bigint; bond_locked: bigint;
+  /** v4: durable runs and versions with notice */
+  settle_mode: SettleMode; version: number; pending_sealed_hash: string; update_effective_ns: bigint;
 }
+export type SettleMode = 'final' | 'checkpoint';
 export type RunStatus = 'Pending' | 'Settled' | 'Refunded';
-export interface LedgerRun { run_id: string; recipe_id: string; buyer: string; amount: bigint; inputs_hash: string; sealed_hash: string; job_hash: string; expected: bigint; promised: bigint; covered: bigint; status: RunStatus; created_ns: bigint }
+export interface LedgerRun { run_id: string; recipe_id: string; buyer: string; amount: bigint; inputs_hash: string; sealed_hash: string; job_hash: string; expected: bigint; promised: bigint; covered: bigint; status: RunStatus; created_ns: bigint;
+  /** v4: durable runs */
+  checkpoint_seq: number; state_hash: string; parts_billed: string[]; billed: bigint; last_progress_ns: bigint }
 export interface LedgerOrder { id: number; recipe_id: string; owner: string; side: 'Bid' | 'Ask'; price: bigint; qty: bigint; created_ns: bigint }
 export interface LedgerEvent { standard: string; version: string; event: string; data: Record<string, unknown>[]; block_height: number; timestamp_ns: string; tx_hash: string; signer: string }
 export interface Payout { account_id: string; role: string; amount: bigint }
@@ -42,6 +47,16 @@ export function runReportMessage(contractId: string, runId: string, recipeId: st
 /** what a runner signs when a recipe quotes for a job: bound to the recipe version, the sealed job, the buyer and the cover */
 export interface QuoteFields { sealed_hash: string; job_hash: string; expected: string; promised: string; cover: string; expires_ns: string }
 export interface SignedQuote extends QuoteFields { signature: string }
+/** what a runner signs at a checkpoint (v4): progress, the sealed state's hash, and parts to bill now */
+export function checkpointMessage(contractId: string, runId: string, recipeId: string, seq: number, stateHash: string, partsDone: string[]): string {
+  return ['frs-ckpt-v1', contractId, runId, recipeId, String(seq), stateHash, partsDone.join(',')].join('|');
+}
+/** removes `sub` from `pool` by first occurrences; null when `sub` is not a sub-multiset */
+export function subtractMultiset(pool: string[], sub: string[]): string[] | null {
+  const rest = [...pool];
+  for (const x of sub) { const i = rest.indexOf(x); if (i < 0) return null; rest.splice(i, 1); }
+  return rest;
+}
 export function quoteMessage(contractId: string, recipeId: string, inputsHash: string, buyer: string, q: QuoteFields): string {
   return ['frs-quote-v2', contractId, recipeId, q.sealed_hash, q.job_hash, inputsHash, buyer, q.expected, q.promised, q.cover, q.expires_ns].join('|');
 }
@@ -77,12 +92,14 @@ export class LocalLedger {
   private predecessor = '';
   private txCounter = 0;
 
-  constructor(o: { contractId: string; owner: string; paymentToken: string; protocolAccount: string; protocolFeeBps: number; batchIntervalNs?: bigint; clock?: () => bigint }) {
+  readonly updateDelayNs: bigint;
+  constructor(o: { contractId: string; owner: string; paymentToken: string; protocolAccount: string; protocolFeeBps: number; batchIntervalNs?: bigint; updateDelayNs?: bigint; clock?: () => bigint }) {
     assert(o.protocolFeeBps <= 1000, 'protocol fee too high');
     this.contractId = o.contractId; this.owner = o.owner; this.paymentToken = o.paymentToken;
     this.protocolAccount = o.protocolAccount; this.protocolFeeBps = o.protocolFeeBps;
     this.clock = o.clock ?? (() => BigInt(Date.now()) * 1_000_000n);
     this.batchIntervalNs = o.batchIntervalNs ?? 12n * 1_000_000_000n;
+    this.updateDelayNs = o.updateDelayNs ?? 24n * 3600n * 1_000_000_000n;
   }
 
   /** Execute a call "as" a NEAR account; mirrors one transaction/receipt. */
@@ -153,7 +170,7 @@ export class LocalLedger {
     this.emit('part_registered', { ...b });
   }
 
-  publish_recipe(a: { id: string; name: string; sealed_hash: string; runner_id: string; parts: string[]; price_per_run: string; royalty_bps: number; total_shares: string }) {
+  publish_recipe(a: { id: string; name: string; sealed_hash: string; runner_id: string; parts: string[]; price_per_run: string; royalty_bps: number; total_shares: string; settle_mode?: string | null }) {
     const creator = this.caller();
     assert(/^[A-Z0-9]{3,6}$/.test(a.id), 'invalid ticker');
     assert(!this.recipes.has(a.id), 'ticker taken');
@@ -164,8 +181,11 @@ export class LocalLedger {
     const fees = a.parts.map((b) => { const blk = this.parts.get(b); assert(blk?.active, `unknown part ${b}`); return blk.fee_per_call; });
     const price = BigInt(a.price_per_run);
     assert(minimumPrice(price, this.protocolFeeBps, runner.fee_per_run, fees), 'price below minimum viable price');
+    const mode = a.settle_mode ?? 'final';
+    assert(mode === 'final' || mode === 'checkpoint', 'settle_mode must be "final" or "checkpoint"');
     const r: LedgerRecipe = { id: a.id, name: a.name, creator, sealed_hash: a.sealed_hash, runner_id: a.runner_id, parts: a.parts, price_per_run: price, royalty_bps: a.royalty_bps, total_shares: total, acc_per_share: 0n, runs: 0n, revenue: 0n, listed: true, created_ns: this.now(),
-      failed: 0n, aborted: 0n, promised_total: 0n, delivered_total: 0n, compensated_total: 0n, bond_available: 0n, bond_locked: 0n };
+      failed: 0n, aborted: 0n, promised_total: 0n, delivered_total: 0n, compensated_total: 0n, bond_available: 0n, bond_locked: 0n,
+      settle_mode: mode as SettleMode, version: 1, pending_sealed_hash: '', update_effective_ns: 0n };
     this.recipes.set(a.id, r);
     const h = this.holding(a.id, creator); h.shares = total; this.rebase(r, h);
     this.batches.set(a.id, { id: 1, opened_ns: this.now() }); // opening auction
@@ -173,10 +193,32 @@ export class LocalLedger {
     this.emit('recipe_published', { ...pub, runs: 0 });
   }
 
+  // ---------- versions with notice (v4) ----------
+  /** activates a due pending update (the contract does this lazily too) */
+  private activate(r: LedgerRecipe) {
+    if (r.pending_sealed_hash && this.now() >= r.update_effective_ns) {
+      r.sealed_hash = r.pending_sealed_hash; r.version += 1; r.pending_sealed_hash = ''; r.update_effective_ns = 0n;
+      this.emit('recipe_updated', { recipe_id: r.id, sealed_hash: r.sealed_hash, version: r.version });
+    }
+  }
   update_sealed(a: { id: string; sealed_hash: string }) {
-    const r = this.recipes.get(a.id); assert(r, 'no recipe'); assert(r.creator === this.caller(), 'only creator');
-    r.sealed_hash = a.sealed_hash; // affects runs paid from now on; paid runs keep their snapshot
-    this.emit('recipe_updated', { recipe_id: a.id, sealed_hash: a.sealed_hash });
+    const r = this.recipes.get(a.id); assert(r, 'unknown recipe'); assert(r.creator === this.caller(), 'creator only');
+    assert(/^[0-9a-f]{64}$/.test(a.sealed_hash), 'sealed_hash must be 64 lowercase hex');
+    this.activate(r);
+    assert(a.sealed_hash !== r.sealed_hash, 'same as current version');
+    r.pending_sealed_hash = a.sealed_hash; r.update_effective_ns = this.now() + this.updateDelayNs;
+    this.emit('recipe_update_scheduled', { recipe_id: r.id, sealed_hash: a.sealed_hash, version: r.version + 1, effective_ns: r.update_effective_ns });
+  }
+  cancel_update(a: { id: string }) {
+    const r = this.recipes.get(a.id); assert(r, 'unknown recipe'); assert(r.creator === this.caller(), 'creator only');
+    assert(r.pending_sealed_hash, 'no pending update');
+    const sh = r.pending_sealed_hash; r.pending_sealed_hash = ''; r.update_effective_ns = 0n;
+    this.emit('recipe_update_cancelled', { recipe_id: r.id, sealed_hash: sh });
+  }
+  apply_update(a: { id: string }) {
+    const r = this.recipes.get(a.id); assert(r, 'unknown recipe');
+    assert(r.pending_sealed_hash && this.now() >= r.update_effective_ns, 'update not due');
+    this.activate(r);
   }
 
   // ---------- NEAR Intents delivery (ft_transfer_call from payment token) ----------
@@ -195,6 +237,7 @@ export class LocalLedger {
       return '0';
     };
     if (m.action === 'run') {
+      { const due = this.recipes.get(m.recipe_id); if (due) this.activate(due); } // a due update takes effect before the run checks
       if (!/^[A-Za-z0-9_-]{1,64}$/.test(m.run_id ?? '')) return reject('run_id must match ^[A-Za-z0-9_-]{1,64}$');
       if (!/^[0-9a-f]{64}$/.test(m.inputs_hash ?? '')) return reject('inputs_hash must be 64 lowercase hex');
       if (this.runs.has(m.run_id)) return reject('run exists');
@@ -228,7 +271,8 @@ export class LocalLedger {
       if (quoteKey) this.usedQuotes.add(quoteKey);
       this.credit(owner, amount - r.price_per_run);
       this.setBond(r, bondLock(this.bondOf(r), covered)!);
-      const run: LedgerRun = { run_id: m.run_id, recipe_id: r.id, buyer: owner, amount: r.price_per_run, inputs_hash: m.inputs_hash, sealed_hash: r.sealed_hash, job_hash, expected, promised, covered, status: 'Pending', created_ns: this.now() };
+      const run: LedgerRun = { run_id: m.run_id, recipe_id: r.id, buyer: owner, amount: r.price_per_run, inputs_hash: m.inputs_hash, sealed_hash: r.sealed_hash, job_hash, expected, promised, covered, status: 'Pending', created_ns: this.now(),
+        checkpoint_seq: 0, state_hash: '', parts_billed: [], billed: 0n, last_progress_ns: this.now() };
       this.runs.set(m.run_id, run);
       this.emit('run_requested', { ...run });
       return '0';
@@ -266,20 +310,22 @@ export class LocalLedger {
     const sig = base64.dec(a.signature);
     assert(sig.length === 64 && nacl.sign.detached.verify(utf8ToBytes(msg), sig, pk), 'invalid runner signature');
     if (a.outcome !== 'ok') {
-      run.status = 'Refunded'; this.credit(run.buyer, run.amount);
+      run.status = 'Refunded'; this.credit(run.buyer, run.amount - run.billed); // parts billed at checkpoints stay paid
       this.releaseCover(r, run);
       if (a.outcome === 'abort') r.aborted += 1n; else r.failed += 1n;
-      this.emit('run_refunded', { run_id: run.run_id, buyer: run.buyer, amount: run.amount, reason: a.outcome === 'abort' ? 'runner_aborted' : 'runner_reported_failure' });
+      this.emit('run_refunded', { run_id: run.run_id, buyer: run.buyer, amount: run.amount - run.billed, reason: a.outcome === 'abort' ? 'runner_aborted' : 'runner_reported_failure' });
       return [];
     }
-    const pool = [...r.parts];
-    for (const b of a.parts_used) { const i = pool.indexOf(b); assert(i >= 0, 'parts_used not part of recipe'); pool.splice(i, 1); }
+    assert(subtractMultiset(r.parts, a.parts_used), 'parts_used not part of recipe');
+    const unbilled = subtractMultiset(a.parts_used, run.parts_billed); assert(unbilled, 'parts_used must include billed parts');
     const fees = a.parts_used.map((b) => this.parts.get(b)!.fee_per_call);
     const s = settlementSplit({ price: run.amount, protocolFeeBps: this.protocolFeeBps, runnerFee: runner.fee_per_run, partFees: fees, royaltyBps: r.royalty_bps, totalShares: r.total_shares, accBefore: r.acc_per_share });
     const payouts: Payout[] = [];
     payouts.push({ account_id: this.protocolAccount, role: 'protocol', amount: s.protocolTotal });
     payouts.push({ account_id: runner.id, role: 'runner', amount: s.runner });
-    a.parts_used.forEach((b, i) => payouts.push({ account_id: this.parts.get(b)!.author, role: `part:${b}`, amount: s.parts[i] }));
+    // parts already billed at checkpoints are not paid again (first occurrences are the billed ones)
+    const toSkip = [...run.parts_billed];
+    a.parts_used.forEach((b, i) => { const k = toSkip.indexOf(b); if (k >= 0) { toSkip.splice(k, 1); return; } payouts.push({ account_id: this.parts.get(b)!.author, role: `part:${b}`, amount: s.parts[i] }); });
     payouts.push({ account_id: r.creator, role: 'creator_royalty', amount: s.creator });
     for (const p of payouts) this.credit(p.account_id, p.amount);
     r.acc_per_share += s.accIncrement;
@@ -299,10 +345,34 @@ export class LocalLedger {
   reclaim_run(a: { run_id: string }) {
     const run = this.runs.get(a.run_id); assert(run, 'no run');
     assert(run.buyer === this.caller(), 'only buyer'); assert(run.status === 'Pending', 'run not pending');
-    assert(this.now() >= run.created_ns + RUN_TIMEOUT_NS, 'timeout not reached');
-    run.status = 'Refunded'; this.credit(run.buyer, run.amount);
+    assert(this.now() >= run.last_progress_ns + RUN_TIMEOUT_NS, 'timeout not reached'); // checkpoints extend it
+    run.status = 'Refunded'; this.credit(run.buyer, run.amount - run.billed);
     const r = this.recipes.get(run.recipe_id)!; this.releaseCover(r, run); r.failed += 1n;
-    this.emit('run_refunded', { run_id: run.run_id, buyer: run.buyer, amount: run.amount, reason: 'timeout' });
+    this.emit('run_refunded', { run_id: run.run_id, buyer: run.buyer, amount: run.amount - run.billed, reason: 'timeout' });
+  }
+
+  /** v4: durable progress. Records the sealed state's hash, extends the timeout, and in checkpoint mode pays
+   *  the authors of the parts finished since the last checkpoint. Same check order and messages as the contract. */
+  checkpoint_run(a: { run_id: string; seq: number; state_hash: string; parts_done: string[]; signature: string }) {
+    const run = this.runs.get(a.run_id); assert(run, 'unknown run'); assert(run.status === 'Pending', 'run not pending');
+    const r = this.recipes.get(run.recipe_id)!;
+    const runner = this.runners.get(r.runner_id); assert(runner?.active, 'runner inactive');
+    assert(a.seq === run.checkpoint_seq + 1, 'seq must be checkpoint_seq + 1');
+    assert(/^[0-9a-f]{64}$/.test(a.state_hash), 'state_hash must be 64 lowercase hex');
+    const msg = checkpointMessage(this.contractId, a.run_id, r.id, a.seq, a.state_hash, a.parts_done);
+    let sig: Uint8Array; try { sig = base64.dec(a.signature); } catch { sig = new Uint8Array(); }
+    assert(sig.length === 64 && nacl.sign.detached.verify(utf8ToBytes(msg), sig, bs58.decode(runner.signing_pk.slice(8))), 'invalid runner signature');
+    const payouts: Payout[] = [];
+    if (a.parts_done.length) {
+      assert(r.settle_mode === 'checkpoint', 'parts can only be billed at checkpoints in checkpoint mode');
+      assert(subtractMultiset(r.parts, [...run.parts_billed, ...a.parts_done]), 'parts_done not part of recipe');
+      for (const id of a.parts_done) { const p = this.parts.get(id)!; payouts.push({ account_id: p.author, role: `part:${id}`, amount: p.fee_per_call }); }
+      for (const p of payouts) { this.credit(p.account_id, p.amount); run.billed += p.amount; }
+      run.parts_billed.push(...a.parts_done);
+    }
+    run.checkpoint_seq = a.seq; run.state_hash = a.state_hash; run.last_progress_ns = this.now();
+    this.emit('run_checkpoint', { run_id: run.run_id, seq: a.seq, state_hash: a.state_hash, parts_done: a.parts_done, billed: run.billed, payouts });
+    return payouts;
   }
 
   private releaseCover(r: LedgerRecipe, run: LedgerRun) { this.setBond(r, bondRelease(this.bondOf(r), run.covered)!); }

@@ -5,7 +5,7 @@ import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { hexToBytes, bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import {
-  settlementSplit, LocalLedger, type Outcome, runReportMessage, quoteMessage, withdrawalRisk, labelsFromParts, jobHash, base64, seal, open, sealedHash,
+  settlementSplit, LocalLedger, checkpointMessage, RUN_TIMEOUT_NS, type Outcome, runReportMessage, quoteMessage, withdrawalRisk, labelsFromParts, jobHash, base64, seal, open, sealedHash,
   clearAuction, validateRecipe, compatibleSwaps, swapPart, publicListing, recoverSigner, signEip191, addressFromPublicKey,
   verifyChat, sha256Hex, OneClick, runPaymentQuoteRequest, USDC_NEAR, reportData, verifyRunnerAttestation,
   bondLock, bondRelease, bondSettle, pendingDividends, harvestDividends, rebaseDebt,
@@ -38,17 +38,18 @@ function keyring() {
   return { kp, pk: 'ed25519:' + bs58.encode(kp.publicKey) };
 }
 
-function setupLedger(o: { price?: string; total?: string; royalty?: number; fee?: number; runnerFee?: string; partFees?: string[] } = {}) {
+function setupLedger(o: { price?: string; total?: string; royalty?: number; fee?: number; runnerFee?: string; partFees?: string[]; settleMode?: 'final' | 'checkpoint' } = {}) {
   let now = 1_000_000_000n;
   const L = new LocalLedger({ contractId: 'frs.testnet', owner: 'owner.testnet', paymentToken: 'usdc.testnet', protocolAccount: 'treasury.testnet', protocolFeeBps: o.fee ?? 200, clock: () => now });
   const { kp, pk } = keyring();
   L.call('owner.testnet', (l) => l.add_runner({ id: 'runner.testnet', signing_pk: pk, enc_pk_hex: 'ab'.repeat(32), codehash: 'c0de', fee_per_run: o.runnerFee ?? '30000' }));
   const fees = o.partFees ?? ['20000', '50000'];
   fees.forEach((f, i) => L.call(`author${i}.testnet`, (l) => l.register_part({ id: `b${i}@1.0.0`, version: '1.0.0', fee_per_call: f, manifest_hash: 'h' })));
-  L.call('creator.testnet', (l) => l.publish_recipe({ id: 'TEST', name: 'Test', sealed_hash: 'aa', runner_id: 'runner.testnet', parts: fees.map((_, i) => `b${i}@1.0.0`), price_per_run: o.price ?? '750000', royalty_bps: o.royalty ?? 1000, total_shares: o.total ?? '1000000' }));
+  L.call('creator.testnet', (l) => l.publish_recipe({ id: 'TEST', name: 'Test', sealed_hash: 'aa', runner_id: 'runner.testnet', parts: fees.map((_, i) => `b${i}@1.0.0`), price_per_run: o.price ?? '750000', royalty_bps: o.royalty ?? 1000, total_shares: o.total ?? '1000000', settle_mode: o.settleMode }));
   const sign = (runId: string, outcome: Outcome, parts: string[], out = 'f'.repeat(64)) => base64.enc(nacl.sign.detached(utf8ToBytes(runReportMessage('frs.testnet', runId, 'TEST', outcome, out, '0', parts)), kp.secretKey));
   const pay = (runId: string, amount = o.price ?? '750000', buyer = 'bob.testnet') => L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: buyer, amount, msg: JSON.stringify({ action: 'run', recipe_id: 'TEST', run_id: runId, inputs_hash: '0'.repeat(64) }) }));
-  return { L, sign, pay, advance: (ns: bigint) => { now += ns; }, parts: fees.map((_, i) => `b${i}@1.0.0`) };
+  const ckpt = (runId: string, seq: number, partsDone: string[], state = 'c'.repeat(64)) => L.call('relayer.testnet', (l) => l.checkpoint_run({ run_id: runId, seq, state_hash: state, parts_done: partsDone, signature: base64.enc(nacl.sign.detached(utf8ToBytes(checkpointMessage('frs.testnet', runId, 'TEST', seq, state, partsDone)), kp.secretKey)) }));
+  return { L, sign, pay, ckpt, advance: (ns: bigint) => { now += ns; }, parts: fees.map((_, i) => `b${i}@1.0.0`) };
 }
 
 test('pay-per-run → signed report → every party credited in one settlement', () => {
@@ -260,7 +261,7 @@ test('every mirror event has exactly the fields documented for the contract (doc
     if (fields.length) spec.set(m[1], [...new Set(fields)].sort());
   }
   spec.set('order_cancelled', spec.get('order_placed')!);
-  const { L, sign, pay, parts, advance } = setupLedger();
+  const { L, sign, pay, parts, advance, ckpt } = setupLedger();
   pay('r1'); L.call('x', (l) => l.report_run({ run_id: 'r1', outcome: 'ok', parts_used: parts, output_hash: 'f'.repeat(64), delivered: '0', signature: sign('r1', 'ok', parts) }));
   pay('r2'); L.call('x', (l) => l.report_run({ run_id: 'r2', outcome: 'fail', parts_used: [], output_hash: 'f'.repeat(64), delivered: '0', signature: sign('r2', 'fail', []) }));
   L.call('creator.testnet', (l) => l.place_ask({ recipe_id: 'TEST', price: '10', qty: '5' }));
@@ -270,7 +271,12 @@ test('every mirror event has exactly the fields documented for the contract (doc
   L.call('a.testnet', (l) => l.cancel_order({ order_id: [...L.orders.values()][0].id }));
   L.call('creator.testnet', (l) => l.transfer_shares({ recipe_id: 'TEST', receiver_id: 'z.testnet', qty: '1' }));
   L.call('creator.testnet', (l) => l.claim_dividends({ recipe_id: 'TEST' }));
-  L.call('creator.testnet', (l) => l.update_sealed({ id: 'TEST', sealed_hash: 'bb' }));
+  L.call('creator.testnet', (l) => l.update_sealed({ id: 'TEST', sealed_hash: 'b'.repeat(64) }));
+  L.call('creator.testnet', (l) => l.cancel_update({ id: 'TEST' }));
+  L.call('creator.testnet', (l) => l.update_sealed({ id: 'TEST', sealed_hash: 'd'.repeat(64) }));
+  advance(L.updateDelayNs);
+  L.call('anyone.testnet', (l) => l.apply_update({ id: 'TEST' }));
+  pay('r9'); ckpt('r9', 1, []);
   L.call('creator.testnet', (l) => l.withdraw({}));
   L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 's', amount: '1', msg: JSON.stringify({ action: 'run', recipe_id: 'X', run_id: 'q', inputs_hash: '0'.repeat(64), on_behalf_of: 'b' }) }));
   L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'creator.testnet', amount: '100', msg: JSON.stringify({ action: 'bond', recipe_id: 'TEST' }) }));
@@ -457,4 +463,58 @@ test('solvency scenarios found by the proofs: the contract never owes more than 
     }
     assert.ok(owed <= BigInt(c.paid_in), `${c.name}: owes ${owed}, received ${c.paid_in}`);
   }
+});
+
+
+// ---- v4: versions with notice, durable runs, partial settlement ----
+test('versions: an update is announced, takes effect only after the notice period, and paid runs keep their version', () => {
+  const { L, pay, advance } = setupLedger();
+  const v2 = 'b'.repeat(64);
+  assert.throws(() => L.call('bob.testnet', (l) => l.update_sealed({ id: 'TEST', sealed_hash: v2 })), /creator only/);
+  assert.throws(() => L.call('creator.testnet', (l) => l.update_sealed({ id: 'TEST', sealed_hash: 'xyz' })), /64 lowercase hex/);
+  L.call('creator.testnet', (l) => l.update_sealed({ id: 'TEST', sealed_hash: v2 }));
+  const ev = L.events.at(-1)!; assert.equal(ev.event, 'recipe_update_scheduled'); assert.equal((ev.data[0] as any).version, 2);
+  pay('r1');
+  assert.equal(L.runs.get('r1')!.sealed_hash, 'aa', 'a run paid during the notice period uses the current version');
+  assert.throws(() => L.call('x', (l) => l.apply_update({ id: 'TEST' })), /update not due/);
+  advance(L.updateDelayNs);
+  pay('r2'); // activation happens lazily, before the run is created
+  assert.equal(L.runs.get('r2')!.sealed_hash, v2);
+  assert.equal(L.recipes.get('TEST')!.version, 2);
+  assert.ok(L.events.some((e) => e.event === 'recipe_updated' && (e.data[0] as any).version === 2));
+  assert.equal(L.runs.get('r1')!.sealed_hash, 'aa', 'the earlier run still points at the version it paid for');
+  assert.throws(() => L.call('creator.testnet', (l) => l.update_sealed({ id: 'TEST', sealed_hash: v2 })), /same as current version/);
+  assert.throws(() => L.call('creator.testnet', (l) => l.cancel_update({ id: 'TEST' })), /no pending update/);
+});
+
+test('durable runs: checkpoints are ordered and signed, extend the timeout, and bill parts only in checkpoint mode', () => {
+  const fin = setupLedger();
+  fin.pay('r1');
+  assert.throws(() => fin.ckpt('r1', 2, []), /seq must be checkpoint_seq \+ 1/);
+  assert.throws(() => fin.ckpt('r1', 1, ['b0@1.0.0']), /only be billed at checkpoints in checkpoint mode/);
+  fin.advance(RUN_TIMEOUT_NS - 1n);
+  fin.ckpt('r1', 1, []); // heartbeat
+  fin.advance(RUN_TIMEOUT_NS - 1n);
+  assert.throws(() => fin.L.call('bob.testnet', (l) => l.reclaim_run({ run_id: 'r1' })), /timeout not reached/, 'progress keeps a long run alive');
+  fin.advance(2n);
+  fin.L.call('bob.testnet', (l) => l.reclaim_run({ run_id: 'r1' }));
+
+  const cp = setupLedger({ settleMode: 'checkpoint' });
+  cp.pay('r1');
+  cp.ckpt('r1', 1, ['b0@1.0.0']);
+  assert.equal(cp.L.balance_of('author0.testnet'), 20000n, 'the first part is paid as soon as it is done');
+  assert.throws(() => cp.ckpt('r1', 2, ['b0@1.0.0']), /parts_done not part of recipe/, 'a part cannot be billed twice');
+  assert.throws(() => cp.L.call('x', (l) => l.checkpoint_run({ run_id: 'r1', seq: 2, state_hash: 'c'.repeat(64), parts_done: [], signature: base64.enc(new Uint8Array(64)) })), /invalid runner signature/);
+  assert.throws(() => cp.L.call('x', (l) => l.report_run({ run_id: 'r1', outcome: 'ok', parts_used: ['b1@1.0.0'], output_hash: 'f'.repeat(64), delivered: '0', signature: cp.sign('r1', 'ok', ['b1@1.0.0']) })), /must include billed parts/);
+  const payouts = cp.L.call('x', (l) => l.report_run({ run_id: 'r1', outcome: 'ok', parts_used: cp.parts, output_hash: 'f'.repeat(64), delivered: '0', signature: cp.sign('r1', 'ok', cp.parts) }));
+  assert.ok(!payouts.some((p) => p.role === 'part:b0@1.0.0'), 'billed parts are not paid twice');
+  const settle = cp.L.events.at(-1)!.data[0] as any;
+  assert.equal(payouts.reduce((a, p) => a + p.amount, 0n) + BigInt(settle.shareholder_pool) + cp.L.runs.get('r1')!.billed, 750000n, 'billed + payouts + shareholders == price');
+  assert.equal(cp.L.balance_of('author0.testnet'), 20000n);
+
+  cp.pay('r2');
+  cp.ckpt('r2', 1, ['b0@1.0.0']);
+  const before = cp.L.balance_of('bob.testnet');
+  cp.L.call('x', (l) => l.report_run({ run_id: 'r2', outcome: 'fail', parts_used: [], output_hash: 'f'.repeat(64), delivered: '0', signature: cp.sign('r2', 'fail', []) }));
+  assert.equal(cp.L.balance_of('bob.testnet') - before, 750000n - 20000n, 'a failed run refunds everything not yet billed');
 });

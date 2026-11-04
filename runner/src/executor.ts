@@ -9,6 +9,8 @@ import { dustFilter } from './parts/dust-filter.js';
 import { freshCheck } from './parts/fresh-check.js';
 import { intentsSwap } from './parts/intents-swap.js';
 import { summaryReport } from './parts/summary-report.js';
+import { wait } from './parts/wait.js';
+import { mergeReceipts } from './parts/merge-receipts.js';
 
 export const HANDLERS: Record<string, PartHandler> = {
   'near.wallet-scanner@1.0.0': walletScanner,
@@ -20,6 +22,8 @@ export const HANDLERS: Record<string, PartHandler> = {
   'intents.confidential-swap@1.0.0': intentsSwap,
   'intents.public-swap@1.0.0': intentsSwap,
   'report.summary@1.0.0': summaryReport,
+  'time.wait@1.0.0': wait,
+  'swap.merge@1.0.0': mergeReceipts,
 };
 
 export const REAL_ENDPOINTS: Endpoints = {
@@ -67,7 +71,17 @@ export interface ExecDeps {
   secrets: { nearAiKey?: string; oneClickJwt?: string };
   requestApproval: (nodeId: string, req: ApprovalRequest) => Promise<ApprovalResult>;
   mode?: 'run' | 'quote';
+  /** durable runs: where to continue from (decrypted checkpoint) */
+  resume?: ResumePoint;
+  /** called after every completed part, and by parts before irreversible steps (write-ahead) */
+  checkpoint?: (cp: ResumePoint, partsDone: string[]) => Promise<void>;
+  /** approvals relayed after the last checkpoint, by node (from the marketplace's log) */
+  priorApprovals?: Record<string, ApprovalResult>;
 }
+
+/** Everything needed to continue a run: completed nodes, their outputs, parts billed so far, and the state of the
+ *  node in progress. Sealed to the runner's own key and signed before it leaves the runner. */
+export interface ResumePoint { index: number; values: Record<string, unknown>; used: string[]; node?: string; partState?: unknown }
 
 export interface ExecResult { ok: boolean; output: unknown; partsUsed: string[]; outputHash: string; error?: string }
 
@@ -80,10 +94,15 @@ export async function execute(runId: string, recipe: Recipe, inputs: Record<stri
   for (const f of recipe.form) values.set(`form.${f.id}`, inputs[f.id] ?? f.default);
   for (const [k, c] of Object.entries(recipe.consts ?? {})) values.set(`const.${k}`, c.value);
   const manifests = new Map(deps.catalog.parts.map((b) => [b.id, b]));
-  const used: string[] = [];
+  const used: string[] = [...(deps.resume?.used ?? [])];
+  const start = deps.resume?.index ?? 0;
+  for (const [k, v] of Object.entries(deps.resume?.values ?? {})) values.set(k, v);
+  const nodeValues = () => Object.fromEntries([...values].filter(([k]) => !k.startsWith('form.') && !k.startsWith('const.')));
+  if (start > 0 || deps.resume?.partState !== undefined) deps.emit('resumed', { from_part: start, of: v.order.length, mid_part: deps.resume?.node ?? null });
 
   try {
-    for (const nodeId of v.order) {
+    for (let idx = start; idx < v.order.length; idx++) {
+      const nodeId = v.order[idx];
       const node = recipe.nodes.find((n) => n.id === nodeId)!;
       const m = manifests.get(node.part)!;
       const handler = HANDLERS[node.part];
@@ -91,7 +110,8 @@ export async function execute(runId: string, recipe: Recipe, inputs: Record<stri
       const partInputs = Object.fromEntries(Object.entries(node.inputs).map(([p, ref]) => [p, values.get(ref)]));
       const params = { ...Object.fromEntries(Object.entries(m.params).map(([k, s]) => [k, s.default])), ...node.params };
       const t0 = Date.now();
-      deps.emit('part_start', { node: nodeId, part: m.id, name: m.name, author: m.author, fee: m.fee_per_call });
+      const resumeHere = deps.resume?.node === nodeId ? deps.resume.partState : undefined;
+      deps.emit('part_start', { node: nodeId, part: m.id, name: m.name, author: m.author, fee: m.fee_per_call, resumed: resumeHere !== undefined });
       // per-run resource limits declared in the manifest (FRS-1 §2.2); exceeding one fails the run → buyer refunded
       const out = await enforceLimits(m, guardedFetch(m.id, m.capabilities, deps.rewrites), (http, approval) => handler(partInputs, {
         nodeId, manifest: m, params, http,
@@ -100,10 +120,15 @@ export async function execute(runId: string, recipe: Recipe, inputs: Record<stri
         endpoints: REAL_ENDPOINTS,
         secrets: deps.secrets,
         mode: deps.mode ?? 'run',
+        resumeState: resumeHere,
+        priorApproval: deps.priorApprovals?.[nodeId],
+        wait: (ms) => approval(() => new Promise<void>((r) => setTimeout(r, ms))),
+        saveState: async (partState) => { if (deps.checkpoint && (deps.mode ?? 'run') === 'run') await approval(() => deps.checkpoint!({ index: idx, values: nodeValues(), used: [...used], node: nodeId, partState }, [])); },
       }));
       for (const [port, val] of Object.entries(out)) values.set(`${nodeId}.${port}`, val);
       used.push(m.id);
       deps.emit('part_done', { node: nodeId, part: m.id, ms: Date.now() - t0, ports: Object.keys(out) });
+      if (deps.checkpoint && (deps.mode ?? 'run') === 'run') await deps.checkpoint({ index: idx + 1, values: nodeValues(), used: [...used] }, [m.id]);
     }
     const output = values.get(recipe.output);
     return { ok: true, output, partsUsed: used, outputHash: hashObject({ run_id: runId, output }) };

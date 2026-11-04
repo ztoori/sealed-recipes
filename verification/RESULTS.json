@@ -27,7 +27,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.01,
+   "seconds": 0.009,
    "detail": ""
   },
   {
@@ -37,7 +37,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.002,
    "detail": ""
   },
   {
@@ -57,7 +57,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.002,
    "detail": ""
   },
   {
@@ -77,7 +77,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.002,
    "detail": ""
   },
   {
@@ -127,7 +127,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.013,
+   "seconds": 0.014,
    "detail": ""
   },
   {
@@ -167,7 +167,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.014,
+   "seconds": 0.013,
    "detail": ""
   },
   {
@@ -177,7 +177,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.002,
    "detail": ""
   },
   {
@@ -227,7 +227,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.017,
+   "seconds": 0.016,
    "detail": ""
   },
   {
@@ -267,7 +267,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.017,
+   "seconds": 0.018,
    "detail": ""
   },
   {
@@ -347,7 +347,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.019,
+   "seconds": 0.02,
    "detail": ""
   },
   {
@@ -387,7 +387,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.019,
+   "seconds": 0.023,
    "detail": ""
   },
   {
@@ -397,7 +397,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.005,
    "detail": ""
   },
   {
@@ -407,7 +407,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.004,
+   "seconds": 0.006,
    "detail": ""
   },
   {
@@ -417,7 +417,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.005,
    "detail": ""
   },
   {
@@ -427,7 +427,7 @@
    "outcome": "counterexample",
    "expected": "counterexample",
    "ok": true,
-   "seconds": 0.107,
+   "seconds": 0.119,
    "detail": "ts=999999, pool1=1, pool2=1"
   },
   {
@@ -437,7 +437,67 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.008,
+   "seconds": 0.009,
+   "detail": ""
+  },
+  {
+   "module": "billing[1p]",
+   "theorem": "conservation-with-checkpoints",
+   "statement": "billed at checkpoints + final payouts + shareholders == price",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.003,
+   "detail": ""
+  },
+  {
+   "module": "billing[1p]",
+   "theorem": "refund-never-negative",
+   "statement": "a failed/timed-out run refunds price - billed >= 0 (publish minimum price)",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.002,
+   "detail": ""
+  },
+  {
+   "module": "billing[3p]",
+   "theorem": "conservation-with-checkpoints",
+   "statement": "billed at checkpoints + final payouts + shareholders == price",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.001,
+   "detail": ""
+  },
+  {
+   "module": "billing[3p]",
+   "theorem": "refund-never-negative",
+   "statement": "a failed/timed-out run refunds price - billed >= 0 (publish minimum price)",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.002,
+   "detail": ""
+  },
+  {
+   "module": "billing[5p]",
+   "theorem": "conservation-with-checkpoints",
+   "statement": "billed at checkpoints + final payouts + shareholders == price",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.001,
+   "detail": ""
+  },
+  {
+   "module": "billing[5p]",
+   "theorem": "refund-never-negative",
+   "statement": "a failed/timed-out run refunds price - billed >= 0 (publish minimum price)",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.003,
    "detail": ""
   },
   {
@@ -617,7 +677,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.002,
    "detail": ""
   },
   {
@@ -637,7 +697,7 @@
    "outcome": "counterexample",
    "expected": "counterexample",
    "ok": true,
-   "seconds": 0.009,
+   "seconds": 0.008,
    "detail": "acc=1, s1=1000000000000000000, s2=1000000000000000000, debt1=0, debt2=1, q=1"
   },
   {
@@ -647,7 +707,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.008,
+   "seconds": 0.007,
    "detail": ""
   },
   {
@@ -667,7 +727,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.005,
+   "seconds": 0.006,
    "detail": ""
   },
   {
@@ -697,7 +757,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.007,
+   "seconds": 0.006,
    "detail": ""
   },
   {
@@ -717,7 +777,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.01,
+   "seconds": 0.011,
    "detail": ""
   },
   {
@@ -737,7 +797,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.052,
+   "seconds": 0.042,
    "detail": ""
   },
   {
@@ -747,7 +807,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.041,
+   "seconds": 0.028,
    "detail": ""
   },
   {
@@ -757,7 +817,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.016,
+   "seconds": 0.011,
    "detail": ""
   },
   {
@@ -767,7 +827,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.014,
+   "seconds": 0.009,
    "detail": ""
   },
   {
@@ -777,7 +837,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.029,
+   "seconds": 0.018,
    "detail": ""
   },
   {
@@ -787,7 +847,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.076,
+   "seconds": 0.038,
    "detail": ""
   },
   {
@@ -797,11 +857,101 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.012,
+   "seconds": 0.007,
    "detail": ""
   },
   {
    "module": "auction[3]",
+   "theorem": "uniform-price-fair",
+   "statement": "buyers pay <= their limit (escrow covers it), sellers get >= their limit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.032,
+   "detail": ""
+  },
+  {
+   "module": "auction[3]",
+   "theorem": "price-within-book",
+   "statement": "the clearing price lies between the tied candidate prices",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.007,
+   "detail": ""
+  },
+  {
+   "module": "auction[4]",
+   "theorem": "balanced",
+   "statement": "shares bought == shares sold == clearing volume",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.181,
+   "detail": ""
+  },
+  {
+   "module": "auction[4]",
+   "theorem": "price-attains-max-volume",
+   "statement": "the chosen price itself trades the maximum volume",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.092,
+   "detail": ""
+  },
+  {
+   "module": "auction[4]",
+   "theorem": "volume-is-maximal",
+   "statement": "no price at all (not only order prices) would trade more",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.028,
+   "detail": ""
+  },
+  {
+   "module": "auction[4]",
+   "theorem": "limits-respected",
+   "statement": "every filled bid has limit >= P, every filled ask limit <= P, fill <= qty",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.025,
+   "detail": ""
+  },
+  {
+   "module": "auction[4]",
+   "theorem": "price-time-priority",
+   "statement": "if an order is not completely filled, every order ranked behind it gets nothing",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.071,
+   "detail": ""
+  },
+  {
+   "module": "auction[4]",
+   "theorem": "no-residual-cross",
+   "statement": "after clearing, no remaining bid is priced at or above a remaining ask",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.454,
+   "detail": ""
+  },
+  {
+   "module": "auction[4]",
+   "theorem": "no-trade-means-no-cross",
+   "statement": "if nothing clears, every bid is below every ask",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.013,
+   "detail": ""
+  },
+  {
+   "module": "auction[4]",
    "theorem": "uniform-price-fair",
    "statement": "buyers pay <= their limit (escrow covers it), sellers get >= their limit",
    "outcome": "proved",
@@ -811,116 +961,52 @@
    "detail": ""
   },
   {
-   "module": "auction[3]",
-   "theorem": "price-within-book",
-   "statement": "the clearing price lies between the tied candidate prices",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.01,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "balanced",
-   "statement": "shares bought == shares sold == clearing volume",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.364,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "price-attains-max-volume",
-   "statement": "the chosen price itself trades the maximum volume",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.091,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "volume-is-maximal",
-   "statement": "no price at all (not only order prices) would trade more",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.024,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "limits-respected",
-   "statement": "every filled bid has limit >= P, every filled ask limit <= P, fill <= qty",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.013,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "price-time-priority",
-   "statement": "if an order is not completely filled, every order ranked behind it gets nothing",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.081,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "no-residual-cross",
-   "statement": "after clearing, no remaining bid is priced at or above a remaining ask",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.503,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "no-trade-means-no-cross",
-   "statement": "if nothing clears, every bid is below every ask",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.016,
-   "detail": ""
-  },
-  {
-   "module": "auction[4]",
-   "theorem": "uniform-price-fair",
-   "statement": "buyers pay <= their limit (escrow covers it), sellers get >= their limit",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.043,
-   "detail": ""
-  },
-  {
    "module": "auction[4]",
    "theorem": "price-within-book",
    "statement": "the clearing price lies between the tied candidate prices",
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.012,
+   "seconds": 0.009,
    "detail": ""
   }
  ],
  "tla": {
   "MC_credited": {
+   "module": "BondedRuns",
    "expected": "pass",
    "got": "pass",
-   "distinct_states": "22,748,834"
+   "distinct_states": "22748834"
   },
   "MC_v3": {
+   "module": "BondedRuns",
    "expected": "NoBondDrain",
    "got": "NoBondDrain",
-   "distinct_states": "1,175"
+   "distinct_states": "1370"
+  },
+  "MC_Durable": {
+   "module": "DurableRuns",
+   "expected": "pass",
+   "got": "pass",
+   "distinct_states": "313"
+  },
+  "MC_DurableNoWAL": {
+   "module": "DurableRuns",
+   "expected": "DepositsOnce",
+   "got": "DepositsOnce",
+   "distinct_states": "173"
+  },
+  "MC_Versions": {
+   "module": "VersionedRecipes",
+   "expected": "pass",
+   "got": "pass",
+   "distinct_states": "13622"
+  },
+  "MC_VersionsNoRetain": {
+   "module": "VersionedRecipes",
+   "expected": "NoStrandedRun",
+   "got": "NoStrandedRun",
+   "distinct_states": "368"
   }
  }
 }

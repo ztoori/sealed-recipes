@@ -141,6 +141,7 @@ export class OneClick {
     this.log.push({ at: new Date(this.clock()).toISOString(), method: 'POST', path: '/v0/deposit/submit', body: { txHash, depositAddress, nearSenderAccount }, mode: 'fixture' });
     const d = this.deposits.get(depositAddress);
     if (!d) throw new Error('unknown deposit address');
+    if (d.txHash === txHash) return { ok: true }; // idempotent: re-submitting the same deposit changes nothing
     d.depositedAt = this.clock(); d.txHash = txHash;
     return { ok: true };
   }

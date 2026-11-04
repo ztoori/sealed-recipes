@@ -347,6 +347,11 @@
           "type": "string",
           "default": "largest-first",
           "secret": true
+        },
+        "fraction_bps": {
+          "type": "number",
+          "default": 10000,
+          "secret": false
         }
       },
       "capabilities": [
@@ -398,6 +403,11 @@
           "type": "number",
           "default": 100,
           "secret": true
+        },
+        "fraction_bps": {
+          "type": "number",
+          "default": 10000,
+          "secret": false
         }
       },
       "capabilities": [
@@ -459,6 +469,87 @@
         "max_http_calls": 0,
         "max_model_calls": 0,
         "max_output_bytes": 16000
+      }
+    },
+    {
+      "id": "time.wait@1.0.0",
+      "name": "Wait",
+      "category": "transform",
+      "author": "tidy.testnet",
+      "summary": "Holds the workflow for a set time, then passes the holdings on. Durable: a runner restart resumes the wait where it left off, and waiting does not count against time limits.",
+      "inputs": {
+        "holdings": {
+          "type": "token.holdings"
+        }
+      },
+      "outputs": {
+        "holdings": {
+          "type": "token.holdings"
+        }
+      },
+      "params": {
+        "seconds": {
+          "type": "number",
+          "default": 3600,
+          "secret": false
+        }
+      },
+      "capabilities": [],
+      "fee_per_call": "5000",
+      "implementation": "runner/src/parts/wait.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 2000,
+        "max_http_calls": 0,
+        "max_model_calls": 0,
+        "max_output_bytes": 32000
+      }
+    },
+    {
+      "id": "swap.merge@1.0.0",
+      "name": "Merge Receipts",
+      "category": "transform",
+      "author": "tidy.testnet",
+      "summary": "Combines the receipts of two swap stages into one result, so a multi-stage workflow is measured as one job.",
+      "inputs": {
+        "a": {
+          "type": "swap.receipts"
+        },
+        "b": {
+          "type": "swap.receipts"
+        }
+      },
+      "outputs": {
+        "receipts": {
+          "type": "swap.receipts"
+        }
+      },
+      "params": {},
+      "capabilities": [],
+      "fee_per_call": "5000",
+      "implementation": "runner/src/parts/merge-receipts.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 1000,
+        "max_http_calls": 0,
+        "max_model_calls": 0,
+        "max_output_bytes": 64000
       }
     }
   ],

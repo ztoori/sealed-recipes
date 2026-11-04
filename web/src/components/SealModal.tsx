@@ -30,7 +30,7 @@ export function SealModal({ recipe, catalog, ipo, auto, onClose }: { recipe: Rec
   const publish = async (e: SealedEnvelope) => {
     try {
       const listing = publicListing(recipe, catalog);
-      const r = await api('/api/publish', { listing, sealed: e, ipo, bond: recipe.listing.bond ?? '0' });
+      const r = await api('/api/publish', { listing, sealed: e, ipo, bond: recipe.listing.bond ?? '0', settle_mode: recipe.listing.settle_mode ?? 'final' });
       setTx(r); setStage(3); return true;
     } catch (x) { setErr((x as Error).message); return false; }
   };

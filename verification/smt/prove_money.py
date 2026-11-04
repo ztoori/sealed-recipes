@@ -87,6 +87,26 @@ def prove_settlement_regression(R: Report):
             cs + s1["conds"] + s2["conds"], claim_all == s1["distributed"] + s2["distributed"], ctx=c)
 
 
+def prove_partial_billing(R: Report):
+    """Durable runs in checkpoint mode (contract v4): parts are paid at checkpoints, the final receipt pays the rest."""
+    for n in (1, 3, 5):
+        cs: list = []
+        price, bps, roy, runner, fees, ts, acc0 = settlement_inputs(n, cs)
+        flags = [z3.Bool(f"billed{i}") for i in range(n)]
+        c = Ctx(True)
+        s = settlement(c, price, bps, runner, fees, roy, ts, acc0)
+        billed = sum((z3.If(b, f, 0) for b, f in zip(flags, fees)), z3.IntVal(0))
+        final_parts = sum((z3.If(b, 0, f) for b, f in zip(flags, fees)), z3.IntVal(0))
+        m = f"billing[{n}p]"
+        R.check(Theorem(m, "conservation-with-checkpoints", "billed at checkpoints + final payouts + shareholders == price"),
+                cs + s["conds"], billed + s["protocol_total"] + runner + final_parts + s["creator"] + s["distributed"] == price, ctx=c)
+        # publish guarantees price >= protocol + runner + all part fees, so a refund after billing is never negative
+        c2 = Ctx(True)
+        prot = c2.div(price * bps, BPS)
+        R.check(Theorem(m, "refund-never-negative", "a failed/timed-out run refunds price - billed >= 0 (publish minimum price)"),
+                cs + [price - prot - runner - sum(fees, 0) >= 0], price - billed >= 0, ctx=c2)
+
+
 def prove_bonds(R: Report):
     cs: list = []
     av, lk, cover, covered = u128("available", cs), u128("locked", cs), u128("cover", cs), u128("covered", cs)
@@ -195,6 +215,7 @@ def prove_dividends(R: Report):
 def main():
     R = Report()
     print("settlement"); prove_settlement(R); prove_settlement_regression(R)
+    print("partial billing"); prove_partial_billing(R)
     print("bonds"); prove_bonds(R)
     print("dividends"); prove_dividends(R)
     return R

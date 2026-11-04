@@ -6,6 +6,8 @@ use near_sdk::testing_env;
 const CONTRACT: &str = "frs.testnet";
 const USDC: &str = "usdc.testnet";
 const INTERVAL: u64 = 12_000_000_000;
+const DELAY: u64 = 60_000_000_000;
+const V2: &str = "2222222222222222222222222222222222222222222222222222222222222222";
 const OUT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn acct(s: &str) -> AccountId {
@@ -50,7 +52,7 @@ const PARTS: [(&str, &str, u128); 5] = [
 /// Contract with the demo recipe "CLNP" published by creator.testnet.
 fn setup() -> Contract {
     ctx("owner.testnet", 0);
-    let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), 200, U64(INTERVAL));
+    let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), 200, U64(INTERVAL), U64(DELAY));
     c.add_runner(
         acct("runner.testnet"),
         runner_pk_string(),
@@ -72,6 +74,7 @@ fn setup() -> Contract {
         U128(750_000),
         1000,
         U128(1_000_000),
+        None,
     );
     c
 }
@@ -148,12 +151,12 @@ fn dividends_vector_harvest_before_transfer() {
     let r = &v["recipe"];
     let p = |x: &serde_json::Value| x.as_str().unwrap().parse::<u128>().unwrap();
     ctx("owner.testnet", 0);
-    let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), r["protocol_fee_bps"].as_u64().unwrap() as u16, U64(INTERVAL));
+    let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), r["protocol_fee_bps"].as_u64().unwrap() as u16, U64(INTERVAL), U64(DELAY));
     c.add_runner(acct("runner.testnet"), runner_pk_string(), "00".repeat(32), "x".into(), U128(p(&r["runner_fee"])));
     ctx("author", 0);
     c.register_part("noop".into(), "1".into(), U128(0), "h".into());
     ctx("creator", 0);
-    c.publish_recipe("DIVS".into(), "d".into(), "h".into(), acct("runner.testnet"), vec!["noop".into()], U128(p(&r["price"])), r["royalty_bps"].as_u64().unwrap() as u16, U128(p(&r["total_shares"])));
+    c.publish_recipe("DIVS".into(), "d".into(), "h".into(), acct("runner.testnet"), vec!["noop".into()], U128(p(&r["price"])), r["royalty_bps"].as_u64().unwrap() as u16, U128(p(&r["total_shares"])), None);
     let mut n = 0;
     for step in v["steps"].as_array().unwrap() {
         match step["op"].as_str().unwrap() {
@@ -186,7 +189,7 @@ fn publish_rejects_price_below_fees() {
     let mut c = setup();
     ctx("creator.testnet", 0);
     // fees: protocol 2% + runner 30_000 + parts 140_000 => 170_000 > 150_000
-    c.publish_recipe("CHEAP".into(), "x".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(150_000), 0, U128(10));
+    c.publish_recipe("CHEAP".into(), "x".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(150_000), 0, U128(10), None);
 }
 
 #[test]
@@ -194,7 +197,7 @@ fn publish_rejects_price_below_fees() {
 fn publish_rejects_bad_ticker() {
     let mut c = setup();
     ctx("creator.testnet", 0);
-    c.publish_recipe("bad".into(), "x".into(), "h".into(), acct("runner.testnet"), vec![], U128(1_000_000), 0, U128(10));
+    c.publish_recipe("bad".into(), "x".into(), "h".into(), acct("runner.testnet"), vec![], U128(1_000_000), 0, U128(10), None);
 }
 
 #[test]
@@ -202,7 +205,7 @@ fn publish_rejects_bad_ticker() {
 fn publish_rejects_unknown_part() {
     let mut c = setup();
     ctx("creator.testnet", 0);
-    c.publish_recipe("NOPE".into(), "x".into(), "h".into(), acct("runner.testnet"), vec!["ghost".into()], U128(1_000_000), 0, U128(10));
+    c.publish_recipe("NOPE".into(), "x".into(), "h".into(), acct("runner.testnet"), vec!["ghost".into()], U128(1_000_000), 0, U128(10), None);
 }
 
 #[test]
@@ -428,10 +431,13 @@ fn run_snapshots_sealed_hash() {
     let mut c = setup();
     pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
     ctx("creator.testnet", 0);
-    c.update_sealed("CLNP".into(), "sha256:v2".into());
-    pay_run(&mut c, "buyer.testnet", "r2", 750_000, 0);
+    c.update_sealed("CLNP".into(), V2.into());
+    // announced, not yet active: runs paid during the notice period keep the current version
+    pay_run(&mut c, "buyer.testnet", "r2", 750_000, DELAY - 1);
+    pay_run(&mut c, "buyer.testnet", "r3", 750_000, DELAY);
     assert_eq!(c.get_run("r1".into()).unwrap().sealed_hash, "sha256:sealed");
-    assert_eq!(c.get_run("r2".into()).unwrap().sealed_hash, "sha256:v2");
+    assert_eq!(c.get_run("r2".into()).unwrap().sealed_hash, "sha256:sealed");
+    assert_eq!(c.get_run("r3".into()).unwrap().sealed_hash, V2);
     let j = serde_json::to_value(c.get_run("r1".into()).unwrap()).unwrap();
     assert_eq!(j["sealed_hash"], "sha256:sealed");
 }
@@ -517,7 +523,7 @@ fn part_id_cannot_contain_pipe() {
 fn publish_rejects_empty_parts() {
     let mut c = setup();
     ctx("creator.testnet", 0);
-    c.publish_recipe("EMPTY".into(), "e".into(), "h".into(), acct("runner.testnet"), vec![], U128(100_000), 0, U128(10));
+    c.publish_recipe("EMPTY".into(), "e".into(), "h".into(), acct("runner.testnet"), vec![], U128(100_000), 0, U128(10), None);
 }
 
 #[test]
@@ -1020,11 +1026,13 @@ fn quote_rejection_reasons() {
     assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &q, 0).as_deref(), Some("job_hash must be 64 lowercase hex"));
 
     // 2. outdated recipe version: quote made before update_sealed
+    // (after the notice period the payment itself activates the new version)
     ctx("creator.testnet", 0);
-    c.update_sealed("CLNP".into(), "sha256:sealed-v2".into());
-    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &ok, 0).as_deref(), Some("quote for an outdated recipe version"));
-    let fresh = Q { sealed_hash: "sha256:sealed-v2".into(), ..ok.clone() };
-    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &fresh, 0), None, "re-quoted for the new version");
+    c.update_sealed("CLNP".into(), V2.into());
+    let long = Q { expires_ns: u64::MAX / 2, ..ok.clone() };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &long, DELAY).as_deref(), Some("quote for an outdated recipe version"));
+    let fresh = Q { sealed_hash: V2.into(), ..long.clone() };
+    assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &fresh, DELAY), None, "re-quoted for the new version");
 
     // 3. runner inactive
     let mut c = setup();
@@ -1420,12 +1428,12 @@ fn solvency_case(want: &str) {
         let name = case["name"].as_str().unwrap();
         let r = &case["recipe"];
         ctx("owner.testnet", 0);
-        let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), 0, U64(INTERVAL));
+        let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), 0, U64(INTERVAL), U64(DELAY));
         c.add_runner(acct("runner.testnet"), runner_pk_string(), "00".repeat(32), "x".into(), U128(0));
         ctx("author", 0);
         c.register_part("noop".into(), "1".into(), U128(0), "h".into());
         ctx("creator", 0);
-        c.publish_recipe("SOLV".into(), "s".into(), "h".into(), acct("runner.testnet"), vec!["noop".into()], U128(n(&r["price"])), 0, U128(n(&r["total_shares"])));
+        c.publish_recipe("SOLV".into(), "s".into(), "h".into(), acct("runner.testnet"), vec!["noop".into()], U128(n(&r["price"])), 0, U128(n(&r["total_shares"])), None);
         let mut k = 0;
         for step in case["steps"].as_array().unwrap() {
             if step["op"] == "run" {
@@ -1449,4 +1457,354 @@ fn solvency_case(want: &str) {
         }
         assert!(owed <= n(&case["paid_in"]), "{name}: contract owes {owed} but received {}", n(&case["paid_in"]));
     }
+}
+
+// ------------------------------------------------------------- v4: versioned recipes with notice
+
+const V3: &str = "3333333333333333333333333333333333333333333333333333333333333333";
+const STATE: &str = "5555555555555555555555555555555555555555555555555555555555555555";
+
+#[test]
+fn update_is_announced_then_activated_after_the_notice_period() {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.update_sealed("CLNP".into(), V2.into());
+    let e = last_event();
+    assert_eq!(e["event"], "recipe_update_scheduled");
+    assert_eq!(e["data"][0], json!({"recipe_id": "CLNP", "sealed_hash": V2, "version": 2, "effective_ns": DELAY.to_string()}));
+    let r = c.get_recipe("CLNP".into()).unwrap();
+    assert_eq!((r.sealed_hash.as_str(), r.version, r.pending_sealed_hash.as_str(), r.update_effective_ns.0), ("sha256:sealed", 1, V2, DELAY));
+    ctx("anyone.testnet", DELAY);
+    c.apply_update("CLNP".into());
+    let e = last_event();
+    assert_eq!(e["event"], "recipe_updated");
+    assert_eq!(e["data"][0], json!({"recipe_id": "CLNP", "sealed_hash": V2, "version": 2}));
+    let r = c.get_recipe("CLNP".into()).unwrap();
+    assert_eq!((r.sealed_hash.as_str(), r.version, r.pending_sealed_hash.as_str(), r.update_effective_ns.0), (V2, 2, "", 0));
+    // a second update counts on, and a newer announcement replaces a pending one
+    ctx("creator.testnet", DELAY);
+    c.update_sealed("CLNP".into(), V3.into());
+    c.update_sealed("CLNP".into(), "4444444444444444444444444444444444444444444444444444444444444444".into());
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 2 * DELAY);
+    let r = c.get_recipe("CLNP".into()).unwrap();
+    assert_eq!((r.version, r.sealed_hash.chars().next()), (3, Some('4')), "payment activated the due update");
+    assert_eq!(c.get_run("r1".into()).unwrap().sealed_hash, r.sealed_hash);
+}
+
+#[test]
+fn update_activates_lazily_inside_update_sealed() {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.update_sealed("CLNP".into(), V2.into());
+    ctx("creator.testnet", DELAY);
+    c.update_sealed("CLNP".into(), V3.into());
+    let r = c.get_recipe("CLNP".into()).unwrap();
+    assert_eq!((r.sealed_hash.as_str(), r.version, r.pending_sealed_hash.as_str()), (V2, 2, V3));
+}
+
+#[test]
+fn cancel_update_keeps_the_current_version() {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.update_sealed("CLNP".into(), V2.into());
+    c.cancel_update("CLNP".into());
+    let e = last_event();
+    assert_eq!(e["event"], "recipe_update_cancelled");
+    assert_eq!(e["data"][0], json!({"recipe_id": "CLNP", "sealed_hash": V2}));
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, DELAY);
+    let r = c.get_recipe("CLNP".into()).unwrap();
+    assert_eq!((r.sealed_hash.as_str(), r.version, r.pending_sealed_hash.as_str(), r.update_effective_ns.0), ("sha256:sealed", 1, "", 0));
+}
+
+#[test]
+#[should_panic(expected = "creator only")]
+fn update_sealed_creator_only() {
+    let mut c = setup();
+    ctx("mallory.testnet", 0);
+    c.update_sealed("CLNP".into(), V2.into());
+}
+
+#[test]
+#[should_panic(expected = "sealed_hash must be 64 lowercase hex")]
+fn update_sealed_rejects_bad_hash() {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.update_sealed("CLNP".into(), "sha256:v2".into());
+}
+
+#[test]
+#[should_panic(expected = "same as current version")]
+fn update_sealed_rejects_current_version() {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.update_sealed("CLNP".into(), V2.into());
+    ctx("creator.testnet", DELAY);
+    c.update_sealed("CLNP".into(), V2.into());
+}
+
+#[test]
+#[should_panic(expected = "no pending update")]
+fn cancel_update_needs_a_pending_update() {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.cancel_update("CLNP".into());
+}
+
+#[test]
+#[should_panic(expected = "creator only")]
+fn cancel_update_creator_only() {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.update_sealed("CLNP".into(), V2.into());
+    ctx("mallory.testnet", 0);
+    c.cancel_update("CLNP".into());
+}
+
+#[test]
+#[should_panic(expected = "update not due")]
+fn apply_update_before_effective_time() {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.update_sealed("CLNP".into(), V2.into());
+    ctx("anyone.testnet", DELAY - 1);
+    c.apply_update("CLNP".into());
+}
+
+#[test]
+#[should_panic(expected = "update not due")]
+fn apply_update_without_pending() {
+    let mut c = setup();
+    ctx("anyone.testnet", DELAY);
+    c.apply_update("CLNP".into());
+}
+
+#[test]
+#[should_panic(expected = r#"settle_mode must be "final" or "checkpoint""#)]
+fn publish_rejects_unknown_settle_mode() {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.publish_recipe("ODD".into(), "o".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 0, U128(10), Some("weekly".into()));
+}
+
+#[test]
+fn config_and_new_fields_serialize() {
+    let mut c = setup();
+    assert_eq!(c.get_config().update_delay_ns.0, DELAY);
+    let r = serde_json::to_value(c.get_recipe("CLNP".into()).unwrap()).unwrap();
+    assert_eq!((r["settle_mode"].clone(), r["version"].clone(), r["pending_sealed_hash"].clone(), r["update_effective_ns"].clone()), (json!("final"), json!(1), json!(""), json!("0")));
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 7);
+    let run = serde_json::to_value(c.get_run("r1".into()).unwrap()).unwrap();
+    assert_eq!(run["checkpoint_seq"], 0);
+    assert_eq!(run["state_hash"], "");
+    assert_eq!(run["parts_billed"], json!([]));
+    assert_eq!(run["billed"], "0");
+    assert_eq!(run["last_progress_ns"], "7");
+}
+
+// ------------------------------------------------------------- v4: durable runs and partial billing
+
+fn ckpt_sig(run_id: &str, recipe: &str, seq: u32, state: &str, parts: &[String]) -> Base64VecU8 {
+    let m = checkpoint_message(CONTRACT, run_id, recipe, seq, state, parts);
+    Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec())
+}
+
+fn checkpoint(c: &mut Contract, run_id: &str, recipe: &str, seq: u32, parts: &[&str], ts: u64) -> Vec<Payout> {
+    let parts: Vec<String> = parts.iter().map(|p| p.to_string()).collect();
+    let sig = ckpt_sig(run_id, recipe, seq, STATE, &parts);
+    ctx("relayer.testnet", ts);
+    c.checkpoint_run(run_id.into(), seq, STATE.into(), parts, sig)
+}
+
+/// CLNP plus "DURA": the same five parts in checkpoint mode.
+fn setup_checkpoint_mode() -> Contract {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.publish_recipe("DURA".into(), "Durable".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 1000, U128(1_000_000), Some("checkpoint".into()));
+    ctx(USDC, 0);
+    let msg = json!({"action":"run","recipe_id":"DURA","run_id":"d1","inputs_hash":"ff".repeat(32)}).to_string();
+    let _ = c.ft_on_transfer(acct("buyer.testnet"), U128(750_000), msg);
+    c
+}
+
+#[test]
+fn checkpoint_message_format() {
+    assert_eq!(
+        checkpoint_message("frs.testnet", "r1", "CLNP", 2, "ab", &["a".into(), "b".into()]),
+        "frs-ckpt-v1|frs.testnet|r1|CLNP|2|ab|a,b"
+    );
+}
+
+#[test]
+fn heartbeat_checkpoints_extend_the_timeout() {
+    let mut c = setup();
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
+    let t1 = RUN_TIMEOUT_NS - 1;
+    assert!(checkpoint(&mut c, "r1", "CLNP", 1, &[], t1).is_empty());
+    let e = last_event();
+    assert_eq!(e["event"], "run_checkpoint");
+    assert_eq!(e["data"][0], json!({"run_id": "r1", "seq": 1, "state_hash": STATE, "parts_done": [], "billed": "0", "payouts": []}));
+    let run = c.get_run("r1".into()).unwrap();
+    assert_eq!((run.checkpoint_seq, run.state_hash.as_str(), run.last_progress_ns.0), (1, STATE, t1));
+    checkpoint(&mut c, "r1", "CLNP", 2, &[], t1 + 5);
+    ctx("buyer.testnet", t1 + 5 + RUN_TIMEOUT_NS);
+    c.reclaim_run("r1".into());
+    assert_eq!(bal(&c, "buyer.testnet"), 750_000);
+}
+
+#[test]
+#[should_panic(expected = "run not timed out")]
+fn reclaim_counts_from_last_progress() {
+    let mut c = setup();
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
+    checkpoint(&mut c, "r1", "CLNP", 1, &[], RUN_TIMEOUT_NS - 1);
+    ctx("buyer.testnet", RUN_TIMEOUT_NS);
+    c.reclaim_run("r1".into());
+}
+
+#[test]
+fn partial_billing_pays_parts_at_checkpoints_and_never_twice() {
+    let mut c = setup_checkpoint_mode();
+    let paid = checkpoint(&mut c, "d1", "DURA", 1, &["wallet-scanner", "spam-shield"], 10);
+    assert_eq!(paid.len(), 2);
+    assert_eq!(bal(&c, "scanlabs.testnet"), 20_000);
+    assert_eq!(bal(&c, "shieldai.testnet"), 50_000);
+    let e = last_event();
+    assert_eq!(e["data"][0]["billed"], "70000");
+    assert_eq!(e["data"][0]["payouts"][1], json!({"account_id": "shieldai.testnet", "role": "part:spam-shield", "amount": "50000"}));
+    checkpoint(&mut c, "d1", "DURA", 2, &["dust-filter"], 20);
+    let run = c.get_run("d1".into()).unwrap();
+    assert_eq!((run.billed.0, run.parts_billed.len()), (80_000, 3));
+    // final settlement: billed parts are not paid again
+    let parts = all_parts();
+    let m = run_report_message(CONTRACT, "d1", "DURA", "ok", OUT, 0, &parts);
+    ctx("relayer.testnet", 30);
+    let payouts = c.report_run("d1".into(), "ok".into(), parts, OUT.into(), U128(0), Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec()));
+    let roles: Vec<&str> = payouts.iter().map(|p| p.role.as_str()).collect();
+    assert_eq!(roles, ["protocol", "runner", "part:fresh-address", "part:private-swap", "creator_royalty"]);
+    assert_eq!(bal(&c, "scanlabs.testnet"), 20_000, "scanner paid once");
+    assert_eq!(bal(&c, "dustco.testnet"), 10_000, "dust filter paid once");
+    let e = last_event();
+    let pool: u128 = e["data"][0]["shareholder_pool"].as_str().unwrap().parse().unwrap();
+    let sum: u128 = payouts.iter().map(|p| p.amount.0).sum();
+    assert_eq!(80_000 + sum + pool, 750_000, "billed + payouts + shareholders == price");
+}
+
+#[test]
+fn failure_after_billing_refunds_the_unbilled_rest() {
+    let mut c = setup_checkpoint_mode();
+    checkpoint(&mut c, "d1", "DURA", 1, &["wallet-scanner"], 10);
+    let m = run_report_message(CONTRACT, "d1", "DURA", "fail", OUT, 0, &[]);
+    ctx("relayer.testnet", 20);
+    c.report_run("d1".into(), "fail".into(), vec![], OUT.into(), U128(0), Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec()));
+    assert_eq!(bal(&c, "buyer.testnet"), 730_000);
+    assert_eq!(bal(&c, "scanlabs.testnet"), 20_000);
+    let e = last_event();
+    assert_eq!(e["event"], "run_refunded");
+    assert_eq!(e["data"][0]["amount"], "730000");
+}
+
+#[test]
+fn timeout_after_billing_refunds_the_unbilled_rest() {
+    let mut c = setup_checkpoint_mode();
+    checkpoint(&mut c, "d1", "DURA", 1, &["wallet-scanner", "spam-shield"], 10);
+    ctx("buyer.testnet", 10 + RUN_TIMEOUT_NS);
+    c.reclaim_run("d1".into());
+    assert_eq!(bal(&c, "buyer.testnet"), 680_000);
+}
+
+#[test]
+#[should_panic(expected = "parts_used must include billed parts")]
+fn final_report_must_include_billed_parts() {
+    let mut c = setup_checkpoint_mode();
+    checkpoint(&mut c, "d1", "DURA", 1, &["wallet-scanner"], 10);
+    let parts: Vec<String> = vec!["spam-shield".into()];
+    let m = run_report_message(CONTRACT, "d1", "DURA", "ok", OUT, 0, &parts);
+    ctx("relayer.testnet", 20);
+    c.report_run("d1".into(), "ok".into(), parts, OUT.into(), U128(0), Base64VecU8(signing_key().sign(m.as_bytes()).to_bytes().to_vec()));
+}
+
+#[test]
+#[should_panic(expected = "parts_done not part of recipe")]
+fn checkpoint_cannot_bill_a_part_twice() {
+    let mut c = setup_checkpoint_mode();
+    checkpoint(&mut c, "d1", "DURA", 1, &["wallet-scanner"], 10);
+    checkpoint(&mut c, "d1", "DURA", 2, &["wallet-scanner"], 20);
+}
+
+#[test]
+#[should_panic(expected = "parts_done not part of recipe")]
+fn checkpoint_cannot_bill_a_foreign_part() {
+    let mut c = setup_checkpoint_mode();
+    checkpoint(&mut c, "d1", "DURA", 1, &["ghost"], 10);
+}
+
+#[test]
+#[should_panic(expected = "parts can only be billed at checkpoints in checkpoint mode")]
+fn final_mode_does_not_bill_at_checkpoints() {
+    let mut c = setup();
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
+    checkpoint(&mut c, "r1", "CLNP", 1, &["wallet-scanner"], 10);
+}
+
+#[test]
+#[should_panic(expected = "seq must be checkpoint_seq + 1")]
+fn checkpoint_seq_must_advance_by_one() {
+    let mut c = setup();
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
+    checkpoint(&mut c, "r1", "CLNP", 2, &[], 10);
+}
+
+#[test]
+#[should_panic(expected = "seq must be checkpoint_seq + 1")]
+fn checkpoint_cannot_be_replayed() {
+    let mut c = setup();
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
+    checkpoint(&mut c, "r1", "CLNP", 1, &[], 10);
+    checkpoint(&mut c, "r1", "CLNP", 1, &[], 20);
+}
+
+#[test]
+#[should_panic(expected = "state_hash must be 64 lowercase hex")]
+fn checkpoint_rejects_bad_state_hash() {
+    let mut c = setup();
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
+    let sig = ckpt_sig("r1", "CLNP", 1, "XYZ", &[]);
+    ctx("relayer.testnet", 10);
+    c.checkpoint_run("r1".into(), 1, "XYZ".into(), vec![], sig);
+}
+
+#[test]
+#[should_panic(expected = "invalid runner signature")]
+fn checkpoint_rejects_wrong_signature() {
+    let mut c = setup();
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
+    let sig = ckpt_sig("r1", "CLNP", 2, STATE, &[]); // signed for another seq
+    ctx("relayer.testnet", 10);
+    c.checkpoint_run("r1".into(), 1, STATE.into(), vec![], sig);
+}
+
+#[test]
+#[should_panic(expected = "run not pending")]
+fn checkpoint_after_settlement_rejected() {
+    let mut c = setup();
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
+    report(&mut c, "r1", "ok", 0);
+    checkpoint(&mut c, "r1", "CLNP", 1, &[], 10);
+}
+
+#[test]
+#[should_panic(expected = "unknown run")]
+fn checkpoint_unknown_run() {
+    let mut c = setup();
+    checkpoint(&mut c, "nope", "CLNP", 1, &[], 10);
+}
+
+#[test]
+#[should_panic(expected = "runner inactive")]
+fn checkpoint_needs_active_runner() {
+    let mut c = setup();
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
+    ctx("owner.testnet", 0);
+    c.set_runner_active(acct("runner.testnet"), false);
+    checkpoint(&mut c, "r1", "CLNP", 1, &[], 10);
 }

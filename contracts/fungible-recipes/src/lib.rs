@@ -35,6 +35,9 @@ pub const EVENT_STANDARD: &str = "fungible-recipes";
 pub const EVENT_VERSION: &str = "1.0.0";
 pub const SIGNED_MESSAGE_PREFIX: &str = "frs-run-v3";
 pub const QUOTE_MESSAGE_PREFIX: &str = "frs-quote-v2";
+pub const CHECKPOINT_MESSAGE_PREFIX: &str = "frs-ckpt-v1";
+/// Accepted `settle_mode` values: settle everything at the end, or bill parts at checkpoints.
+pub const SETTLE_MODES: [&str; 2] = ["final", "checkpoint"];
 const GAS_FT_TRANSFER: Gas = Gas::from_tgas(10);
 const GAS_ON_WITHDRAW: Gas = Gas::from_tgas(10);
 /// Upper bound on resting orders per recipe book; bounds `clear_batch` gas and storage spam.
@@ -114,6 +117,15 @@ pub struct Recipe {
     pub bond_available: U128,
     /// Bond set aside for pending quoted runs.
     pub bond_locked: U128,
+    // ---- v4: durable runs and versioned recipes ----
+    /// `"final"`: every party is paid in the final settlement. `"checkpoint"`: parts are billed
+    /// to their authors at signed checkpoints as they complete (long-running workflows).
+    pub settle_mode: String,
+    /// Version number of `sealed_hash` (1 at publish, +1 on each activated update).
+    pub version: u32,
+    /// Announced next version (`""` when none). Takes effect at `update_effective_ns`.
+    pub pending_sealed_hash: String,
+    pub update_effective_ns: U64,
 }
 
 #[near(serializers = [json, borsh])]
@@ -146,6 +158,17 @@ pub struct Run {
     pub promised: U128,
     /// Part of the recipe's bond set aside for this run: the quote's signed `cover`.
     pub covered: U128,
+    // ---- v4: durable runs ----
+    /// Last runner-signed checkpoint recorded on-chain (0 = none).
+    pub checkpoint_seq: u32,
+    /// sha256 of the sealed run state at that checkpoint (`""` = none).
+    pub state_hash: String,
+    /// Parts already paid to their authors at checkpoints (checkpoint mode).
+    pub parts_billed: Vec<String>,
+    /// Sum of the fees paid at checkpoints; a refund returns `amount - billed`.
+    pub billed: U128,
+    /// Last progress (payment or checkpoint); `reclaim_run` counts the timeout from here.
+    pub last_progress_ns: U64,
 }
 
 #[near(serializers = [json, borsh])]
@@ -271,6 +294,7 @@ pub struct ConfigView {
     pub protocol_account: AccountId,
     pub protocol_fee_bps: u16,
     pub batch_interval_ns: U64,
+    pub update_delay_ns: U64,
 }
 
 /// A runner-signed quote attached to a run payment (recipe intents).
@@ -341,6 +365,8 @@ pub struct Contract {
     batches: LookupMap<String, Batch>,
     /// sha256 of every accepted quote message: each signed quote backs exactly one run.
     used_quotes: LookupSet<Vec<u8>>,
+    /// Notice period before an announced recipe version takes effect.
+    update_delay_ns: u64,
 }
 
 fn emit(event: &str, data: serde_json::Value) {
@@ -419,6 +445,37 @@ pub fn run_report_message(
     )
 }
 
+/// The exact UTF-8 message a runner signs for `checkpoint_run` (frs-ckpt-v1).
+pub fn checkpoint_message(
+    contract_id: &str,
+    run_id: &str,
+    recipe_id: &str,
+    seq: u32,
+    state_hash: &str,
+    parts_done: &[String],
+) -> String {
+    format!(
+        "{}|{}|{}|{}|{}|{}|{}",
+        CHECKPOINT_MESSAGE_PREFIX,
+        contract_id,
+        run_id,
+        recipe_id,
+        seq,
+        state_hash,
+        parts_done.join(",")
+    )
+}
+
+/// Removes the first occurrence of each element of `remove` from `from`; `None` if one is missing.
+fn multiset_minus(from: &[String], remove: &[String]) -> Option<Vec<String>> {
+    let mut left: Vec<String> = from.to_vec();
+    for r in remove {
+        let i = left.iter().position(|x| x == r)?;
+        left.remove(i);
+    }
+    Some(left)
+}
+
 /// The exact UTF-8 message a runner signs for a quote (frs-quote-v2). It binds the quote to
 /// the recipe version, the job, the buyer's sealed inputs and the buyer, so it can't be
 /// replayed for another version, another job, another input set or another account.
@@ -482,6 +539,7 @@ impl Contract {
         protocol_account: AccountId,
         protocol_fee_bps: u16,
         batch_interval_ns: U64,
+        update_delay_ns: U64,
     ) -> Self {
         require!(
             protocol_fee_bps <= MAX_PROTOCOL_FEE_BPS,
@@ -505,6 +563,7 @@ impl Contract {
             batch_interval_ns: batch_interval_ns.0,
             batches: LookupMap::new(StorageKey::Batches),
             used_quotes: LookupSet::new(StorageKey::UsedQuotes),
+            update_delay_ns: update_delay_ns.0,
         }
     }
 
@@ -585,8 +644,14 @@ impl Contract {
         price_per_run: U128,
         royalty_bps: u16,
         total_shares: U128,
+        settle_mode: Option<String>,
     ) {
         require!(valid_ticker(&id), "recipe id must match ^[A-Z0-9]{3,6}$");
+        let settle_mode = settle_mode.unwrap_or_else(|| "final".to_string());
+        require!(
+            SETTLE_MODES.contains(&settle_mode.as_str()),
+            r#"settle_mode must be "final" or "checkpoint""#
+        );
         require!(!self.recipes.contains_key(&id), "recipe exists");
         require!(royalty_bps <= MAX_ROYALTY_BPS, "royalty too high");
         require!(total_shares.0 > 0, "total_shares must be > 0");
@@ -635,6 +700,10 @@ impl Contract {
             compensated_total: U128(0),
             bond_available: U128(0),
             bond_locked: U128(0),
+            settle_mode,
+            version: 1,
+            pending_sealed_hash: String::new(),
+            update_effective_ns: U64(0),
         };
         emit("recipe_published", json!(recipe));
         self.recipes.insert(id.clone(), recipe);
@@ -650,14 +719,70 @@ impl Contract {
         );
     }
 
+    /// Announces a new sealed version. It takes effect `update_delay_ns` later, so shareholders
+    /// and buyers get notice; runs paid before then keep the version they paid for.
     pub fn update_sealed(&mut self, id: String, sealed_hash: String) {
+        let creator = self
+            .recipes
+            .get(&id)
+            .unwrap_or_else(|| env::panic_str("unknown recipe"))
+            .creator
+            .clone();
+        require!(env::predecessor_account_id() == creator, "creator only");
+        require!(valid_hash(&sealed_hash), "sealed_hash must be 64 lowercase hex");
+        self.activate_due(&id);
+        let delay = self.update_delay_ns;
+        let r = self.recipes.get_mut(&id).unwrap();
+        require!(sealed_hash != r.sealed_hash, "same as current version");
+        let effective_ns = env::block_timestamp() + delay;
+        r.pending_sealed_hash = sealed_hash.clone();
+        r.update_effective_ns = U64(effective_ns);
+        let version = r.version + 1;
+        emit(
+            "recipe_update_scheduled",
+            json!({"recipe_id": id, "sealed_hash": sealed_hash, "version": version, "effective_ns": U64(effective_ns)}),
+        );
+    }
+
+    /// Creator withdraws an announced version before it takes effect.
+    pub fn cancel_update(&mut self, id: String) {
         let r = self
             .recipes
             .get_mut(&id)
             .unwrap_or_else(|| env::panic_str("unknown recipe"));
         require!(env::predecessor_account_id() == r.creator, "creator only");
-        r.sealed_hash = sealed_hash.clone();
-        emit("recipe_updated", json!({"recipe_id": id, "sealed_hash": sealed_hash}));
+        require!(!r.pending_sealed_hash.is_empty(), "no pending update");
+        let sealed_hash = std::mem::take(&mut r.pending_sealed_hash);
+        r.update_effective_ns = U64(0);
+        emit("recipe_update_cancelled", json!({"recipe_id": id, "sealed_hash": sealed_hash}));
+    }
+
+    /// Anyone may activate an announced version once its notice period is over.
+    pub fn apply_update(&mut self, id: String) {
+        let r = self
+            .recipes
+            .get(&id)
+            .unwrap_or_else(|| env::panic_str("unknown recipe"));
+        require!(
+            !r.pending_sealed_hash.is_empty() && env::block_timestamp() >= r.update_effective_ns.0,
+            "update not due"
+        );
+        self.activate_due(&id);
+    }
+
+    /// Activates a due pending version (no-op otherwise).
+    fn activate_due(&mut self, id: &str) {
+        let Some(r) = self.recipes.get_mut(id) else { return };
+        if r.pending_sealed_hash.is_empty() || env::block_timestamp() < r.update_effective_ns.0 {
+            return;
+        }
+        r.sealed_hash = std::mem::take(&mut r.pending_sealed_hash);
+        r.update_effective_ns = U64(0);
+        r.version += 1;
+        emit(
+            "recipe_updated",
+            json!({"recipe_id": id, "sealed_hash": r.sealed_hash, "version": r.version}),
+        );
     }
 
     // ------------------------------------------------- pay-per-run (Intents)
@@ -685,6 +810,8 @@ impl Contract {
                 quote,
             } => {
                 let owner = on_behalf_of.clone().unwrap_or_else(|| sender_id.clone());
+                // a due recipe update takes effect before this payment is checked against it
+                self.activate_due(&recipe_id);
                 (
                     on_behalf_of,
                     self.internal_request_run(owner, amount.0, recipe_id, run_id, inputs_hash, quote),
@@ -825,6 +952,11 @@ impl Contract {
             expected: U128(expected),
             promised: U128(promised),
             covered: U128(covered),
+            checkpoint_seq: 0,
+            state_hash: String::new(),
+            parts_billed: vec![],
+            billed: U128(0),
+            last_progress_ns: U64(env::block_timestamp()),
         };
         emit("run_requested", json!(run));
         self.runs.insert(run_id, run);
@@ -866,7 +998,9 @@ impl Contract {
     /// Refunds a run's price, returns its cover to the bond and records it in the track record:
     /// `aborted` runs don't count against the recipe, every other refund counts as `failed`.
     fn refund_run(&mut self, run: &Run, reason: &str) {
-        self.credit(&run.buyer, run.amount.0);
+        // parts already billed at checkpoints did their work and stay paid
+        let refund = run.amount.0 - run.billed.0;
+        self.credit(&run.buyer, refund);
         let r = self.recipes.get_mut(&run.recipe_id).unwrap();
         let b = bond::release(bond_of(r), run.covered.0).unwrap_or_else(|| env::panic_str("bond accounting"));
         set_bond(r, b);
@@ -878,7 +1012,7 @@ impl Contract {
         self.set_run_status(&run.run_id, RunStatus::Refunded);
         emit(
             "run_refunded",
-            json!({"run_id": run.run_id, "buyer": run.buyer, "amount": run.amount, "reason": reason}),
+            json!({"run_id": run.run_id, "buyer": run.buyer, "amount": U128(refund), "reason": reason}),
         );
     }
 
@@ -947,6 +1081,22 @@ impl Contract {
             is_sub_multiset(&parts_used, &recipe.parts),
             "parts_used not part of recipe"
         );
+        require!(
+            is_sub_multiset(&run.parts_billed, &parts_used),
+            "parts_used must include billed parts"
+        );
+        // which entries of parts_used are still unpaid: drop the first occurrence of each billed part
+        let mut still_billed: Vec<String> = run.parts_billed.clone();
+        let unpaid: Vec<bool> = parts_used
+            .iter()
+            .map(|p| match still_billed.iter().position(|b| b == p) {
+                Some(i) => {
+                    still_billed.remove(i);
+                    false
+                }
+                None => true,
+            })
+            .collect();
         let part_infos: Vec<Part> = parts_used
             .iter()
             .map(|part_id| self.parts.get(part_id).cloned().unwrap())
@@ -977,8 +1127,10 @@ impl Contract {
         let protocol_account = self.protocol_account.clone();
         pay(self, &protocol_account, "protocol", split.protocol_total());
         pay(self, &runner.id, "runner", split.runner);
-        for (part, fee) in part_infos.iter().zip(fees.iter()) {
-            pay(self, &part.author, &format!("part:{}", part.id), *fee);
+        for ((part, fee), unpaid) in part_infos.iter().zip(fees.iter()).zip(unpaid.iter()) {
+            if *unpaid {
+                pay(self, &part.author, &format!("part:{}", part.id), *fee);
+            }
         }
         pay(self, &recipe.creator, "creator_royalty", split.creator);
 
@@ -1018,6 +1170,95 @@ impl Contract {
         payouts
     }
 
+    /// Records a runner-signed checkpoint of a pending run: progress (extends the timeout) and,
+    /// in checkpoint mode, bills the parts completed since the last checkpoint to their authors.
+    pub fn checkpoint_run(
+        &mut self,
+        run_id: String,
+        seq: u32,
+        state_hash: String,
+        parts_done: Vec<String>,
+        signature: Base64VecU8,
+    ) -> Vec<Payout> {
+        let run = self
+            .runs
+            .get(&run_id)
+            .cloned()
+            .unwrap_or_else(|| env::panic_str("unknown run"));
+        require!(run.status == RunStatus::Pending, "run not pending");
+        let recipe = self
+            .recipes
+            .get(&run.recipe_id)
+            .cloned()
+            .unwrap_or_else(|| env::panic_str("unknown recipe"));
+        let runner = self
+            .runners
+            .get(&recipe.runner_id)
+            .cloned()
+            .unwrap_or_else(|| env::panic_str("unknown runner"));
+        require!(runner.active, "runner inactive");
+        require!(seq == run.checkpoint_seq + 1, "seq must be checkpoint_seq + 1");
+        require!(valid_hash(&state_hash), "state_hash must be 64 lowercase hex");
+        let msg = checkpoint_message(
+            env::current_account_id().as_str(),
+            &run_id,
+            &recipe.id,
+            seq,
+            &state_hash,
+            &parts_done,
+        );
+        require!(
+            verify_ed25519(&signature.0, &msg, &runner.signing_pk),
+            "invalid runner signature"
+        );
+        let mut payouts: Vec<Payout> = Vec::new();
+        let mut billed = run.billed.0;
+        let mut parts_billed = run.parts_billed.clone();
+        if !parts_done.is_empty() {
+            require!(
+                recipe.settle_mode == "checkpoint",
+                "parts can only be billed at checkpoints in checkpoint mode"
+            );
+            let mut all = parts_billed.clone();
+            all.extend(parts_done.iter().cloned());
+            require!(
+                multiset_minus(&recipe.parts, &all).is_some(),
+                "parts_done not part of recipe"
+            );
+            for part_id in &parts_done {
+                let part = self.parts.get(part_id).cloned().unwrap();
+                if part.fee_per_call.0 > 0 {
+                    self.credit(&part.author, part.fee_per_call.0);
+                }
+                billed += part.fee_per_call.0;
+                payouts.push(Payout {
+                    account_id: part.author.clone(),
+                    role: format!("part:{}", part.id),
+                    amount: part.fee_per_call,
+                });
+            }
+            parts_billed = all;
+        }
+        let r = self.runs.get_mut(&run_id).unwrap();
+        r.checkpoint_seq = seq;
+        r.state_hash = state_hash.clone();
+        r.parts_billed = parts_billed;
+        r.billed = U128(billed);
+        r.last_progress_ns = U64(env::block_timestamp());
+        emit(
+            "run_checkpoint",
+            json!({
+                "run_id": run_id,
+                "seq": seq,
+                "state_hash": state_hash,
+                "parts_done": parts_done,
+                "billed": U128(billed),
+                "payouts": payouts,
+            }),
+        );
+        payouts
+    }
+
     pub fn reclaim_run(&mut self, run_id: String) {
         let run = self
             .runs
@@ -1027,7 +1268,7 @@ impl Contract {
         require!(env::predecessor_account_id() == run.buyer, "buyer only");
         require!(run.status == RunStatus::Pending, "run not pending");
         require!(
-            env::block_timestamp() >= run.created_ns.0 + RUN_TIMEOUT_NS,
+            env::block_timestamp() >= run.last_progress_ns.0 + RUN_TIMEOUT_NS,
             "run not timed out"
         );
         self.refund_run(&run, "timeout");
@@ -1360,6 +1601,7 @@ impl Contract {
             protocol_account: self.protocol_account.clone(),
             protocol_fee_bps: self.protocol_fee_bps,
             batch_interval_ns: U64(self.batch_interval_ns),
+            update_delay_ns: U64(self.update_delay_ns),
         }
     }
 

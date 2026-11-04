@@ -32,18 +32,21 @@ tla = None
 if "--tla" in sys.argv:
     jar = os.environ.get("TLA2TOOLS") or str(HERE.parent / "tools" / "tla2tools.jar")
     tla = {}
-    for cfg, expect in (("MC_credited", "pass"), ("MC_v3", "NoBondDrain")):
+    for module, cfg, expect in (("BondedRuns", "MC_credited", "pass"), ("BondedRuns", "MC_v3", "NoBondDrain"),
+                                ("DurableRuns", "MC_Durable", "pass"), ("DurableRuns", "MC_DurableNoWAL", "DepositsOnce"),
+                                ("VersionedRecipes", "MC_Versions", "pass"), ("VersionedRecipes", "MC_VersionsNoRetain", "NoStrandedRun")):
         print(f"== TLC {cfg} (expect {expect})")
         p = subprocess.run(["java", "-XX:+UseParallelGC", "-cp", jar, "tlc2.TLC", "-workers", "auto", "-deadlock",
-                            "-metadir", f"/tmp/tlc-{cfg}", "-config", f"{cfg}.cfg", "BondedRuns.tla"],
+                            "-metadir", f"/tmp/tlc-{cfg}", "-config", f"{cfg}.cfg", f"{module}.tla"],
                            cwd=HERE / "tla", capture_output=True, text=True)
         log = "\n".join(l for l in p.stdout.splitlines() if not l.startswith("Picked up"))
         (HERE / "tla" / "results" / f"{cfg}.log").write_text(log + "\n")
-        for f in (HERE / "tla").glob("BondedRuns_TTrace_*"):
+        for f in (HERE / "tla").glob(f"{module}_TTrace_*"):
             f.replace(HERE / "tla" / "results" / f.name)
         got = "pass" if "No error has been found" in log else (re.search(r"Invariant (\w+) is violated", log) or [None, "error"])[1]
-        states = re.search(r"([\d,]+) distinct states found", log)
-        tla[cfg] = {"expected": expect, "got": got, "distinct_states": states.group(1) if states else None}
+        found = re.findall(r"([\d,]+) distinct states found", log)  # the last line is the final count
+        states = found[-1] if found else None
+        tla[cfg] = {"module": module, "expected": expect, "got": got, "distinct_states": states}
         print(f"   {got} ({tla[cfg]['distinct_states']} distinct states)")
         ok &= got == expect
 

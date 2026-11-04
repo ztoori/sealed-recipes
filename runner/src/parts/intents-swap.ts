@@ -9,7 +9,14 @@ const TERMINAL = new Set(['SUCCESS', 'FAILED', 'REFUNDED', 'INCOMPLETE_DEPOSIT']
  *  - intents.public-swap       → `confidentiality: "public"`
  * Non-custodial: the runner never holds user funds. It prepares the NEP-141
  * `ft_transfer`s to the quoted deposit addresses; the buyer's wallet signs them once.
+ *
+ * Durable (exactly-once deposits): before asking for approval the part saves its quotes (write-ahead), and after
+ * approval it saves the signed tx hashes before submitting them. A runner that restarts mid-part resumes from that
+ * state: it never re-quotes after quotes were shown to the buyer, and never asks the buyer to sign twice for an
+ * approval the marketplace already relayed. Model-checked in verification/tla/DurableRuns.tla (DepositsOnce).
+ * `fraction_bps` swaps only part of each balance (e.g. 5000 = half), for workflows that sell in tranches.
  */
+interface SwapState { phase: 'approval' | 'submitted'; quotes: { h: Holding; q: QuoteResponse }[]; txHashes?: string[] }
 export const intentsSwap: PartHandler = async (inputs, ctx) => {
   const confidential = ctx.manifest.id.startsWith('intents.confidential-swap');
   const tokens = [...(inputs.tokens as Holding[])];
@@ -20,8 +27,14 @@ export const intentsSwap: PartHandler = async (inputs, ctx) => {
   const jwt = ctx.secrets.oneClickJwt;
   const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/json', ...(jwt ? { authorization: `Bearer ${jwt}` } : {}) };
 
-  const quotes: { h: Holding; q: QuoteResponse }[] = [];
-  for (const h of tokens) {
+  const fraction = BigInt(Math.round(Number(ctx.params.fraction_bps ?? 10_000)));
+  if (fraction <= 0n || fraction > 10_000n) throw new Error('fraction_bps must be in 1..10000');
+  const rs = ctx.resumeState as SwapState | undefined;
+  const quotes: { h: Holding; q: QuoteResponse }[] = rs ? rs.quotes : [];
+  if (rs) ctx.log(`resuming after a runner restart: ${rs.quotes.length} swap(s), ${rs.phase === 'submitted' ? 'deposits already signed' : 'waiting for approval'}`);
+  for (const h0 of rs ? [] : tokens) {
+    const h = { ...h0, amount: ((BigInt(h0.amount) * fraction) / 10_000n).toString() };
+    if (h.amount === '0') { ctx.log(`skip ${h.symbol}: nothing to swap at this fraction`); continue; }
     if (h.assetId === target) { ctx.log(`skip ${h.symbol}: already the target asset`); continue; }
     const req: QuoteRequest = {
       dry: ctx.mode === 'quote', swapType: 'EXACT_INPUT', slippageTolerance: slippage,
@@ -51,14 +64,24 @@ export const intentsSwap: PartHandler = async (inputs, ctx) => {
     receiverId: h.contract,
     actions: [{ type: 'FunctionCall', params: { methodName: 'ft_transfer', args: { receiver_id: q.quote.depositAddress!, amount: q.quote.amountIn }, gas: '50000000000000', deposit: '1' } }],
   }));
-  const approval = await ctx.requestApproval({
-    title: `Approve ${transactions.length} deposit${transactions.length > 1 ? 's' : ''} to NEAR Intents`,
-    signer: tokens[0].owner,
-    transactions,
-    summary: quotes.map(({ h, q }) => ({ symbol: h.symbol, amount: q.quote.amountInFormatted, usd: Number(q.quote.amountInUsd), to: q.quote.depositAddress! })),
-  });
-  if (!approval.approved) throw new Error('buyer rejected the deposit transactions');
+  let approval: { approved: boolean; txHashes: string[] };
+  if (rs?.phase === 'submitted') approval = { approved: true, txHashes: rs.txHashes ?? [] };
+  else {
+    if (!rs) await ctx.saveState({ phase: 'approval', quotes } satisfies SwapState); // write-ahead: quotes are fixed now
+    // an approval relayed before a restart only counts for the exact quotes it was given for (saved above)
+    const prior = rs ? ctx.priorApproval : undefined;
+    approval = prior ?? await ctx.requestApproval({
+      title: `Approve ${transactions.length} deposit${transactions.length > 1 ? 's' : ''} to NEAR Intents`,
+      signer: quotes[0].h.owner,
+      transactions,
+      summary: quotes.map(({ h, q }) => ({ symbol: h.symbol, amount: q.quote.amountInFormatted, usd: Number(q.quote.amountInUsd), to: q.quote.depositAddress! })),
+    });
+    if (prior) ctx.log('the buyer already approved these deposits before the restart; not asking again');
+    if (!approval.approved) throw new Error('buyer rejected the deposit transactions');
+    await ctx.saveState({ phase: 'submitted', quotes, txHashes: approval.txHashes } satisfies SwapState);
+  }
 
+  // submitting the same tx hash twice is idempotent at 1Click, so a restart after this point is harmless
   for (let i = 0; i < quotes.length; i++) {
     await ctx.http(`${ctx.endpoints.oneclick}/v0/deposit/submit`, { method: 'POST', headers, body: JSON.stringify({ txHash: approval.txHashes[i], depositAddress: quotes[i].q.quote.depositAddress, nearSenderAccount: quotes[i].h.owner }) });
   }

@@ -29,7 +29,7 @@ export async function publish(recipe: Recipe, catalog: Catalog, encPkHex: string
   if (!v.ok) throw new Error('invalid recipe: ' + JSON.stringify(v.diagnostics));
   const listing = publicListing(recipe, catalog);
   const sealed = seal(recipe, encPkHex, 'recipe');
-  return api<{ sealed_hash: string; tx: string; height: number }>('/api/publish', { listing, sealed, ipo, bond: recipe.listing.bond ?? '0' });
+  return api<{ sealed_hash: string; tx: string; height: number }>('/api/publish', { listing, sealed, ipo, bond: recipe.listing.bond ?? '0', settle_mode: recipe.listing.settle_mode ?? 'final' });
 }
 
 export function freshImplicitAccount() {

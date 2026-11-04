@@ -91,7 +91,7 @@ export interface Recipe {
   output: string; // "<node>.<port>"
   /** job type this recipe competes for (recipe intents); its form must match the job's inputs */
   implements?: string;
-  listing: { price_per_run: string; royalty_bps: number; total_shares: string; bond?: string };
+  listing: { price_per_run: string; royalty_bps: number; total_shares: string; bond?: string; settle_mode?: 'final' | 'checkpoint' };
 }
 
 export type Severity = 'error' | 'warning';

@@ -28,7 +28,7 @@ Deadline: **Nov 14, 2026, 23:59 UTC** (6:59 pm Toronto). Submissions open Nov 1,
 | Repository link | *your public GitHub URL* |
 | Demo post link | *your X post URL* |
 | Website | leave empty |
-| Project description (1998 / 2000 chars) | see below |
+| Project description (1999 / 2000 chars) | see below |
 
 ```text
 Problem: businesses and AI agents run on workflows that chain tools, bots and models. The workflow (which parts, in what order, with which prompts and thresholds) is the edge, but it is protected only by NDAs, easy to copy, hard to compare on results, and the builders of its parts are rarely paid.
@@ -42,7 +42,7 @@ Fungible Recipes is intents for workflows, on NEAR:
 - FRS-1, a no-code standard: typed parts with drop-in swaps and disclosure of model, instructions, harness and verification (open-weights low risk, closed models high).
 - Optional funding: creators sell revenue shares in batch auctions.
 
-Includes: Rust NEAR contract (73 tests) with Z3/TLA+ proofs of its money and bond logic, a TS mirror on shared vectors, the TEE runner, an agent buyer, the UI, an e2e story and a live-check against real 1Click and NEAR AI Cloud.
+Includes: Rust NEAR contract (102 tests) with Z3/TLA+ proofs of its money and bond logic, a TS mirror on shared vectors, the TEE runner, an agent buyer, the UI, an e2e story and a live-check against real 1Click and NEAR AI Cloud.
 ```
 
 ## 3. X demo post
@@ -70,7 +70,7 @@ Built at NEAR HACKATHON @NEARProtocol #NEARHackathon
 
 3/ Bob posts "Clean up my wallet". SWPR quotes more USDC but is public and sweeps his wNEAR; CLNP is confidential and bonded. He picks CLNP, pays $0.75 from Arbitrum, gets $28.02 vs $27.81 promised. 5 part authors, the runner, the creator and shareholders: one receipt.
 
-4/ Repo (MIT, 107 tests + formal proofs, one-command demo, agent buyer included): <repo link>
+4/ Repo (MIT, 138 tests + formal proofs, one-command demo, agent buyer included): <repo link>
 Question for builders: which workflow would you seal and let compete first?
 ```
 

@@ -65,6 +65,9 @@ export function Exchange() {
                 <dt>Delivered vs promised</dt><dd>{Number(m.onchain?.promised_total ?? 0) ? `${(Number(m.onchain.delivered_total) / Number(m.onchain.promised_total) * 100).toFixed(0)}%` : 'no quoted runs yet'}</dd>
                 <dt>Bond backing quotes</dt><dd>{usd(m.onchain?.bond_available ?? 0, 2)}{Number(m.onchain?.bond_locked ?? 0) ? ` (+${usd(m.onchain.bond_locked, 2)} locked)` : ''}</dd>
                 <dt>Paid out to buyers from bond</dt><dd>{usd(m.onchain?.compensated_total ?? 0, 2)}</dd>
+                <dt>Aborted before running</dt><dd>{Number(m.onchain?.aborted ?? 0)}</dd>
+                <dt>Version</dt><dd>v{m.onchain?.version ?? 1}{m.onchain?.pending_sealed_hash ? <div className="small"><span className="pill warn">v{(m.onchain.version ?? 1) + 1} announced</span> takes effect {new Date(Number(BigInt(m.onchain.update_effective_ns) / 1_000_000n)).toLocaleString()}. Runs already paid keep the version they paid for.</div> : null}</dd>
+                <dt>Settlement</dt><dd>{m.onchain?.settle_mode === 'checkpoint' ? 'per checkpoint: each part is paid as soon as it finishes; durable multi-step runs' : 'one receipt at the end of the run'}</dd>
                 <dt>Withdrawal risk</dt><dd>{m.listing?.risk ?? '—'}</dd>
               </dl>
             </div>

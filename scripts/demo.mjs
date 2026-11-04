@@ -22,15 +22,22 @@ const tsx = ['--import', 'tsx'];
 const children = [];
 const RUNNER_TOKEN = randomBytes(24).toString('hex'); // marketplace ↔ runner job channel
 
-function start(name, script, env) {
+let stopping = false;
+/** `restart`: supervise like a container restart policy (the runner can crash mid-run; runs resume from checkpoints) */
+function start(name, script, env, restart = false) {
   const p = spawn(node, [...tsx, script], { cwd: root, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
   p.stdout.on('data', (d) => process.stdout.write(d));
   p.stderr.on('data', (d) => process.stderr.write(`[${name}] ${d}`));
-  p.on('exit', (code) => { if (code) { console.error(`[demo] ${name} exited with ${code}`); shutdown(1); } });
+  p.on('exit', (code) => {
+    children.splice(children.indexOf(p), 1);
+    if (stopping) return;
+    if (restart) { console.log(`[demo] ${name} stopped (${code ?? 'signal'}); restarting it`); setTimeout(() => start(name, script, env, restart), 800); return; }
+    if (code) { console.error(`[demo] ${name} exited with ${code}`); shutdown(1); }
+  });
   children.push(p);
   return p;
 }
-function shutdown(code = 0) { for (const c of children) c.kill(); process.exit(code); }
+function shutdown(code = 0) { stopping = true; for (const c of [...children]) c.kill(); process.exit(code); }
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
@@ -53,19 +60,26 @@ const rewrite = [
   `cloud-api.near.ai=${base}/mock/nearai`,
 ].join(',');
 
-start('runner', 'runner/src/main.ts', { RUNNER_PORT: RPORT, CHAIN_URL: `${base}/api/chain`, FRS_REWRITE: rewrite, RUNNER_TOKEN, TEE_MODE: process.env.TEE_MODE ?? 'local-dev' });
+start('runner', 'runner/src/main.ts', { RUNNER_PORT: RPORT, CHAIN_URL: `${base}/api/chain`, FRS_REWRITE: rewrite, RUNNER_TOKEN, TEE_MODE: process.env.TEE_MODE ?? 'local-dev', FRS_ALLOW_CRASH: '1' }, true);
 await waitFor(`http://127.0.0.1:${RPORT}/health`);
-start('server', 'server/src/main.ts', { PORT, RUNNER_URL: `http://127.0.0.1:${RPORT}`, RUNNER_TOKEN });
+start('server', 'server/src/main.ts', { PORT, RUNNER_URL: `http://127.0.0.1:${RPORT}`, RUNNER_TOKEN, FRS_ALLOW_CRASH: '1' });
 await waitFor(`${base}/api/mode`);
 const seed = spawnSync(node, [...tsx, 'scripts/seed.ts'], { cwd: root, stdio: 'inherit', env: { ...process.env, FRS_URL: base } });
 if (seed.status) shutdown(seed.status);
 
 console.log(`\n  Fungible Recipes is running →  ${base}\n  (local mode: offline mocks for FastNEAR / RPC / 1Click / NEAR AI Cloud; see README "What is real")\n  Ctrl+C to stop.\n`);
 
+for (const [flag, script] of [['--crash-test', 'scripts/crash-test.ts'], ['--versions', 'scripts/versions-demo.ts']]) {
+  if (!args.has(flag)) continue;
+  // async (not spawnSync): the launcher must stay responsive to restart the runner while the script runs
+  const status = await new Promise((done) => spawn(node, [...tsx, script], { cwd: root, stdio: 'inherit', env: { ...process.env, FRS_URL: base } }).on('exit', (c) => done(c ?? 1)));
+  if (status) shutdown(status);
+}
 if (args.has('--story')) {
   const s = spawnSync(node, [...tsx, 'scripts/story-cli.ts'], { cwd: root, stdio: 'inherit', env: { ...process.env, FRS_URL: base } });
   if (args.has('--exit')) shutdown(s.status ?? 0);
 }
+if (args.has('--exit')) shutdown(0);
 if (!args.has('--no-open') && !args.has('--exit') && !process.env.CI) {
   const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', base]] : process.platform === 'darwin' ? ['open', [base]] : ['xdg-open', [base]];
   try { spawn(cmd[0], cmd[1], { stdio: 'ignore', detached: true }).on('error', () => {}).unref(); } catch {}

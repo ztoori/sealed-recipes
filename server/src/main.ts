@@ -40,13 +40,21 @@ const catalog = loadCatalog(ROOT);
 const tokens = JSON.parse(readFileSync(resolve(ROOT, 'fixtures/oneclick-tokens.json'), 'utf8')).tokens as Token[];
 const world = new World(resolve(ROOT, 'fixtures/wallets.json'), resolve(ROOT, 'fixtures/oneclick-tokens.json'));
 const BATCH_MS = Number(env.FRS_BATCH_MS ?? 12000);
-const ledger = new LocalLedger({ contractId: CONTRACT_ID, owner: 'frs-dao.testnet', paymentToken: PAYMENT_TOKEN, protocolAccount: 'frs-treasury.testnet', protocolFeeBps: 200, batchIntervalNs: BigInt(BATCH_MS) * 1_000_000n });
+/** notice period before a new recipe version takes effect (24 h is the suggested mainnet value; short for the demo) */
+const UPDATE_DELAY_S = Number(env.FRS_UPDATE_DELAY_S ?? 30);
+const ledger = new LocalLedger({ contractId: CONTRACT_ID, owner: 'frs-dao.testnet', paymentToken: PAYMENT_TOKEN, protocolAccount: 'frs-treasury.testnet', protocolFeeBps: 200, batchIntervalNs: BigInt(BATCH_MS) * 1_000_000n, updateDelayNs: BigInt(UPDATE_DELAY_S) * 1_000_000_000n });
 const market = new Market(ledger);
 
 // ---------- runs: per-run event log merged from payment (server) + execution (runner) ----------
 type Ev = { seq: number; at: number; source: 'market' | 'intents' | 'runner' | 'chain'; type: string; data: Record<string, unknown> };
 /** `token` is a capability returned only to the buyer who requested the quote: it gates the event stream and approvals. */
-interface RunCtx { run_id: string; token: string; recipe_id: string; buyer: string; sealed_inputs: SealedEnvelope; inputs_hash: string; quote: QuoteResponse; events: Ev[]; listeners: Set<(e: Ev) => void>; started: boolean; approvalPending: boolean }
+interface RunCtx { run_id: string; token: string; recipe_id: string; buyer: string; sealed_inputs: SealedEnvelope; inputs_hash: string; quote: QuoteResponse; events: Ev[]; listeners: Set<(e: Ev) => void>; started: boolean; approvalPending: boolean;
+  /** durable runs: the latest checkpoint the runner stored (ciphertext sealed to the runner + its signature) */
+  checkpoint?: CheckpointRecord;
+  /** approvals relayed to the runner, by node: replayed on resume so the buyer is never asked to sign twice */
+  approvals: Record<string, { approved: boolean; txHashes: string[] }>;
+  approvalNode?: string; done: boolean }
+interface CheckpointRecord { run_id: string; local_seq: number; state_hash: string; envelope: SealedEnvelope; signature: string }
 const runs = new Map<string, RunCtx>();
 const pushEv = (r: RunCtx, source: Ev['source'], type: string, data: Record<string, unknown>) => {
   const e: Ev = { seq: r.events.length, at: Date.now(), source, type, data };
@@ -62,7 +70,13 @@ const mocks = mockRouter(world, tokens, {
       const r = msg.run_id ? runs.get(msg.run_id) : undefined;
       try {
         ledger.call(PAYMENT_TOKEN, (l) => l.ft_on_transfer({ sender_id: SOLVER, amount: amountOut, msg: req.customRecipientMsg! }));
-        if (r) pushEv(r, 'chain', 'run_requested', { tx: ledger.events.at(-1)?.tx_hash, height: ledger.height, amount: amountOut, solver: SOLVER, depositAddress });
+        const last = ledger.events.at(-1);
+        if (r && !ledger.runs.has(r.run_id)) {
+          // Intents delivery with on_behalf_of: the contract credited the buyer instead of opening the run
+          pushEv(r, 'chain', 'payment_rejected', { error: String((last?.data[0] as { reason?: string })?.reason ?? 'rejected'), refunded_to: r.buyer, tx: last?.tx_hash });
+          return;
+        }
+        if (r) pushEv(r, 'chain', 'run_requested', { tx: last?.tx_hash, height: ledger.height, amount: amountOut, solver: SOLVER, depositAddress });
         if (r) void startRunner(r);
       } catch (e) { if (r) pushEv(r, 'chain', 'payment_rejected', { error: (e as Error).message }); }
       return;
@@ -73,30 +87,66 @@ const mocks = mockRouter(world, tokens, {
 
 async function startRunner(r: RunCtx) {
   if (r.started) return; r.started = true;
-  const sealed = vault.get(r.recipe_id)!;
+  const sealed = sealedFor(r);
   const res = await fetch(`${RUNNER}/runs`, { method: 'POST', headers: rh, body: JSON.stringify({ run_id: r.run_id, recipe_id: r.recipe_id, sealed_recipe: sealed, sealed_inputs: r.sealed_inputs }) });
   if (!res.ok) { pushEv(r, 'runner', 'failed', { error: await res.text() }); return; }
-  // proxy runner SSE into the run log
-  const sse = await fetch(`${RUNNER}/runs/${r.run_id}/events`, { headers: rh });
-  const reader = sse.body!.getReader(); const dec = new TextDecoder(); let buf = '';
+  void followRunner(r);
+}
+
+/** the exact version the run paid for (the vault keeps every version a pending run may need) */
+function sealedFor(r: RunCtx): SealedEnvelope {
+  const sh = ledger.runs.get(r.run_id)?.sealed_hash ?? ledger.recipes.get(r.recipe_id)!.sealed_hash;
+  const env = vault.get(r.recipe_id)?.get(sh);
+  if (!env) throw new Error(`vault has no version ${sh.slice(0, 12)}… of ${r.recipe_id}`);
+  return env;
+}
+
+/**
+ * Proxies the runner's event stream into the run log. If the stream breaks before the run finished (runner
+ * crashed or restarted), the marketplace keeps asking the runner to resume from the last stored checkpoint.
+ */
+async function followRunner(r: RunCtx) {
   for (;;) {
-    const { value, done } = await reader.read(); if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let i;
-    while ((i = buf.indexOf('\n\n')) >= 0) {
-      const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
-      if (!chunk.startsWith('data: ')) continue;
-      const e = JSON.parse(chunk.slice(6)) as { type: string; data: Record<string, unknown> };
-      if (e.type === 'approval_pending') r.approvalPending = true;
-      pushEv(r, 'runner', e.type, e.data);
-      if (e.type === 'completed' || e.type === 'failed') { await reader.cancel(); return; }
+    try {
+      const sse = await fetch(`${RUNNER}/runs/${r.run_id}/events`, { headers: rh });
+      if (!sse.ok) throw new Error(`events ${sse.status}`);
+      const reader = sse.body!.getReader(); const dec = new TextDecoder(); let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+          if (!chunk.startsWith('data: ')) continue;
+          const e = JSON.parse(chunk.slice(6)) as { seq: number; type: string; data: Record<string, unknown> };
+          if (e.type === 'approval_pending') { r.approvalPending = true; r.approvalNode = String(e.data.node ?? ''); }
+          pushEv(r, 'runner', e.type, e.data);
+          if (e.type === 'completed' || e.type === 'failed') { r.done = true; await reader.cancel(); return; }
+        }
+      }
+    } catch { /* stream broke: fall through to resume */ }
+    if (r.done || ledger.runs.get(r.run_id)?.status !== 'Pending') return;
+    pushEv(r, 'market', 'runner_lost', { checkpoint: r.checkpoint?.local_seq ?? null });
+    r.approvalPending = false;
+    // ask the (restarted) runner to continue from the last checkpoint; retry until it is back
+    for (let attempt = 0; ; attempt++) {
+      await new Promise((ok) => setTimeout(ok, Math.min(5000, 500 + attempt * 500)));
+      if (ledger.runs.get(r.run_id)?.status !== 'Pending') return;
+      try {
+        const res = await fetch(`${RUNNER}/runs/${r.run_id}/resume`, { method: 'POST', headers: rh, body: JSON.stringify({ recipe_id: r.recipe_id, sealed_recipe: sealedFor(r), sealed_inputs: r.sealed_inputs, checkpoint: r.checkpoint ?? null, approvals: r.approvals }) });
+        if (res.ok || res.status === 409) { pushEv(r, 'market', 'resume_requested', { checkpoint: r.checkpoint?.local_seq ?? null, attempt: attempt + 1 }); break; }
+      } catch { /* runner still down */ }
     }
   }
 }
 
 // ---------- marketplace state ----------
-const vault = new Map<string, SealedEnvelope>(); // ticker → sealed recipe (ciphertext only)
-const listings = new Map<string, PublicListing & { ipo_price: number; published_at: string }>();
+/** ticker → sealed_hash → sealed recipe (ciphertext only). Every version is kept: a run paid for version N must
+ *  still execute version N after version N+1 takes effect. Production: a durable store keyed the same way. */
+const vault = new Map<string, Map<string, SealedEnvelope>>();
+const vaultPut = (ticker: string, env: SealedEnvelope) => { if (!vault.has(ticker)) vault.set(ticker, new Map()); vault.get(ticker)!.set(sealedHash(env), env); };
+const currentSealed = (ticker: string) => vault.get(ticker)?.get(ledger.recipes.get(ticker)?.sealed_hash ?? '');
+const listings = new Map<string, PublicListing & { ipo_price: number; published_at: string; settle_mode?: string }>();
 
 const app = express();
 app.use('/mock', mocks.router);
@@ -121,6 +171,42 @@ app.post('/api/chain/report_run', guard((req, res) => {
   if (r) pushEv(r, 'chain', ev.event, { tx: ev.tx_hash, height: ev.block_height, ...ev.data[0] });
   j(res, { status: run?.status, payouts, tx: ev.tx_hash, height: ev.block_height });
 }));
+app.post('/api/chain/checkpoint_run', guard((req, res) => {
+  const payouts = ledger.call('relayer.frs.testnet', (l) => l.checkpoint_run(req.body));
+  const ev = ledger.events.at(-1)!;
+  const r = runs.get(req.body.run_id);
+  if (r) pushEv(r, 'chain', ev.event, { tx: ev.tx_hash, height: ev.block_height, ...ev.data[0] });
+  j(res, { payouts, tx: ev.tx_hash, height: ev.block_height });
+}));
+/** Durable runs: the runner stores each checkpoint here before moving on (ciphertext only the runner can open,
+ *  plus its signature). Runner-authenticated; the latest checkpoint is replayed on resume. */
+app.post('/api/internal/checkpoints', guard((req, res) => {
+  if (RUNNER_TOKEN && req.get('x-runner-token') !== RUNNER_TOKEN) { res.status(401).json({ error: 'runner token required' }); return; }
+  const c = req.body as CheckpointRecord;
+  const r = runs.get(c.run_id); if (!r) throw new LedgerError('unknown run');
+  if (c.envelope?.purpose !== 'state' || sealedHash(c.envelope) !== c.state_hash) throw new LedgerError('bad checkpoint');
+  if (!r.checkpoint || c.local_seq > r.checkpoint.local_seq) r.checkpoint = c;
+  j(res, { ok: true, stored: r.checkpoint.local_seq });
+}));
+/** Versions with notice: the creator announces a new sealed version; it takes effect after the notice period. */
+app.post('/api/recipes/:ticker/update', guard((req, res) => {
+  const t = String(req.params.ticker);
+  const { signer, sealed } = req.body as { signer: string; sealed: SealedEnvelope };
+  if (sealed?.v !== 'frs-seal-v1' || sealed.purpose !== 'recipe') throw new LedgerError('expected a sealed recipe envelope');
+  if (sealed.to !== ledger.runners.get(RUNNER_ID)!.enc_pk_hex) throw new LedgerError('envelope is not sealed to the registered runner key');
+  ledger.call(signer, (l) => l.update_sealed({ id: t, sealed_hash: sealedHash(sealed) }));
+  vaultPut(t, sealed); // stored now, served once it takes effect; older versions are kept
+  const ev = ledger.events.at(-1)!;
+  j(res, { ...(ev.data[0] as object), tx: ev.tx_hash });
+}));
+app.post('/api/recipes/:ticker/cancel-update', guard((req, res) => {
+  ledger.call(String(req.body.signer), (l) => l.cancel_update({ id: String(req.params.ticker) }));
+  j(res, { ok: true });
+}));
+
+/** local demo only: crash the runner process (it is restarted by the launcher) */
+if (env.FRS_ALLOW_CRASH === '1') app.post('/api/dev/crash-runner', guard(async (_, res) => { await fetch(`${RUNNER}/__crash`, { method: 'POST', headers: rh }).catch(() => {}); j(res, { ok: true }); }));
+
 /** demo wallet: sign "as" an account. Local mode only — testnet mode uses a real NEAR wallet. */
 const ALLOWED = new Set(['register_part', 'place_ask', 'cancel_order', 'transfer_shares', 'claim_dividends', 'withdraw', 'bid', 'clear_batch']);
 app.post('/api/chain/tx', guard((req, res) => {
@@ -145,30 +231,32 @@ app.get('/api/mode', (_, res) => j(res, {
 }));
 app.get('/api/catalog', (_, res) => j(res, { ...catalog, onchain: Object.fromEntries([...ledger.parts].map(([k, b]) => [k, { author: b.author, manifest_hash: b.manifest_hash, fee_per_call: b.fee_per_call, active: b.active }])) }));
 app.get('/api/listings', (_, res) => j(res, [...listings.values()].map((l) => ({ ...l, market: market.ticker(l.ticker), onchain: ledger.recipes.get(l.ticker) }))));
-app.get('/api/vault/:ticker', (req, res) => { const v = vault.get(String(req.params.ticker)); v ? res.json({ envelope: v, sealed_hash: sealedHash(v) }) : res.status(404).json({ error: 'not found' }); });
+app.get('/api/vault/:ticker', (req, res) => { const v = currentSealed(String(req.params.ticker)); v ? res.json({ envelope: v, sealed_hash: sealedHash(v) }) : res.status(404).json({ error: 'not found' }); });
+app.get('/api/vault/:ticker/versions', (req, res) => { const t = String(req.params.ticker); const r = ledger.recipes.get(t); if (!r) { res.status(404).json({ error: 'not found' }); return; }
+  j(res, { current: r.sealed_hash, version: r.version, pending: r.pending_sealed_hash || null, effective_ns: r.update_effective_ns, stored: [...(vault.get(t)?.keys() ?? [])] }); });
 app.get('/api/runner/attestation', guard(async (req, res) => {
   const a = await fetch(`${RUNNER}/attestation?nonce=${encodeURIComponent(String(req.query.nonce ?? ''))}`).then((x) => x.json());
   j(res, { attestation: a, onchain: ledger.runners.get(RUNNER_ID) });
 }));
 
 app.post('/api/publish', guard((req, res) => {
-  const { listing, sealed, ipo, bond } = req.body as { listing: PublicListing; sealed: SealedEnvelope; ipo?: { price: number; float_pct: number }; bond?: string };
+  const { listing, sealed, ipo, bond, settle_mode } = req.body as { listing: PublicListing; sealed: SealedEnvelope; ipo?: { price: number; float_pct: number }; bond?: string; settle_mode?: string };
   if (sealed?.v !== 'frs-seal-v1' || sealed.purpose !== 'recipe') throw new LedgerError('expected a sealed recipe envelope');
   const runner = ledger.runners.get(RUNNER_ID)!;
   if (sealed.to !== runner.enc_pk_hex) throw new LedgerError('envelope is not sealed to the registered runner key');
   if ((listing as unknown as Record<string, unknown>).nodes) throw new LedgerError('refusing plaintext recipe: only the public listing may be sent');
   try { labelsFromParts(listing.parts, catalog); } catch (e) { throw new LedgerError((e as Error).message); }
   const sh = sealedHash(sealed);
-  ledger.call(listing.creator, (l) => l.publish_recipe({ id: listing.ticker, name: listing.name, sealed_hash: sh, runner_id: RUNNER_ID, parts: listing.parts, price_per_run: listing.price_per_run, royalty_bps: listing.royalty_bps, total_shares: listing.total_shares }));
+  ledger.call(listing.creator, (l) => l.publish_recipe({ id: listing.ticker, name: listing.name, sealed_hash: sh, runner_id: RUNNER_ID, parts: listing.parts, price_per_run: listing.price_per_run, royalty_bps: listing.royalty_bps, total_shares: listing.total_shares, settle_mode: settle_mode ?? 'final' }));
   const tx = ledger.events.at(-1)!;
   // the creator backs the recipe's quotes with a bond (ft_transfer_call with {"action":"bond"})
   if (bond && BigInt(bond) > 0n) ledger.call(PAYMENT_TOKEN, (l) => l.ft_on_transfer({ sender_id: listing.creator, amount: bond, msg: JSON.stringify({ action: 'bond', recipe_id: listing.ticker }) }));
-  vault.set(listing.ticker, sealed);
+  vaultPut(listing.ticker, sealed);
   const ipoPrice = ipo?.price ?? 0.01;
   // trust labels are recomputed from the on-chain parts (the runner refuses sealed recipes whose parts differ),
   // so what a creator writes in the listing cannot make a closed-model recipe look low-risk or confidential
   const labels = labelsFromParts(listing.parts, catalog);
-  listings.set(listing.ticker, { ...listing, risk: labels.risk, disclosures: labels.disclosures, privacy: labels.privacy, capabilities: labels.capabilities, ipo_price: ipoPrice, published_at: new Date().toISOString() });
+  listings.set(listing.ticker, { ...listing, risk: labels.risk, disclosures: labels.disclosures, privacy: labels.privacy, capabilities: labels.capabilities, settle_mode: settle_mode ?? 'final', ipo_price: ipoPrice, published_at: new Date().toISOString() });
   market.seedHistory(listing.ticker, ipoPrice, 0.0004, 0.02, [...listing.ticker].reduce((s, c) => s * 31 + c.charCodeAt(0), 7));
   if (ipo && ipo.float_pct > 0) {
     const qty = (BigInt(listing.total_shares) * BigInt(Math.round(ipo.float_pct * 100))) / 10000n;
@@ -235,7 +323,7 @@ app.post('/api/jobs', guard(async (req, res) => {
   const candidates = [...listings.values()].filter((l) => l.implements === job_type && (!only || l.ticker === only)).slice(0, MAX_QUOTES_PER_JOB);
   if (!candidates.length) { openDemand.push({ job_type, at: new Date().toISOString() }); j(res, { quotes: [], open_demand: true }); return; }
   const quotes = await Promise.all(candidates.map(async (l) => {
-    const q = await fetch(`${RUNNER}/quotes`, { method: 'POST', headers: rh, body: JSON.stringify({ recipe_id: l.ticker, sealed_recipe: vault.get(l.ticker), sealed_job, job_hash, buyer }) }).then((x) => x.json()).catch((e) => ({ recipe_id: l.ticker, ok: false, error: String(e) }));
+    const q = await fetch(`${RUNNER}/quotes`, { method: 'POST', headers: rh, body: JSON.stringify({ recipe_id: l.ticker, sealed_recipe: currentSealed(l.ticker), sealed_job, job_hash, buyer }) }).then((x) => x.json()).catch((e) => ({ recipe_id: l.ticker, ok: false, error: String(e) }));
     // relay only ciphertext: the quote's values describe the buyer's wallet and are sealed to the buyer's reply key
     const r = ledger.recipes.get(l.ticker)!;
     return { recipe_id: l.ticker, ok: !!q.ok, error: q.error, sealed_quote: q.sealed_quote, listing: { ticker: l.ticker, name: l.name, creator: l.creator, price_per_run: l.price_per_run, privacy: l.privacy, risk: l.risk, disclosures: l.disclosures, parts: l.parts },
@@ -255,7 +343,7 @@ app.post('/api/runs/quote', guard(async (req, res) => {
   const qreq = runPaymentQuoteRequest({ originAsset: pay_asset, refundTo: refund_to || buyer, contractId: CONTRACT_ID, price: r.price_per_run.toString(), msg });
   const quote = await mocks.oneclick.quote(qreq);
   const token = randomBytes(24).toString('hex');
-  const ctx: RunCtx = { run_id, token, recipe_id, buyer, sealed_inputs, inputs_hash, quote, events: [], listeners: new Set(), started: false, approvalPending: false };
+  const ctx: RunCtx = { run_id, token, recipe_id, buyer, sealed_inputs, inputs_hash, quote, events: [], listeners: new Set(), started: false, approvalPending: false, approvals: {}, done: false };
   runs.set(run_id, ctx);
   pushEv(ctx, 'intents', 'quote', { request: qreq, quote: quote.quote, correlationId: quote.correlationId });
   j(res, { run_id, run_token: token, inputs_hash, msg, quote });
@@ -301,6 +389,7 @@ app.post('/api/runs/:id/approve', guard(async (req, res) => {
     txHashes.push(sha256Hex(`ft|${t.receiverId}|${a.params.args.receiver_id}|${Date.now()}`).slice(0, 44));
   }
   r.approvalPending = false;
+  if (r.approvalNode) r.approvals[r.approvalNode] = { approved, txHashes }; // replayed if the runner has to resume
   await fetch(`${RUNNER}/runs/${r.run_id}/approval`, { method: 'POST', headers: rh, body: JSON.stringify({ approved, txHashes }) });
   j(res, { ok: true, txHashes });
 }));
@@ -339,6 +428,11 @@ async function boot() {
   for (const b of catalog.parts) ledger.call(b.author, (l) => l.register_part({ id: b.id, version: b.id.split('@')[1], fee_per_call: b.fee_per_call, manifest_hash: hashObject(b) }));
   app.listen(PORT, '127.0.0.1', () => console.log(`[server] marketplace on http://127.0.0.1:${PORT}  (contract mirror ${CONTRACT_ID}, runner ${RUNNER})`));
   setInterval(() => market.keeperTick(), 500);
+  // keeper: activate recipe versions whose notice period has passed (anyone may call apply_update)
+  setInterval(() => {
+    const now = BigInt(Date.now()) * 1_000_000n;
+    for (const r of ledger.recipes.values()) if (r.pending_sealed_hash && now >= r.update_effective_ns) { try { ledger.call('keeper.frs.testnet', (l) => l.apply_update({ id: r.id })); } catch { /* raced */ } }
+  }, 1000);
   if (BOTS) setInterval(() => market.botTick(), 1200);
 }
 void boot();

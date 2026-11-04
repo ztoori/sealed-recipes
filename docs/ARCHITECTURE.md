@@ -48,6 +48,55 @@ sequenceDiagram
   K->>K: verify signature, split: protocol, runner, part authors, creator, acc_per_share += …
 ```
 
+## Durable multi-step runs
+
+A recipe can span many transactions and a long time: TRCH sells half of a wallet, waits, then sells the rest.
+Each run stays one paid ticket on-chain, and the runner makes it survive crashes.
+
+**Checkpoints.**
+- After every part, and before any irreversible step inside a part, the runner seals its progress to its own key. The progress is the completed nodes, their outputs, and the part's internal state.
+- It signs that state and stores it with the marketplace, and does not continue until the store is acknowledged.
+- The marketplace holds ciphertext it cannot read.
+
+**On-chain progress.** `checkpoint_run` records the state's hash and extends the run's timeout.
+- In `settle_mode: "checkpoint"`, it also pays the authors of the parts finished since the last checkpoint.
+- The final report then pays only what is left. A failed run refunds the price minus what was already billed.
+- In `"final"` mode, a heartbeat checkpoint is posted every 5 minutes, so long runs are never reclaimable mid-way.
+
+**Resume.** If the runner's event stream breaks, the marketplace keeps calling `POST /runs/:id/resume` on the restarted runner. It sends:
+- the sealed recipe of the version the run paid for;
+- the sealed inputs;
+- the last checkpoint;
+- the approvals it relayed.
+
+The runner verifies its own signature on the checkpoint, opens it inside the TEE, and continues.
+
+**Exactly-once deposits.** The swap part stores its quotes before asking the buyer to sign, and the signed tx hashes before submitting them.
+- After a restart it reuses the stored quotes and never re-quotes.
+- An approval the marketplace already relayed is replayed, so the buyer is never asked to sign twice.
+
+`verification/tla/DurableRuns.tla` checks this (`DepositsOnce`). Without the write-ahead step, TLC finds a double deposit. `npm run test:durable` kills the runner twice during a TRCH run and checks the result from the chain and the wallet.
+
+## Versions with notice
+
+`update_sealed` announces a new sealed version, and it takes effect only after `update_delay_ns`: 30 s in the demo, 24 h suggested on mainnet. The creator can cancel during the notice period. A keeper, or the next payment, activates it.
+
+Each run keeps the version it paid for. The marketplace vault stores every version by `sealed_hash`, so a run paid for version 1 still executes version 1 if it resumes after version 2 went live. Quotes are bound to the version, so a version-1 quote is refused after activation.
+
+`verification/tla/VersionedRecipes.tla` checks this; keeping only the current version strands runs. `npm run test:versions` shows the whole cycle.
+
+## Storage: what lives where
+
+| Data | Where | Who can read it | Lifetime |
+|---|---|---|---|
+| Recipe metadata, parts list, price, bond, track record, version, pending update | contract state (NEAR storage staking) | everyone | permanent |
+| Run ticket: paid version, inputs hash, checkpoint seq and state hash, billed parts | contract state | everyone | permanent |
+| Sealed recipe, every version | marketplace vault (in-memory in the demo; production: a durable store keyed by `sealed_hash`) | the runner only | while any run may need it |
+| Sealed inputs of a run | marketplace, per run | the runner only | until the run ends |
+| Checkpoints (progress, part outputs, swap intents) | marketplace, per run | the runner only (sealed to its own key, signed) | until the run ends |
+| Plaintext recipe, inputs, intermediate values | runner memory, inside the TEE | nobody else | during execution |
+| Runner keys | dstack KMS inside the TEE | nobody | for the runner's lifetime |
+
 ## Money flow (CLNP, $0.75 per run)
 
 | Payee | Rule | Amount |

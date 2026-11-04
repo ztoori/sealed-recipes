@@ -174,3 +174,12 @@ A recipe opts in with `"implements": "job.wallet-cleanup@1.0.0"`. The validator 
 6. **Settle.** The runner measures `delivered` (for bonded runs, credited with any value the buyer withheld after the re-check: drained funds or deposits smaller than asked count at their quoted minimum, so the bond insures the market, not the buyer's own choices) and signs `frs-run-v3|…|ok|…|<delivered>|…`. The contract pays `min(max(0, promised − delivered), cover)` to the buyer from the locked cover, updates the recipe's track record and releases the rest.
 
 A job with no implementing recipe is recorded as **open demand**, a signal for builders.
+
+## 8. Durable parts, settlement modes and versions
+
+- **Durable parts.** A part that performs an irreversible step must call `ctx.saveState(state)` before it, and resume from `ctx.resumeState` when the runner restarts mid-part. Approvals relayed before a restart arrive as `ctx.priorApproval` and are valid only for the saved state. Waiting goes through `ctx.wait(ms)`, which does not count against `max_ms`. `intents.*-swap` and `time.wait` follow this contract; pure parts need nothing.
+- **Settlement mode.** A recipe declares `listing.settle_mode`:
+  - `"final"` (default): one receipt at the end;
+  - `"checkpoint"`: each part's fee is paid on-chain when the part finishes; the final receipt pays the rest.
+- **Versions.** A recipe's sealed graph can be replaced with notice (`update_sealed` → effective after the contract's `update_delay_ns`). Its parts list cannot change; a different parts list is a different recipe.
+

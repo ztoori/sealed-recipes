@@ -1,4 +1,4 @@
----- MODULE BondedRuns_TTrace_1793821298 ----
+---- MODULE BondedRuns_TTrace_1793825967 ----
 EXTENDS Sequences, TLCExt, Toolbox, BondedRuns, BondedRuns_TEConstants, Naturals, TLC
 
 _expression ==
@@ -70,7 +70,7 @@ _next ==
 \* to `JsonSerialize`. For example, a sub-sequence of _TETrace.
     \* ASSUME
     \*     LET J == INSTANCE Json
-    \*         IN J!JsonSerialize("BondedRuns_TTrace_1793821298.json", _TETrace)
+    \*         IN J!JsonSerialize("BondedRuns_TTrace_1793825967.json", _TETrace)
 
 =============================================================================
 
@@ -129,7 +129,7 @@ Parsing and semantic processing can take forever if the trace below is long.
 \*---- MODULE BondedRuns_TETrace ----
 \*EXTENDS IOUtils, BondedRuns, BondedRuns_TEConstants, TLC
 \*
-\*trace == IODeserialize("BondedRuns_TTrace_1793821298.bin", TRUE)
+\*trace == IODeserialize("BondedRuns_TTrace_1793825967.bin", TRUE)
 \*
 \*=============================================================================
 \*
@@ -157,7 +157,7 @@ CONSTANTS r1, r2, q1, q2, b1, b2
 
 =============================================================================
 
----- CONFIG BondedRuns_TTrace_1793821298 ----
+---- CONFIG BondedRuns_TTrace_1793825967 ----
 CONSTANTS
     Runs = { r1 , r2 }
     Quotes = { q1 , q2 }
@@ -168,11 +168,11 @@ CONSTANTS
     Rule = "v3"
     NoQuote = "none"
     q2 = q2
-    q1 = q1
-    r2 = r2
-    b2 = b2
     r1 = r1
+    r2 = r2
     b1 = b1
+    b2 = b2
+    q1 = q1
 
 INVARIANT
     _inv
@@ -193,4 +193,4 @@ CONSTANT
 ALIAS
     _expression
 =============================================================================
-\* Generated on Wed Nov 04 14:41:39 EST 2026
+\* Generated on Wed Nov 04 15:59:28 EST 2026

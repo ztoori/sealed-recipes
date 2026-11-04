@@ -31,6 +31,14 @@ export interface PartCtx {
   secrets: { nearAiKey?: string; oneClickJwt?: string };
   /** 'quote' = dry run for recipe intents: read-only, no approvals, swaps are priced but not executed */
   mode: 'run' | 'quote';
+  /** Durable runs: the state this part saved before the runner stopped, when the run resumes inside this part. */
+  resumeState?: unknown;
+  /** Write-ahead: persist the part's progress (sealed, signed checkpoint) before an irreversible step. */
+  saveState: (state: unknown) => Promise<void>;
+  /** Sleep without counting against the part's max_ms (used by time.wait). */
+  wait: (ms: number) => Promise<void>;
+  /** On resume: wallet approvals the marketplace relayed for this node after the last checkpoint. */
+  priorApproval?: ApprovalResult;
 }
 
 export interface Endpoints { fastnear: string; rpc: string; oneclick: string; nearai: string; nras: string }
