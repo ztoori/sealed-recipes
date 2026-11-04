@@ -19,6 +19,8 @@ use near_sdk::{
 use serde_json::json;
 
 pub mod auction;
+pub mod bond;
+pub mod dividends;
 pub mod settlement;
 pub use auction::{clear_auction, AuctionFill, AuctionOrder, AuctionResult, AuctionSide};
 pub use settlement::{protocol_fee, settlement_split, Split, ACC_SCALE};
@@ -807,8 +809,8 @@ impl Contract {
         }
         if covered > 0 {
             let r = self.recipes.get_mut(&recipe_id).unwrap();
-            r.bond_available = U128(r.bond_available.0 - covered);
-            r.bond_locked = U128(r.bond_locked.0 + covered);
+            let b = bond::lock(bond_of(r), covered).unwrap_or_else(|| env::panic_str("bond below quoted cover"));
+            set_bond(r, b);
         }
         let run = Run {
             run_id: run_id.clone(),
@@ -831,7 +833,8 @@ impl Contract {
 
     fn internal_post_bond(&mut self, from: AccountId, amount: u128, recipe_id: String) -> Result<(), String> {
         let r = self.recipes.get_mut(&recipe_id).ok_or("unknown recipe")?;
-        r.bond_available = U128(r.bond_available.0 + amount);
+        let b = bond::deposit(bond_of(r), amount).ok_or("bond overflow")?;
+        set_bond(r, b);
         let available = r.bond_available;
         emit(
             "bond_posted",
@@ -850,7 +853,8 @@ impl Contract {
         require!(r.creator == creator, "creator only");
         require!(amount.0 > 0, "amount must be > 0");
         require!(amount.0 <= r.bond_available.0, "amount exceeds bond_available");
-        r.bond_available = U128(r.bond_available.0 - amount.0);
+        let b = bond::withdraw(bond_of(r), amount.0).unwrap_or_else(|| env::panic_str("amount exceeds bond_available"));
+        set_bond(r, b);
         let available = r.bond_available;
         self.credit(&creator, amount.0);
         emit(
@@ -864,8 +868,8 @@ impl Contract {
     fn refund_run(&mut self, run: &Run, reason: &str) {
         self.credit(&run.buyer, run.amount.0);
         let r = self.recipes.get_mut(&run.recipe_id).unwrap();
-        r.bond_locked = U128(r.bond_locked.0 - run.covered.0);
-        r.bond_available = U128(r.bond_available.0 + run.covered.0);
+        let b = bond::release(bond_of(r), run.covered.0).unwrap_or_else(|| env::panic_str("bond accounting"));
+        set_bond(r, b);
         if reason == "runner_aborted" {
             r.aborted += 1;
         } else {
@@ -955,6 +959,7 @@ impl Contract {
             &fees,
             recipe.royalty_bps,
             recipe.total_shares.0,
+            recipe.acc_per_share.0,
         )
         .unwrap_or_else(|| env::panic_str("fees exceed price"));
 
@@ -978,14 +983,13 @@ impl Contract {
         pay(self, &recipe.creator, "creator_royalty", split.creator);
 
         // bonded quote: pay any shortfall to the buyer from the cover set aside at payment
-        let shortfall = run.promised.0.saturating_sub(delivered.0);
-        let compensation = shortfall.min(run.covered.0);
         let r = self.recipes.get_mut(&recipe.id).unwrap();
+        let (b, compensation) = bond::settle(bond_of(r), run.covered.0, run.promised.0, delivered.0)
+            .unwrap_or_else(|| env::panic_str("bond accounting"));
         r.acc_per_share = U128(r.acc_per_share.0 + split.acc_increment);
         r.runs += 1;
         r.revenue = U128(r.revenue.0 + run.amount.0);
-        r.bond_locked = U128(r.bond_locked.0 - run.covered.0);
-        r.bond_available = U128(r.bond_available.0 + run.covered.0 - compensation);
+        set_bond(r, b);
         if !run.job_hash.is_empty() {
             r.promised_total = U128(r.promised_total.0 + run.promised.0);
             r.delivered_total = U128(r.delivered_total.0 + delivered.0);
@@ -1114,9 +1118,8 @@ impl Contract {
     fn harvest(&mut self, recipe_id: &str, account: &AccountId) -> u128 {
         let acc = self.acc(recipe_id);
         let mut h = self.holding(recipe_id, account);
-        let accrued = h.shares * acc / ACC_SCALE;
-        let pending = accrued - h.reward_debt;
-        h.reward_debt = accrued;
+        let (pending, debt) = dividends::harvest(h.shares, h.reward_debt, acc);
+        h.reward_debt = debt;
         self.holdings
             .insert((recipe_id.to_string(), account.clone()), h);
         if pending > 0 {
@@ -1133,11 +1136,11 @@ impl Contract {
         let mut hf = self.holding(recipe_id, from);
         require!(hf.shares - hf.locked >= qty, "insufficient shares");
         hf.shares -= qty;
-        hf.reward_debt = hf.shares * acc / ACC_SCALE;
+        hf.reward_debt = dividends::rebase(hf.shares, acc);
         self.holdings.insert((recipe_id.to_string(), from.clone()), hf);
         let mut ht = self.holding(recipe_id, to);
         ht.shares += qty;
-        ht.reward_debt = ht.shares * acc / ACC_SCALE;
+        ht.reward_debt = dividends::rebase(ht.shares, acc);
         self.holdings.insert((recipe_id.to_string(), to.clone()), ht);
     }
 
@@ -1296,7 +1299,7 @@ impl Contract {
                         self.credit(&owner, f.qty * p);
                     }
                 }
-                h.reward_debt = h.shares * acc / ACC_SCALE;
+                h.reward_debt = dividends::rebase(h.shares, acc);
                 self.holdings.insert((recipe_id.clone(), owner.clone()), h);
                 fills.push(FillView {
                     order_id: f.order_id,
@@ -1429,7 +1432,7 @@ impl Contract {
     pub fn pending_dividends(&self, recipe_id: String, account_id: AccountId) -> U128 {
         let acc = self.recipes.get(&recipe_id).map(|r| r.acc_per_share.0).unwrap_or(0);
         let h = self.holding(&recipe_id, &account_id);
-        U128(h.shares * acc / ACC_SCALE - h.reward_debt)
+        U128(dividends::pending(h.shares, h.reward_debt, acc))
     }
 
     pub fn balance_of(&self, account_id: AccountId) -> U128 {
@@ -1455,6 +1458,7 @@ impl Contract {
             &fees,
             recipe.royalty_bps,
             recipe.total_shares.0,
+            recipe.acc_per_share.0,
         )
         .unwrap_or_else(|| env::panic_str("fees exceed price"));
         SplitView {
@@ -1470,4 +1474,13 @@ impl Contract {
             dust_to_protocol: U128(s.dust_to_protocol),
         }
     }
+}
+
+fn bond_of(r: &Recipe) -> bond::Bond {
+    bond::Bond { available: r.bond_available.0, locked: r.bond_locked.0 }
+}
+
+fn set_bond(r: &mut Recipe, b: bond::Bond) {
+    r.bond_available = U128(b.available);
+    r.bond_locked = U128(b.locked);
 }

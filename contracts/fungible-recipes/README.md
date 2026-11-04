@@ -36,7 +36,7 @@ What it does:
 ## Test
 
 ```bash
-cargo test          # 68 unit tests, including the shared vectors in ../test-vectors/*.json (settlement, dividends, batch auctions, bonds)
+cargo test          # 73 unit tests (including conformance with the proofs in `verification/`), including the shared vectors in ../test-vectors/*.json (settlement, dividends, batch auctions, bonds)
 cargo clippy --all-targets
 ```
 

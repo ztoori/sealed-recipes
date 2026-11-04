@@ -229,18 +229,28 @@ R         = P - protocol - r - Σ b_i  (guaranteed >= 0 by publish check)
 creator   = floor(R * royalty_bps / 10000)
 pool      = R - creator
 inc       = floor(pool * 1e18 / total_shares)
-distributed = floor(inc * total_shares / 1e18)
+acc'      = acc_per_share + inc
+distributed = floor(acc' * total_shares / 1e18) - floor(acc_per_share * total_shares / 1e18)
 dust      = pool - distributed        -> protocol
-acc_per_share += inc
+acc_per_share = acc'
 ```
+`distributed` telescopes: the total ever set aside for holders is exactly `floor(acc * total_shares / 1e18)`,
+the most holders can ever claim in total. (Before the formal-verification pass it was
+`floor(inc * total_shares / 1e18)` per run, which Z3 showed could set aside less than holders can claim:
+3 shares, two runs of 1 unit → 2 units to the protocol, 1 claimable, 2 received. See `verification/`.)
+Any checked multiplication that would exceed u128 makes the split `None` and `report_run` panics; this is proven
+impossible while a recipe's lifetime settled revenue stays below 3.4e20 payment-token units.
 All payouts are credited to internal withdrawable balances inside the same receipt
 and a single NEP-297 event `frs_settlement` lists every payout.
 `withdraw(amount?)` (requires exactly 1 yoctoNEAR attached) sends `ft_transfer` of the caller's balance; the `#[private]` callback `on_withdraw` checks the promise result with `env::promise_result_checked` (ft_transfer returns no value): success emits `withdrawn`, failure restores the credit and emits `withdraw_failed`.
 
 ### Shares & dividends
-Pending dividends for an account: `shares * acc_per_share / 1e18 - reward_debt + unpaid`.
+Pending dividends for an account: `max(0, floor(shares * acc_per_share / 1e18) - reward_debt)`.
 Before any change to an account's share balance the contract **harvests** pending dividends into
-that account's withdrawable balance and resets `reward_debt = new_shares * acc / 1e18`.
+that account's withdrawable balance (the debt only ever rises) and then resets
+`reward_debt = ceil(new_shares * acc / 1e18)` (`src/dividends.rs`). Rounding the debt **up** keeps the contract
+solvent across transfers and auction fills: at most 1 unit per holder per share movement stays in the
+contract. Solvency over any history is proved by induction in `verification/smt/prove_money.py`.
 - `transfer_shares(recipe_id, receiver_id, qty)`
 - `claim_dividends(recipe_id)` → harvested into balance.
 

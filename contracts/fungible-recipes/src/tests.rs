@@ -115,6 +115,7 @@ fn settlement_vectors_match_spec() {
             &fees,
             i["royalty_bps"].as_u64().unwrap() as u16,
             p(&i["total_shares"]),
+            i.get("acc_before").map(p).unwrap_or(0),
         )
         .unwrap();
         let name = case["name"].as_str().unwrap();
@@ -136,8 +137,8 @@ fn settlement_vectors_match_spec() {
 
 #[test]
 fn settlement_rejects_fees_above_price() {
-    assert!(settlement_split(100, 0, 60, &[50], 0, 10).is_none());
-    assert!(settlement_split(100, 0, 0, &[], 0, 0).is_none());
+    assert!(settlement_split(100, 0, 60, &[50], 0, 10, 0).is_none());
+    assert!(settlement_split(100, 0, 0, &[], 0, 0, 0).is_none());
 }
 
 #[test]
@@ -1295,4 +1296,157 @@ fn run_requested_event_includes_expected() {
     assert_eq!(d["expected"], q.expected.to_string());
     assert_eq!(d["promised"], "1000000");
     assert_eq!(d["covered"], "1000000");
+}
+
+// ------------------------------------------------- conformance with the proved models (verification/smt)
+
+fn n(x: &serde_json::Value) -> u128 {
+    x.as_str().unwrap().parse::<u128>().unwrap()
+}
+
+#[test]
+fn conformance_settlement_matches_proved_model() {
+    let v: serde_json::Value =
+        serde_json::from_str(include_str!("../../test-vectors/conformance-money.json")).unwrap();
+    let cases = v["settlement"].as_array().unwrap();
+    assert!(cases.len() >= 300);
+    for (k, case) in cases.iter().enumerate() {
+        let i = &case["input"];
+        let fees: Vec<u128> = i["part_fees"].as_array().unwrap().iter().map(n).collect();
+        let s = settlement_split(
+            n(&i["price"]),
+            i["protocol_fee_bps"].as_u64().unwrap() as u16,
+            n(&i["runner_fee"]),
+            &fees,
+            i["royalty_bps"].as_u64().unwrap() as u16,
+            n(&i["total_shares"]),
+            n(&i["acc_before"]),
+        );
+        let e = &case["expected"];
+        match s {
+            None => assert!(e.is_null(), "case {k}: Rust returned None, model returned a split"),
+            Some(s) => {
+                assert!(!e.is_null(), "case {k}: Rust returned a split, model returned None");
+                assert_eq!(s.protocol, n(&e["protocol"]), "case {k} protocol");
+                assert_eq!(s.remainder, n(&e["remainder"]), "case {k} remainder");
+                assert_eq!(s.creator, n(&e["creator"]), "case {k} creator");
+                assert_eq!(s.pool, n(&e["pool"]), "case {k} pool");
+                assert_eq!(s.acc_increment, n(&e["acc_increment"]), "case {k} acc_increment");
+                assert_eq!(s.distributed, n(&e["distributed"]), "case {k} distributed");
+                assert_eq!(s.dust_to_protocol, n(&e["dust"]), "case {k} dust");
+            }
+        }
+    }
+}
+
+#[test]
+fn conformance_bonds_and_dividends_match_proved_model() {
+    let v: serde_json::Value =
+        serde_json::from_str(include_str!("../../test-vectors/conformance-money.json")).unwrap();
+    for (k, c) in v["bonds"].as_array().unwrap().iter().enumerate() {
+        let b = bond::Bond { available: n(&c["available"]), locked: n(&c["locked"]) };
+        let x = n(&c["amount"]);
+        let e = &c["expected"];
+        let got: Option<(bond::Bond, Option<u128>)> = match c["op"].as_str().unwrap() {
+            "lock" => bond::lock(b, x).map(|b| (b, None)),
+            "release" => bond::release(b, x).map(|b| (b, None)),
+            _ => bond::settle(b, x, n(&c["promised"]), n(&c["delivered"])).map(|(b, comp)| (b, Some(comp))),
+        };
+        match got {
+            None => assert!(e.is_null(), "bond case {k}: Rust None, model Some"),
+            Some((b, comp)) => {
+                assert!(!e.is_null(), "bond case {k}: Rust Some, model None");
+                assert_eq!(b.available, n(&e["available"]), "bond case {k} available");
+                assert_eq!(b.locked, n(&e["locked"]), "bond case {k} locked");
+                if let Some(comp) = comp {
+                    assert_eq!(comp, n(&e["compensation"]), "bond case {k} compensation");
+                }
+            }
+        }
+    }
+    for (k, c) in v["dividends"].as_array().unwrap().iter().enumerate() {
+        let (s, a, d) = (n(&c["shares"]), n(&c["acc"]), n(&c["debt"]));
+        let e = &c["expected"];
+        assert_eq!(dividends::pending(s, d, a), n(&e["pending"]), "div case {k} pending");
+        assert_eq!(dividends::harvest(s, d, a), (n(&e["harvest_paid"]), n(&e["harvest_debt"])), "div case {k} harvest");
+        assert_eq!(dividends::rebase(s, a), n(&e["rebase"]), "div case {k} rebase");
+    }
+}
+
+#[test]
+fn conformance_auction_matches_proved_encoding() {
+    let v: serde_json::Value =
+        serde_json::from_str(include_str!("../../test-vectors/conformance-auction.json")).unwrap();
+    for (k, c) in v["cases"].as_array().unwrap().iter().enumerate() {
+        let orders: Vec<AuctionOrder> = c["orders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| AuctionOrder {
+                id: o["id"].as_u64().unwrap(),
+                side: if o["side"] == "bid" { AuctionSide::Bid } else { AuctionSide::Ask },
+                price: n(&o["price"]),
+                qty: n(&o["qty"]),
+            })
+            .collect();
+        let r = clear_auction(&orders);
+        let e = &c["expected"];
+        assert_eq!(r.price, e["price"].as_str().map(|p| p.parse::<u128>().unwrap()), "auction {k} price");
+        assert_eq!(r.volume, n(&e["volume"]), "auction {k} volume");
+        let mut got: Vec<(String, u128)> = r.fills.iter().map(|f| (f.order_id.to_string(), f.qty)).collect();
+        got.sort();
+        let mut want: Vec<(String, u128)> =
+            e["fills"].as_object().unwrap().iter().map(|(id, q)| (id.clone(), n(q))).collect();
+        want.sort();
+        assert_eq!(got, want, "auction {k} fills");
+    }
+}
+
+/// The two insolvency scenarios the proofs found in the previous rules, replayed through the real contract
+/// (one test each: the mocked chain keeps storage per test thread).
+#[test]
+fn solvency_two_runs_rounding() {
+    solvency_case("two-runs-rounding");
+}
+
+#[test]
+fn solvency_transfer_rebase_rounding() {
+    solvency_case("transfer-rebase-rounding");
+}
+
+fn solvency_case(want: &str) {
+    let v: serde_json::Value = serde_json::from_str(include_str!("../../test-vectors/solvency.json")).unwrap();
+    for case in v["cases"].as_array().unwrap().iter().filter(|c| c["name"] == want) {
+        let name = case["name"].as_str().unwrap();
+        let r = &case["recipe"];
+        ctx("owner.testnet", 0);
+        let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), 0, U64(INTERVAL));
+        c.add_runner(acct("runner.testnet"), runner_pk_string(), "00".repeat(32), "x".into(), U128(0));
+        ctx("author", 0);
+        c.register_part("noop".into(), "1".into(), U128(0), "h".into());
+        ctx("creator", 0);
+        c.publish_recipe("SOLV".into(), "s".into(), "h".into(), acct("runner.testnet"), vec!["noop".into()], U128(n(&r["price"])), 0, U128(n(&r["total_shares"])));
+        let mut k = 0;
+        for step in case["steps"].as_array().unwrap() {
+            if step["op"] == "run" {
+                k += 1;
+                let id = format!("run-{k}");
+                ctx(USDC, 0);
+                let _ = c.ft_on_transfer(acct("buyer"), U128(n(&r["price"])), json!({"action":"run","recipe_id":"SOLV","run_id":id,"inputs_hash":"aa".repeat(32)}).to_string());
+                ctx("relayer", 0);
+                c.report_run(id.clone(), "ok".into(), vec!["noop".into()], OUT.into(), U128(0), sign(&id, "SOLV", "ok", OUT, &["noop".to_string()]));
+            } else {
+                ctx(step["from"].as_str().unwrap(), 0);
+                c.transfer_shares("SOLV".into(), acct(step["to"].as_str().unwrap()), U128(n(&step["qty"])));
+            }
+        }
+        let mut owed = bal(&c, "protocol.testnet");
+        assert_eq!(owed, n(&case["expected_protocol"]), "{name}: protocol");
+        for (who, want) in case["expected_holders"].as_object().unwrap() {
+            let got = bal(&c, who) + c.pending_dividends("SOLV".into(), acct(who)).0;
+            assert_eq!(got, n(want), "{name}: {who}");
+            owed += got;
+        }
+        assert!(owed <= n(&case["paid_in"]), "{name}: contract owes {owed} but received {}", n(&case["paid_in"]));
+    }
 }

@@ -68,3 +68,20 @@ test('per-run resource limits: http calls, model calls, time (approval wait excl
   assert.deepEqual(waited, { done: true }, 'time waiting for the wallet does not count');
   await assert.rejects(() => enforceLimits(m({}), ok, async () => ({ big: 'x'.repeat(100) })), /max_output_bytes/);
 });
+
+test('bonded runs credit what the buyer withheld after the re-check (verification/tla NoBondDrain)', async () => {
+  const { measure, creditedDelivered } = await import('../runner/src/metrics.js');
+  const job = { id: 'j', metric: { name: 'value_delivered', unit: 'payment-token' } } as any;
+  const U = 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
+  const r = (status: string, out: string, min: string) => ({ status, assetOut: U, amountOutUnits: out, minAmountOutUnits: min });
+  // honest: everything deposited, market delivers 9.9 against a 10.0 minimum
+  let m = measure(job, [r('SUCCESS', '9900000', '10000000')], new Map());
+  assert.equal(m.executed, 10000000n); assert.equal(creditedDelivered(m.delivered, 10000000n, m.executed), 9900000n, 'market shortfall stays visible to the bond');
+  // attacker: re-check saw 10.0, then sent only part of one deposit (INCOMPLETE_DEPOSIT) and none of another
+  m = measure(job, [r('INCOMPLETE_DEPOSIT', '0', '6000000'), r('SUCCESS', '3990000', '4000000')], new Map());
+  assert.equal(m.executed, 4000000n);
+  assert.equal(creditedDelivered(m.delivered, 10000000n, m.executed), 9990000n, 'withheld 6.0 counts as delivered: bond pays only the 0.01 market loss');
+  // market failure on a full deposit is still insured
+  m = measure(job, [r('REFUNDED', '0', '10000000')], new Map());
+  assert.equal(creditedDelivered(m.delivered, 10000000n, m.executed), 0n);
+});

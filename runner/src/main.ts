@@ -21,7 +21,7 @@ import { utf8ToBytes } from '@noble/hashes/utils.js';
 import { open, seal, sealedHash, base64, type SealedEnvelope } from '../../core/src/seal.js';
 import { runReportMessage, quoteMessage, type Outcome } from '../../core/src/ledger.js';
 import { jobHash, type JobPayload } from '../../core/src/jobs.js';
-import { measure, fetchPrices } from './metrics.js';
+import { measure, fetchPrices, creditedDelivered } from './metrics.js';
 import { hashObject, sha256Hex } from '../../core/src/canonical.js';
 import { reportData, type RunnerAttestation } from '../../core/src/attestation.js';
 import { computeCodehash, loadCatalog } from '../../core/src/codehash.js';
@@ -143,9 +143,10 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
     // bonded runs: re-price the job right before executing. If the wallet no longer holds what was quoted
     // (e.g. the buyer moved funds out after paying), abort with a refund instead of paying out the bond.
     const quotedPromise = BigInt(run.promised ?? '0');
+    let fresh = 0n; // the promise re-measured right before executing (bonded runs only)
     if (run.job_hash && quotedPromise > 0n && jobType) {
       const dry = await execute(`recheck-${job.runId}`, recipe, inputs, { catalog, rewrites, mode: 'quote', emit: () => {}, secrets, requestApproval: async () => ({ approved: false, txHashes: [] }) });
-      const fresh = dry.ok ? measure(jobType, dry.output, await fetchPrices(ONECLICK)).promised : 0n;
+      fresh = dry.ok ? measure(jobType, dry.output, await fetchPrices(ONECLICK)).promised : 0n;
       const okToRun = fresh * 10_000n >= quotedPromise * RECHECK_MIN_BPS;
       emit(job, 'rechecked', { ok: okToRun, threshold_bps: Number(RECHECK_MIN_BPS) });
       priv('recheck', { fresh_promised: fresh.toString(), quoted_promised: quotedPromise.toString() });
@@ -171,7 +172,10 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
     const output = res.output;
     recipe = undefined; inputs = undefined; // drop plaintext
 
-    const delivered = res.ok ? measure(jobType, output, await fetchPrices(ONECLICK).catch(() => new Map())).delivered : 0n;
+    const m = res.ok ? measure(jobType, output, await fetchPrices(ONECLICK).catch(() => new Map())) : undefined;
+    // bonded runs report delivered value credited with anything the buyer withheld after the re-check
+    const delivered = m ? (fresh > 0n ? creditedDelivered(m.delivered, fresh, m.executed) : m.delivered) : 0n;
+    if (m && delivered !== m.delivered) priv('withheld', { measured: m.delivered.toString(), credited: delivered.toString() });
     const settlement = await report(res.ok ? 'ok' : 'fail', res.outputHash, delivered, res.ok ? res.partsUsed : []);
     priv('result', { ok: res.ok, error: res.error, output });
     emit(job, 'completed', { ok: res.ok, outcome: res.ok ? 'ok' : 'fail', output_hash: res.outputHash, output_commitment: hashObject({ run_id: job.runId, output }), settlement });

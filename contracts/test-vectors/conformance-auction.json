@@ -1,0 +1,2234 @@
+{
+ "source": "verification/smt/prove_auction.py :: clear (solved by Z3 for each concrete book)",
+ "cases": [
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "102000",
+     "qty": "10"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "102000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": "102000",
+    "volume": "2",
+    "fills": {
+     "1": "2",
+     "2": "2"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "104000",
+     "qty": "5"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "105000",
+     "qty": "10"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "98000",
+     "qty": "21"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "96000",
+     "qty": "2"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "105000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": "98000",
+    "volume": "10",
+    "fills": {
+     "2": "10",
+     "3": "8",
+     "4": "2"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "106000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "105000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "96000",
+     "qty": "10"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "103000",
+     "qty": "10"
+    },
+    {
+     "id": 5,
+     "side": "bid",
+     "price": "104000",
+     "qty": "5"
+    }
+   ],
+   "expected": {
+    "price": "103500",
+    "volume": "10",
+    "fills": {
+     "2": "5",
+     "4": "10",
+     "5": "5"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "93000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "97000",
+     "qty": "10"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "100000",
+     "qty": "2"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "95000",
+     "qty": "5"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "101000",
+     "qty": "23"
+    }
+   ],
+   "expected": {
+    "price": "95000",
+    "volume": "2",
+    "fills": {
+     "3": "2",
+     "4": "2"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "101000",
+     "qty": "10"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "98000",
+     "qty": "10"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "101000",
+     "qty": "4"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "100000",
+     "qty": "2"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "98000",
+     "qty": "10"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "103000",
+     "qty": "5"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "90000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "97000",
+     "qty": "19"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "101000",
+     "qty": "2"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "94000",
+     "qty": "10"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "96000",
+     "qty": "2"
+    },
+    {
+     "id": 6,
+     "side": "ask",
+     "price": "95000",
+     "qty": "2"
+    },
+    {
+     "id": 7,
+     "side": "ask",
+     "price": "101000",
+     "qty": "1"
+    }
+   ],
+   "expected": {
+    "price": "95000",
+    "volume": "2",
+    "fills": {
+     "3": "2",
+     "6": "2"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "100000",
+     "qty": "10"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "97000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "100000",
+     "qty": "10"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "103000",
+     "qty": "10"
+    }
+   ],
+   "expected": {
+    "price": "101500",
+    "volume": "10",
+    "fills": {
+     "1": "5",
+     "2": "5",
+     "4": "10"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "93000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "94000",
+     "qty": "10"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "96000",
+     "qty": "35"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "103000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "103000",
+     "qty": "24"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "98000",
+     "qty": "1"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "96000",
+     "qty": "5"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "97000",
+     "qty": "5"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "97000",
+     "qty": "2"
+    },
+    {
+     "id": 6,
+     "side": "bid",
+     "price": "107000",
+     "qty": "5"
+    },
+    {
+     "id": 7,
+     "side": "ask",
+     "price": "107000",
+     "qty": "5"
+    }
+   ],
+   "expected": {
+    "price": "103000",
+    "volume": "7",
+    "fills": {
+     "1": "2",
+     "4": "5",
+     "5": "2",
+     "6": "5"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "97000",
+     "qty": "5"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "103000",
+     "qty": "1"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "106000",
+     "qty": "1"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "97000",
+     "qty": "2"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "100000",
+     "qty": "19"
+    },
+    {
+     "id": 6,
+     "side": "ask",
+     "price": "103000",
+     "qty": "2"
+    },
+    {
+     "id": 7,
+     "side": "ask",
+     "price": "97000",
+     "qty": "10"
+    }
+   ],
+   "expected": {
+    "price": "97000",
+    "volume": "8",
+    "fills": {
+     "1": "5",
+     "2": "1",
+     "4": "2",
+     "7": "8"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "97000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "92000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "99000",
+     "qty": "1"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "94000",
+     "qty": "2"
+    },
+    {
+     "id": 5,
+     "side": "bid",
+     "price": "96000",
+     "qty": "10"
+    },
+    {
+     "id": 6,
+     "side": "bid",
+     "price": "93000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": "96000",
+    "volume": "5",
+    "fills": {
+     "1": "2",
+     "2": "5",
+     "3": "1",
+     "5": "2"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "96000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "90000",
+     "qty": "1"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "103000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "105000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "107000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "93000",
+     "qty": "10"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "99000",
+     "qty": "1"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "99000",
+     "qty": "5"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "94000",
+     "qty": "10"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "93000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "103000",
+     "qty": "22"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "110000",
+     "qty": "1"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "105000",
+     "qty": "1"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "109000",
+     "qty": "5"
+    },
+    {
+     "id": 5,
+     "side": "bid",
+     "price": "102000",
+     "qty": "2"
+    },
+    {
+     "id": 6,
+     "side": "bid",
+     "price": "105000",
+     "qty": "1"
+    }
+   ],
+   "expected": {
+    "price": "103000",
+    "volume": "6",
+    "fills": {
+     "1": "6",
+     "4": "5",
+     "6": "1"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "97000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "96000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": "96500",
+    "volume": "1",
+    "fills": {
+     "1": "1",
+     "2": "1"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "111000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "111000",
+     "qty": "2"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "107000",
+     "qty": "1"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "109000",
+     "qty": "2"
+    },
+    {
+     "id": 5,
+     "side": "bid",
+     "price": "99000",
+     "qty": "10"
+    }
+   ],
+   "expected": {
+    "price": "111000",
+    "volume": "1",
+    "fills": {
+     "1": "1",
+     "2": "1"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "102000",
+     "qty": "10"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "97000",
+     "qty": "1"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "102000",
+     "qty": "38"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "102000",
+     "qty": "2"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "90000",
+     "qty": "10"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "100000",
+     "qty": "12"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "98000",
+     "qty": "1"
+    },
+    {
+     "id": 6,
+     "side": "bid",
+     "price": "100000",
+     "qty": "2"
+    },
+    {
+     "id": 7,
+     "side": "bid",
+     "price": "91000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": "90500",
+    "volume": "4",
+    "fills": {
+     "3": "4",
+     "6": "2",
+     "7": "2"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "99000",
+     "qty": "5"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "107000",
+     "qty": "5"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "106000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "110000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "102000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "98000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "102000",
+     "qty": "5"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "100000",
+     "qty": "5"
+    },
+    {
+     "id": 5,
+     "side": "bid",
+     "price": "108000",
+     "qty": "2"
+    },
+    {
+     "id": 6,
+     "side": "bid",
+     "price": "108000",
+     "qty": "1"
+    },
+    {
+     "id": 7,
+     "side": "bid",
+     "price": "99000",
+     "qty": "5"
+    }
+   ],
+   "expected": {
+    "price": "101000",
+    "volume": "5",
+    "fills": {
+     "1": "1",
+     "3": "1",
+     "4": "5",
+     "5": "2",
+     "6": "1"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "97000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "108000",
+     "qty": "33"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "102000",
+     "qty": "5"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "101000",
+     "qty": "2"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "97000",
+     "qty": "10"
+    },
+    {
+     "id": 6,
+     "side": "bid",
+     "price": "105000",
+     "qty": "28"
+    }
+   ],
+   "expected": {
+    "price": "108000",
+    "volume": "10",
+    "fills": {
+     "2": "10",
+     "5": "10"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "92000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "97000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "100000",
+     "qty": "5"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "99000",
+     "qty": "5"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "95000",
+     "qty": "10"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "96000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "101000",
+     "qty": "10"
+    }
+   ],
+   "expected": {
+    "price": "95500",
+    "volume": "5",
+    "fills": {
+     "1": "5",
+     "2": "5"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "109000",
+     "qty": "5"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "101000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "108000",
+     "qty": "10"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "106000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": "107000",
+    "volume": "7",
+    "fills": {
+     "1": "5",
+     "2": "5",
+     "3": "2",
+     "4": "2"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "105000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "99000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "103000",
+     "qty": "10"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "103000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": "103000",
+    "volume": "2",
+    "fills": {
+     "1": "2",
+     "2": "2"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "102000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "99000",
+     "qty": "35"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "95000",
+     "qty": "5"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "95000",
+     "qty": "2"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "93000",
+     "qty": "1"
+    }
+   ],
+   "expected": {
+    "price": "95000",
+    "volume": "3",
+    "fills": {
+     "1": "1",
+     "3": "2",
+     "4": "2",
+     "5": "1"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "102000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "94000",
+     "qty": "26"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "94000",
+     "qty": "10"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "95000",
+     "qty": "2"
+    },
+    {
+     "id": 5,
+     "side": "bid",
+     "price": "99000",
+     "qty": "5"
+    },
+    {
+     "id": 6,
+     "side": "bid",
+     "price": "102000",
+     "qty": "10"
+    }
+   ],
+   "expected": {
+    "price": "94000",
+    "volume": "26",
+    "fills": {
+     "1": "2",
+     "2": "26",
+     "3": "7",
+     "4": "2",
+     "5": "5",
+     "6": "10"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "105000",
+     "qty": "32"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "96000",
+     "qty": "19"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "105000",
+     "qty": "10"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "103000",
+     "qty": "2"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "95000",
+     "qty": "1"
+    },
+    {
+     "id": 6,
+     "side": "ask",
+     "price": "101000",
+     "qty": "10"
+    }
+   ],
+   "expected": {
+    "price": "105000",
+    "volume": "23",
+    "fills": {
+     "1": "23",
+     "3": "10",
+     "4": "2",
+     "5": "1",
+     "6": "10"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "101000",
+     "qty": "40"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "101000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "97000",
+     "qty": "13"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "98000",
+     "qty": "1"
+    },
+    {
+     "id": 5,
+     "side": "bid",
+     "price": "98000",
+     "qty": "5"
+    },
+    {
+     "id": 6,
+     "side": "bid",
+     "price": "93000",
+     "qty": "5"
+    },
+    {
+     "id": 7,
+     "side": "bid",
+     "price": "98000",
+     "qty": "1"
+    }
+   ],
+   "expected": {
+    "price": "101000",
+    "volume": "19",
+    "fills": {
+     "1": "19",
+     "2": "5",
+     "3": "13",
+     "4": "1"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "105000",
+     "qty": "27"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "107000",
+     "qty": "10"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "105000",
+     "qty": "10"
+    }
+   ],
+   "expected": {
+    "price": "105000",
+    "volume": "10",
+    "fills": {
+     "1": "10",
+     "3": "10"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "102000",
+     "qty": "5"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "100000",
+     "qty": "5"
+    }
+   ],
+   "expected": {
+    "price": "101000",
+    "volume": "5",
+    "fills": {
+     "1": "5",
+     "2": "5"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "99000",
+     "qty": "10"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "104000",
+     "qty": "5"
+    }
+   ],
+   "expected": {
+    "price": "101500",
+    "volume": "5",
+    "fills": {
+     "1": "5",
+     "2": "5"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "101000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "105000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "98000",
+     "qty": "37"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "101000",
+     "qty": "5"
+    },
+    {
+     "id": 5,
+     "side": "bid",
+     "price": "107000",
+     "qty": "1"
+    },
+    {
+     "id": 6,
+     "side": "ask",
+     "price": "108000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": "98000",
+    "volume": "1",
+    "fills": {
+     "3": "1",
+     "5": "1"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "90000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "93000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "90000",
+     "qty": "5"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "95000",
+     "qty": "10"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "96000",
+     "qty": "5"
+    }
+   ],
+   "expected": {
+    "price": "94000",
+    "volume": "5",
+    "fills": {
+     "2": "5",
+     "4": "5"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "95000",
+     "qty": "10"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "103000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "90000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "96000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "96000",
+     "qty": "3"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "99000",
+     "qty": "5"
+    },
+    {
+     "id": 5,
+     "side": "bid",
+     "price": "90000",
+     "qty": "10"
+    },
+    {
+     "id": 6,
+     "side": "bid",
+     "price": "94000",
+     "qty": "31"
+    }
+   ],
+   "expected": {
+    "price": "99000",
+    "volume": "5",
+    "fills": {
+     "2": "5",
+     "4": "5"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "102000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "99000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "102000",
+     "qty": "17"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "99000",
+     "qty": "27"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "108000",
+     "qty": "10"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "105000",
+     "qty": "5"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "91000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "94000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "94000",
+     "qty": "10"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "93000",
+     "qty": "10"
+    },
+    {
+     "id": 5,
+     "side": "bid",
+     "price": "94000",
+     "qty": "5"
+    },
+    {
+     "id": 6,
+     "side": "ask",
+     "price": "102000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "100000",
+     "qty": "8"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "101000",
+     "qty": "1"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "102000",
+     "qty": "5"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "107000",
+     "qty": "10"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "107000",
+     "qty": "1"
+    }
+   ],
+   "expected": {
+    "price": "102000",
+    "volume": "10",
+    "fills": {
+     "1": "8",
+     "2": "1",
+     "3": "1",
+     "4": "10"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "97000",
+     "qty": "24"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "95000",
+     "qty": "10"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "96000",
+     "qty": "10"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "95000",
+     "qty": "10"
+    },
+    {
+     "id": 5,
+     "side": "bid",
+     "price": "101000",
+     "qty": "15"
+    },
+    {
+     "id": 6,
+     "side": "ask",
+     "price": "98000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": "97000",
+    "volume": "15",
+    "fills": {
+     "1": "15",
+     "5": "15"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "103000",
+     "qty": "5"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "107000",
+     "qty": "1"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "102000",
+     "qty": "30"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "102000",
+     "qty": "2"
+    },
+    {
+     "id": 5,
+     "side": "bid",
+     "price": "105000",
+     "qty": "1"
+    },
+    {
+     "id": 6,
+     "side": "bid",
+     "price": "100000",
+     "qty": "2"
+    },
+    {
+     "id": 7,
+     "side": "bid",
+     "price": "102000",
+     "qty": "5"
+    }
+   ],
+   "expected": {
+    "price": "102000",
+    "volume": "14",
+    "fills": {
+     "1": "5",
+     "2": "1",
+     "3": "14",
+     "4": "2",
+     "5": "1",
+     "7": "5"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "99000",
+     "qty": "19"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "98000",
+     "qty": "1"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "97000",
+     "qty": "1"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "97000",
+     "qty": "10"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "92000",
+     "qty": "10"
+    }
+   ],
+   "expected": {
+    "price": "97000",
+    "volume": "19",
+    "fills": {
+     "1": "19",
+     "3": "1",
+     "4": "8",
+     "5": "10"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "97000",
+     "qty": "25"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "102000",
+     "qty": "37"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "107000",
+     "qty": "5"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "98000",
+     "qty": "10"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "99000",
+     "qty": "1"
+    },
+    {
+     "id": 6,
+     "side": "bid",
+     "price": "104000",
+     "qty": "1"
+    },
+    {
+     "id": 7,
+     "side": "bid",
+     "price": "103000",
+     "qty": "10"
+    }
+   ],
+   "expected": {
+    "price": "102500",
+    "volume": "11",
+    "fills": {
+     "2": "10",
+     "5": "1",
+     "6": "1",
+     "7": "10"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "108000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "107000",
+     "qty": "1"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "94000",
+     "qty": "5"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "94000",
+     "qty": "10"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "96000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "95000",
+     "qty": "2"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "99000",
+     "qty": "5"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "102000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "104000",
+     "qty": "5"
+    },
+    {
+     "id": 3,
+     "side": "ask",
+     "price": "103000",
+     "qty": "15"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "95000",
+     "qty": "10"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "99000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": "95000",
+    "volume": "1",
+    "fills": {
+     "1": "1",
+     "4": "1"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "96000",
+     "qty": "1"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "107000",
+     "qty": "21"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "96000",
+     "qty": "5"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "108000",
+     "qty": "5"
+    },
+    {
+     "id": 5,
+     "side": "bid",
+     "price": "103000",
+     "qty": "1"
+    },
+    {
+     "id": 6,
+     "side": "bid",
+     "price": "99000",
+     "qty": "11"
+    },
+    {
+     "id": 7,
+     "side": "bid",
+     "price": "107000",
+     "qty": "19"
+    }
+   ],
+   "expected": {
+    "price": "107000",
+    "volume": "1",
+    "fills": {
+     "1": "1",
+     "2": "1"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "101000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "93000",
+     "qty": "17"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "102000",
+     "qty": "16"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "103000",
+     "qty": "10"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "108000",
+     "qty": "10"
+    },
+    {
+     "id": 4,
+     "side": "ask",
+     "price": "111000",
+     "qty": "1"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "bid",
+     "price": "102000",
+     "qty": "5"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "98000",
+     "qty": "1"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "98000",
+     "qty": "10"
+    }
+   ],
+   "expected": {
+    "price": "102000",
+    "volume": "1",
+    "fills": {
+     "1": "1",
+     "2": "1"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "104000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "107000",
+     "qty": "1"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "99000",
+     "qty": "5"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "98000",
+     "qty": "5"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "101000",
+     "qty": "1"
+    }
+   ],
+   "expected": {
+    "price": "101000",
+    "volume": "1",
+    "fills": {
+     "2": "1",
+     "5": "1"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "100000",
+     "qty": "8"
+    },
+    {
+     "id": 2,
+     "side": "bid",
+     "price": "95000",
+     "qty": "26"
+    },
+    {
+     "id": 3,
+     "side": "bid",
+     "price": "107000",
+     "qty": "8"
+    },
+    {
+     "id": 4,
+     "side": "bid",
+     "price": "98000",
+     "qty": "10"
+    },
+    {
+     "id": 5,
+     "side": "ask",
+     "price": "105000",
+     "qty": "1"
+    },
+    {
+     "id": 6,
+     "side": "ask",
+     "price": "99000",
+     "qty": "2"
+    },
+    {
+     "id": 7,
+     "side": "bid",
+     "price": "105000",
+     "qty": "2"
+    }
+   ],
+   "expected": {
+    "price": "100000",
+    "volume": "10",
+    "fills": {
+     "1": "8",
+     "3": "8",
+     "6": "2",
+     "7": "2"
+    }
+   }
+  },
+  {
+   "orders": [
+    {
+     "id": 1,
+     "side": "ask",
+     "price": "101000",
+     "qty": "2"
+    },
+    {
+     "id": 2,
+     "side": "ask",
+     "price": "98000",
+     "qty": "1"
+    }
+   ],
+   "expected": {
+    "price": null,
+    "volume": "0",
+    "fills": {}
+   }
+  }
+ ]
+}

@@ -12,7 +12,7 @@ import bs58 from 'bs58';
 import { utf8ToBytes } from '@noble/hashes/utils.js';
 import { sha256Hex } from './canonical.js';
 import { base64 } from './seal.js';
-import { SCALE, settlementSplit, minimumPrice } from './settlement.js';
+import { SCALE, settlementSplit, minimumPrice, harvestDividends, rebaseDebt, pendingDividends, bondLock, bondRelease, bondSettle, bondWithdraw, bondDeposit, type Bond } from './settlement.js';
 import { clearAuction, type AuctionOrder } from './auction.js';
 
 export const RUN_TIMEOUT_NS = 15n * 60n * 1_000_000_000n;
@@ -119,15 +119,14 @@ export class LocalLedger {
   /** harvest pending dividends straight into the withdrawable balance and re-baseline reward_debt (same as contract). */
   private harvest(r: LedgerRecipe, account: string): Holding {
     const h = this.holding(r.id, account);
-    const accrued = (h.shares * r.acc_per_share) / SCALE;
-    const pending = accrued - h.reward_debt;
-    h.reward_debt = accrued;
+    const [pending, debt] = harvestDividends(h.shares, h.reward_debt, r.acc_per_share);
+    h.reward_debt = debt;
     this.lastHarvest = pending;
     this.credit(account, pending);
     return h;
   }
   private lastHarvest = 0n;
-  private rebase(r: LedgerRecipe, h: Holding) { h.reward_debt = (h.shares * r.acc_per_share) / SCALE; }
+  private rebase(r: LedgerRecipe, h: Holding) { h.reward_debt = rebaseDebt(h.shares, r.acc_per_share); }
 
   // ---------- admin ----------
   add_runner(a: { id: string; signing_pk: string; enc_pk_hex: string; codehash: string; fee_per_run: string }) {
@@ -228,7 +227,7 @@ export class LocalLedger {
       }
       if (quoteKey) this.usedQuotes.add(quoteKey);
       this.credit(owner, amount - r.price_per_run);
-      r.bond_available -= covered; r.bond_locked += covered;
+      this.setBond(r, bondLock(this.bondOf(r), covered)!);
       const run: LedgerRun = { run_id: m.run_id, recipe_id: r.id, buyer: owner, amount: r.price_per_run, inputs_hash: m.inputs_hash, sealed_hash: r.sealed_hash, job_hash, expected, promised, covered, status: 'Pending', created_ns: this.now() };
       this.runs.set(m.run_id, run);
       this.emit('run_requested', { ...run });
@@ -237,7 +236,7 @@ export class LocalLedger {
     if (m.action === 'bond') {
       const rb = this.recipes.get(m.recipe_id);
       if (!rb) return reject('unknown recipe');
-      rb.bond_available += amount;
+      this.setBond(rb, bondDeposit(this.bondOf(rb), amount)!);
       this.emit('bond_posted', { recipe_id: rb.id, from: owner, amount, bond_available: rb.bond_available });
       return '0';
     }
@@ -276,7 +275,7 @@ export class LocalLedger {
     const pool = [...r.parts];
     for (const b of a.parts_used) { const i = pool.indexOf(b); assert(i >= 0, 'parts_used not part of recipe'); pool.splice(i, 1); }
     const fees = a.parts_used.map((b) => this.parts.get(b)!.fee_per_call);
-    const s = settlementSplit({ price: run.amount, protocolFeeBps: this.protocolFeeBps, runnerFee: runner.fee_per_run, partFees: fees, royaltyBps: r.royalty_bps, totalShares: r.total_shares });
+    const s = settlementSplit({ price: run.amount, protocolFeeBps: this.protocolFeeBps, runnerFee: runner.fee_per_run, partFees: fees, royaltyBps: r.royalty_bps, totalShares: r.total_shares, accBefore: r.acc_per_share });
     const payouts: Payout[] = [];
     payouts.push({ account_id: this.protocolAccount, role: 'protocol', amount: s.protocolTotal });
     payouts.push({ account_id: runner.id, role: 'runner', amount: s.runner });
@@ -287,10 +286,9 @@ export class LocalLedger {
     r.runs += 1n; r.revenue += run.amount;
     // bonded quote: compensate any shortfall from the cover locked when the run was paid
     const delivered = BigInt(a.delivered);
-    const shortfall = run.promised > delivered ? run.promised - delivered : 0n;
-    const compensation = shortfall < run.covered ? shortfall : run.covered;
+    const [bond, compensation] = bondSettle(this.bondOf(r), run.covered, run.promised, delivered)!;
+    this.setBond(r, bond);
     this.credit(run.buyer, compensation);
-    r.bond_locked -= run.covered; r.bond_available += run.covered - compensation;
     if (run.job_hash) { r.promised_total += run.promised; r.delivered_total += delivered; }
     r.compensated_total += compensation;
     run.status = 'Settled';
@@ -307,13 +305,15 @@ export class LocalLedger {
     this.emit('run_refunded', { run_id: run.run_id, buyer: run.buyer, amount: run.amount, reason: 'timeout' });
   }
 
-  private releaseCover(r: LedgerRecipe, run: LedgerRun) { r.bond_locked -= run.covered; r.bond_available += run.covered; }
+  private releaseCover(r: LedgerRecipe, run: LedgerRun) { this.setBond(r, bondRelease(this.bondOf(r), run.covered)!); }
+  private bondOf(r: LedgerRecipe): Bond { return { available: r.bond_available, locked: r.bond_locked }; }
+  private setBond(r: LedgerRecipe, b: Bond) { r.bond_available = b.available; r.bond_locked = b.locked; }
 
   withdraw_bond(a: { recipe_id: string; amount: string }) {
     const r = this.recipes.get(a.recipe_id); assert(r, 'unknown recipe');
     assert(r.creator === this.caller(), 'creator only');
     const amt = BigInt(a.amount); assert(amt > 0n, 'amount must be > 0'); assert(amt <= r.bond_available, 'amount exceeds bond_available');
-    r.bond_available -= amt; this.credit(r.creator, amt);
+    this.setBond(r, bondWithdraw(this.bondOf(r), amt)!); this.credit(r.creator, amt);
     this.emit('bond_withdrawn', { recipe_id: r.id, amount: amt, bond_available: r.bond_available });
   }
 
@@ -414,7 +414,7 @@ export class LocalLedger {
   pending_dividends(recipe_id: string, account: string): bigint {
     const r = this.recipes.get(recipe_id); const h = this.holdings.get(this.hkey(recipe_id, account));
     if (!r || !h) return 0n;
-    return (h.shares * r.acc_per_share) / SCALE - h.reward_debt;
+    return pendingDividends(h.shares, h.reward_debt, r.acc_per_share);
   }
   balance_of(account: string): bigint { return this.balances.get(account) ?? 0n; }
   get_book(recipe_id: string) {
@@ -427,7 +427,7 @@ export class LocalLedger {
   quote_settlement(recipe_id: string, parts_used: string[]) {
     const r = this.recipes.get(recipe_id); assert(r, 'no recipe');
     const runner = this.runners.get(r.runner_id)!;
-    return settlementSplit({ price: r.price_per_run, protocolFeeBps: this.protocolFeeBps, runnerFee: runner.fee_per_run, partFees: parts_used.map((b) => this.parts.get(b)!.fee_per_call), royaltyBps: r.royalty_bps, totalShares: r.total_shares });
+    return settlementSplit({ price: r.price_per_run, protocolFeeBps: this.protocolFeeBps, runnerFee: runner.fee_per_run, partFees: parts_used.map((b) => this.parts.get(b)!.fee_per_call), royaltyBps: r.royalty_bps, totalShares: r.total_shares, accBefore: r.acc_per_share });
   }
   holders(recipe_id: string): { account: string; shares: bigint; locked: bigint }[] {
     return [...this.holdings.entries()].filter(([k, h]) => k.startsWith(recipe_id + '|') && h.shares > 0n).map(([k, h]) => ({ account: k.split('|')[1], shares: h.shares, locked: h.locked })).sort((a, b) => (b.shares > a.shares ? 1 : -1));

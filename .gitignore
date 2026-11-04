@@ -7,3 +7,4 @@ docs/media/.video/
 *.log
 .DS_Store
 archive/
+__pycache__/

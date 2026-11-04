@@ -15,16 +15,32 @@ function toPaymentUnits(asset: string, units: bigint, prices: Prices): bigint {
   return BigInt(Math.floor((Number(units) / 10 ** t.decimals) * t.price * 1e6));
 }
 
-export function measure(job: JobType | undefined, output: unknown, prices: Prices): { expected: bigint; promised: bigint; delivered: bigint } {
-  if (!job?.metric || !Array.isArray(output)) return { expected: 0n, promised: 0n, delivered: 0n };
-  let expected = 0n, promised = 0n, delivered = 0n;
+/** Deposits that reached the market (executed or failed by it). INCOMPLETE_DEPOSIT means the buyer sent less
+ *  than the runner asked for; 1Click refunds it and it never executes. */
+const EXECUTED = new Set(['SUCCESS', 'FAILED', 'REFUNDED']);
+
+export function measure(job: JobType | undefined, output: unknown, prices: Prices): { expected: bigint; promised: bigint; delivered: bigint; executed: bigint } {
+  if (!job?.metric || !Array.isArray(output)) return { expected: 0n, promised: 0n, delivered: 0n, executed: 0n };
+  let expected = 0n, promised = 0n, delivered = 0n, executed = 0n;
   for (const r of output as Receipt[]) {
     const asset = r.assetOut ?? USDC;
     const out = BigInt(r.amountOutUnits ?? '0');
-    if (r.status === 'QUOTED') { expected += toPaymentUnits(asset, out, prices); promised += toPaymentUnits(asset, BigInt(r.minAmountOutUnits ?? '0'), prices); }
+    const min = toPaymentUnits(asset, BigInt(r.minAmountOutUnits ?? '0'), prices);
+    if (r.status === 'QUOTED') { expected += toPaymentUnits(asset, out, prices); promised += min; }
     if (r.status === 'SUCCESS') delivered += toPaymentUnits(asset, out, prices);
+    if (EXECUTED.has(r.status)) executed += min;
   }
-  return { expected, promised, delivered };
+  return { expected, promised, delivered, executed };
+}
+
+/**
+ * The `delivered` value a bonded run reports. The bond insures the market, not the buyer's own choices: value
+ * the buyer withheld after the pre-execution re-check (drained the wallet, sent less than asked) counts as
+ * delivered at its quoted minimum. `fresh` is the promise the re-check measured; `executed` is the quoted
+ * minimum of what actually reached the market. Model-checked in verification/tla/BondedRuns.tla (NoBondDrain).
+ */
+export function creditedDelivered(delivered: bigint, fresh: bigint, executed: bigint): bigint {
+  return delivered + (fresh > executed ? fresh - executed : 0n);
 }
 
 export async function fetchPrices(oneclickBase: string): Promise<Prices> {

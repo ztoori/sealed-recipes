@@ -8,6 +8,7 @@ import {
   settlementSplit, LocalLedger, type Outcome, runReportMessage, quoteMessage, withdrawalRisk, labelsFromParts, jobHash, base64, seal, open, sealedHash,
   clearAuction, validateRecipe, compatibleSwaps, swapPart, publicListing, recoverSigner, signEip191, addressFromPublicKey,
   verifyChat, sha256Hex, OneClick, runPaymentQuoteRequest, USDC_NEAR, reportData, verifyRunnerAttestation,
+  bondLock, bondRelease, bondSettle, pendingDividends, harvestDividends, rebaseDebt,
   type Catalog, type Recipe, type RunnerAttestation,
 } from '../core/src/index.js';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
@@ -398,4 +399,62 @@ test('trust labels come from part ids, so a listing cannot claim a lower risk th
   const proLabels = labelsFromParts(validateRecipe(pro, catalog).partsUsed, catalog);
   assert.equal(proLabels.risk, 'high', 'a closed model raises the label whatever the listing says');
   assert.throws(() => labelsFromParts(['made.up@1.0.0'], catalog), /unknown part/);
+});
+
+// ---- conformance with the proved models (verification/smt): the mirror must agree with the proofs' models ----
+test('conformance: settlement, bonds and dividends match the models proved in verification/smt', () => {
+  const v = json('contracts/test-vectors/conformance-money.json');
+  const B = BigInt;
+  v.settlement.forEach((c: any, k: number) => {
+    const i = c.input;
+    let s: ReturnType<typeof settlementSplit> | null = null;
+    try { s = settlementSplit({ price: B(i.price), protocolFeeBps: i.protocol_fee_bps, runnerFee: B(i.runner_fee), partFees: i.part_fees.map(B), royaltyBps: i.royalty_bps, totalShares: B(i.total_shares), accBefore: B(i.acc_before) }); } catch { s = null; }
+    if (c.expected === null) { assert.equal(s, null, `settlement ${k}: mirror split, model None`); return; }
+    assert.ok(s, `settlement ${k}: mirror threw, model split`);
+    const e = c.expected;
+    assert.deepEqual([s.protocol, s.remainder, s.creator, s.pool, s.accIncrement, s.distributed, s.dustToProtocol].map(String),
+      [e.protocol, e.remainder, e.creator, e.pool, e.acc_increment, e.distributed, e.dust], `settlement ${k}`);
+  });
+  v.bonds.forEach((c: any, k: number) => {
+    const b = { available: B(c.available), locked: B(c.locked) }, x = B(c.amount);
+    let got: any;
+    try { got = c.op === 'lock' ? bondLock(b, x) : c.op === 'release' ? bondRelease(b, x) : bondSettle(b, x, B(c.promised), B(c.delivered)); } catch { got = null; }
+    if (c.expected === null) { assert.equal(got, null, `bond ${k}`); return; }
+    const [nb, comp] = Array.isArray(got) ? got : [got, undefined];
+    assert.equal(String(nb.available), c.expected.available, `bond ${k}`); assert.equal(String(nb.locked), c.expected.locked, `bond ${k}`);
+    if (comp !== undefined) assert.equal(String(comp), c.expected.compensation, `bond ${k}`);
+  });
+  v.dividends.forEach((c: any, k: number) => {
+    const [s, a, d] = [B(c.shares), B(c.acc), B(c.debt)];
+    assert.equal(String(pendingDividends(s, d, a)), c.expected.pending, `div ${k}`);
+    assert.deepEqual(harvestDividends(s, d, a).map(String), [c.expected.harvest_paid, c.expected.harvest_debt], `div ${k}`);
+    assert.equal(String(rebaseDebt(s, a)), c.expected.rebase, `div ${k}`);
+  });
+});
+
+test('conformance: the batch auction matches the Z3 encoding it was proved on', () => {
+  for (const [k, c] of json('contracts/test-vectors/conformance-auction.json').cases.entries()) {
+    const r = clearAuction(c.orders.map((o: any) => ({ id: o.id, side: o.side === 'bid' ? 'Bid' : 'Ask', owner: 'o' + o.id, price: BigInt(o.price), qty: BigInt(o.qty) })));
+    assert.equal(r.price === null ? null : String(r.price), c.expected.price, `auction ${k}`);
+    assert.equal(String(r.volume), c.expected.volume, `auction ${k}`);
+    assert.deepEqual(Object.fromEntries(r.fills.map((f) => [String(f.order_id), String(f.qty)])), c.expected.fills, `auction ${k}`);
+  }
+});
+
+test('solvency scenarios found by the proofs: the contract never owes more than it received', () => {
+  for (const c of json('contracts/test-vectors/solvency.json').cases) {
+    const { L, sign, pay } = setupLedger({ price: c.recipe.price, total: c.recipe.total_shares, royalty: 0, fee: 0, runnerFee: '0', partFees: ['0'] });
+    let n = 0;
+    for (const s of c.steps) {
+      if (s.op === 'run') { const id = 'r' + n++; pay(id); L.call('x', (l) => l.report_run({ run_id: id, outcome: 'ok', parts_used: ['b0@1.0.0'], output_hash: 'f'.repeat(64), delivered: '0', signature: sign(id, 'ok', ['b0@1.0.0']) })); }
+      else L.call(`${s.from}.testnet`, (l) => l.transfer_shares({ recipe_id: 'TEST', receiver_id: `${s.to}.testnet`, qty: s.qty }));
+    }
+    let owed = L.balance_of('treasury.testnet');
+    assert.equal(String(owed), c.expected_protocol, c.name + ' protocol');
+    for (const [who, want] of Object.entries(c.expected_holders)) {
+      const got = L.balance_of(`${who}.testnet`) + L.pending_dividends('TEST', `${who}.testnet`);
+      assert.equal(String(got), want, `${c.name} ${who}`); owed += got;
+    }
+    assert.ok(owed <= BigInt(c.paid_in), `${c.name}: owes ${owed}, received ${c.paid_in}`);
+  }
 });
