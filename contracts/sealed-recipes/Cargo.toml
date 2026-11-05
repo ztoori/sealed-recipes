@@ -1,6 +1,6 @@
 [package]
-name = "fungible-recipes"
-description = "Fungible Recipes: sealed no-code workflows as tradable, revenue-sharing financial instruments on NEAR"
+name = "sealed-recipes"
+description = "Sealed Recipes: sealed no-code workflows as tradable, revenue-sharing financial instruments on NEAR"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"

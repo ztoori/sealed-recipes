@@ -6,7 +6,7 @@ export const freshCheck: PartHandler = async (inputs, ctx) => {
   if (!/^[0-9a-f]{64}$/.test(addr)) throw new Error('fresh recipient must be an implicit (64-hex) account generated client-side');
   const r = await ctx.http(ctx.endpoints.rpc, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 'frs', method: 'query', params: { request_type: 'view_account', finality: 'final', account_id: addr } }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 'srs', method: 'query', params: { request_type: 'view_account', finality: 'final', account_id: addr } }),
   }).then((x) => x.json() as Promise<{ result?: unknown; error?: { cause?: { name?: string } } }>);
   if (r.result) throw new Error('recipient already exists on-chain — not fresh');
   if (r.error?.cause?.name !== 'UNKNOWN_ACCOUNT') throw new Error('unexpected RPC response: ' + JSON.stringify(r.error));

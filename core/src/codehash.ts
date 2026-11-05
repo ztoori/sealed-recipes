@@ -25,8 +25,8 @@ export function computeCodehash(repoRoot: string): { codehash: string; files: { 
   return { codehash: sha256Hex(entries.map((e) => `${e.sha256}  ${e.path}`).join('\n')), files: entries };
 }
 
-/** FRS-1 catalog = parts + job types (Node only). */
-export function loadCatalog(repoRoot: string): import('./frs.js').Catalog {
+/** SRS-1 catalog = parts + job types (Node only). */
+export function loadCatalog(repoRoot: string): import('./srs.js').Catalog {
   const parts = JSON.parse(readFileSync(join(repoRoot, 'standard/parts.json'), 'utf8'));
   const jobs = JSON.parse(readFileSync(join(repoRoot, 'standard/jobs.json'), 'utf8'));
   return { ...parts, jobs: jobs.jobs };

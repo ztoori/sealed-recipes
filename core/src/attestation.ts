@@ -1,5 +1,5 @@
 /**
- * Runner attestation (FRS-1 §Sealed execution).
+ * Runner attestation (SRS-1 §Sealed execution).
  *
  * A runner proves "these keys live inside this code inside a TEE" by putting
  *   report_data = sha256(canonical{ codehash, enc_pk_hex, nonce, signing_pk })
@@ -21,7 +21,7 @@ import { base64 } from './seal.js';
 import type { Check } from './nearai.js';
 
 export interface RunnerAttestation {
-  v: 'frs-attest-v1';
+  v: 'srs-attest-v1';
   tee: 'local-dev' | 'dstack-tdx';
   runner_id: string;
   signing_pk: string; // ed25519:<base58>

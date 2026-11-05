@@ -1,4 +1,4 @@
-# `fungible-recipes` — NEAR smart contract
+# `sealed-recipes` — NEAR smart contract
 
 Rust / near-sdk 5.30. The canonical interface is [`docs/CONTRACT_SPEC.md`](../../docs/CONTRACT_SPEC.md).
 
@@ -14,7 +14,7 @@ What it does:
   `customRecipientMsg = {"action":"run",...}`, which arrives as `ft_transfer_call` → `ft_on_transfer`. The run
   stays in escrow until the runner sends a report.
 - **Recipe intents with bonded quotes.** Recipes compete for a buyer's job with quotes signed by the TEE runner
-  (`frs-quote-v2|…`). A quote is bound to the recipe version, the job, the buyer's sealed inputs and the buyer,
+  (`srs-quote-v2|…`). A quote is bound to the recipe version, the job, the buyer's sealed inputs and the buyer,
   and can back only one run. It names a `cover` (at most `promised`) that the recipe's bond (`{"action":"bond"}`)
   must hold in full; paying the quote locks that cover. If the run delivers less than promised, the shortfall is
   paid to the buyer from the cover in the same settlement. A runner that finds the inputs or market changed since
@@ -28,7 +28,7 @@ What it does:
   buyer can call `reclaim_run`.
 - **Market-driven prices (v6, `src/pricing.rs`).** Each recipe's `price_per_run` is its current list price. It follows
   paid runs per period inside a band the creator sets (`price_floor`, `price_ceiling`, `target_runs`), by the
-  EIP-1559 base-fee rule: at most ±12.5% a period. A signed quote (`frs-quote-v3`) locks a price inside the band;
+  EIP-1559 base-fee rule: at most ±12.5% a period. A signed quote (`srs-quote-v3`) locks a price inside the band;
   a run msg's `max_price` caps what the buyer pays.
 - **No investment features (v5).** Recipes are products, not share classes: there are no shares, dividends,
   order books or auctions. Every payment is a fee for a service rendered (protocol, runner, part author, creator).
@@ -62,7 +62,7 @@ Requires `rustup target add wasm32-unknown-unknown` and [cargo-near](https://git
 
 ```bash
 cargo near build non-reproducible-wasm
-# -> target/near/fungible_recipes.wasm
+# -> target/near/sealed_recipes.wasm
 ```
 
 Before a reproducible build (`cargo near build reproducible-wasm`), pin `image` / `image_digest` in
@@ -71,7 +71,7 @@ Before a reproducible build (`cargo near build reproducible-wasm`), pin `image` 
 ## Deploy to testnet (near-cli-rs)
 
 ```bash
-export CONTRACT=frs-demo.testnet          # your account
+export CONTRACT=srs-demo.testnet          # your account
 export OWNER=you.testnet
 # PLACEHOLDER: any NEP-141 you control on testnet (e.g. a test USDC you deployed). Mainnet USDC is
 # 17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1 (NEAR Intents has no testnet).
@@ -112,7 +112,7 @@ The contract pays for its own storage in v1, so there are no per-user storage de
 | `update_sealed` | creator | `id: String, sealed_hash: String` (64 hex): announces the next version, active after `update_delay_ns` |
 | `cancel_update` | creator | `id: String` |
 | `apply_update` | anyone, once due | `id: String` (also applied lazily by the next run payment) |
-| `checkpoint_run` | anyone relays; runner-signed `frs-ckpt-v1` | `run_id: String, seq: u32, state_hash: String, parts_done: Vec<String>, signature: Base64VecU8`: records progress (extends the timeout) and, in checkpoint mode, pays the parts done |
+| `checkpoint_run` | anyone relays; runner-signed `srs-ckpt-v1` | `run_id: String, seq: u32, state_hash: String, parts_done: Vec<String>, signature: Base64VecU8`: records progress (extends the timeout) and, in checkpoint mode, pays the parts done |
 | `ft_on_transfer` | payment token only | `sender_id: AccountId, amount: U128, msg: String` → `U128("0")` |
 | `report_run` | anyone (signature-gated) | `run_id: String, outcome: String ("ok" \| "fail" \| "abort"), parts_used: Vec<String>, output_hash: String, delivered: U128, signature: Base64VecU8` → `Vec<Payout>` |
 | `withdraw_bond` | creator | `recipe_id: String, amount: U128` (≤ `bond_available`; credited to the creator's balance) |
@@ -146,18 +146,18 @@ the recipe's `sealed_hash` at payment time. Exact event shapes: [`docs/CONTRACT_
 Runner signatures: ed25519 over the UTF-8 strings
 
 ```
-frs-run-v3|<contract_account_id>|<run_id>|<recipe_id>|<ok|fail|abort>|<output_hash>|<delivered>|<parts_used joined by ",">
-frs-quote-v2|<contract_account_id>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<expected>|<promised>|<cover>|<expires_ns>
+srs-run-v3|<contract_account_id>|<run_id>|<recipe_id>|<ok|fail|abort>|<output_hash>|<delivered>|<parts_used joined by ",">
+srs-quote-v2|<contract_account_id>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<expected>|<promised>|<cover>|<expires_ns>
 ```
 
 `buyer` is `on_behalf_of`, else `sender_id`. Quote checks, in order: `job_hash must be 64 lowercase hex`,
 `quote for an outdated recipe version`, `runner inactive`, `invalid quote signature`, `quote expired`,
 `quote already used`, `cover exceeds promise`, `bond below quoted cover`.
 
-Events: NEP-297 `EVENT_JSON:` logs with `standard: "fungible-recipes"`, `version: "1.0.0"`. The event names are
+Events: NEP-297 `EVENT_JSON:` logs with `standard: "sealed-recipes"`, `version: "1.0.0"`. The event names are
 `runner_added`, `part_registered`, `recipe_published`, `recipe_update_scheduled`, `recipe_update_cancelled`,
-`recipe_updated`, `run_requested`, `run_checkpoint`, `frs_settlement`, `run_refunded`, `transfer_rejected`,
-`withdrawn`, `withdraw_failed`, `bond_posted` and `bond_withdrawn`. `frs_settlement` data, in order: `run_id, recipe_id,
+`recipe_updated`, `run_requested`, `run_checkpoint`, `srs_settlement`, `run_refunded`, `transfer_rejected`,
+`withdrawn`, `withdraw_failed`, `bond_posted` and `bond_withdrawn`. `srs_settlement` data, in order: `run_id, recipe_id,
 buyer, price, output_hash, payouts, reserve, delivered, compensation`; payouts are `protocol`, `runner`, unbilled
 `part:<id>` entries, then `creator`.
 
@@ -179,6 +179,6 @@ param). `royalty_bps`, `total_shares` and `acc_per_share` are replaced by `reser
 ## v6: market-driven pricing
 
 `new` takes `price_period_ns`; `publish_recipe` takes `pricing`; new `set_pricing` and `update_price`; quotes are
-`frs-quote-v3` and carry `price`; run msgs accept `max_price`; events `price_updated` and `pricing_updated`. Recipe
+`srs-quote-v3` and carry `price`; run msgs accept `max_price`; events `price_updated` and `pricing_updated`. Recipe
 fields `price_floor, price_ceiling, target_runs, period_start_ns, period_runs` are appended. Views return the price with
 ended periods applied. See `docs/CONTRACT_SPEC.md` ("v6 changes").

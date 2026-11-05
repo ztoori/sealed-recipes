@@ -25,12 +25,12 @@ try {
   if (!usdc || !wnear) throw new Error('USDC or wNEAR not listed');
   ok(`/v0/tokens: ${tokens.length} tokens, wNEAR $${wnear.price}`);
   const fresh = randomBytes(32).toString('hex');
-  const swap = await oc.quote({ dry: true, swapType: 'EXACT_INPUT', slippageTolerance: 100, originAsset: wnear.assetId, depositType: 'ORIGIN_CHAIN', destinationAsset: USDC_NEAR, amount: (10n ** 24n).toString(), refundTo: 'frs-live-check.near', refundType: 'ORIGIN_CHAIN', recipient: fresh, recipientType: 'DESTINATION_CHAIN', confidentiality: 'basic', deadline: new Date(Date.now() + 600_000).toISOString(), referral: 'fungible-recipes' });
+  const swap = await oc.quote({ dry: true, swapType: 'EXACT_INPUT', slippageTolerance: 100, originAsset: wnear.assetId, depositType: 'ORIGIN_CHAIN', destinationAsset: USDC_NEAR, amount: (10n ** 24n).toString(), refundTo: 'srs-live-check.near', refundType: 'ORIGIN_CHAIN', recipient: fresh, recipientType: 'DESTINATION_CHAIN', confidentiality: 'basic', deadline: new Date(Date.now() + 600_000).toISOString(), referral: 'sealed-recipes' });
   ok(`confidential dry quote 1 wNEAR → ${swap.quote.amountOutFormatted} USDC to a fresh implicit account`);
   const arbUsdc = tokens.find((t) => t.assetId === 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near');
   if (arbUsdc) {
     const msg = JSON.stringify({ action: 'run', recipe_id: 'CLNP', run_id: 'r-live-check', inputs_hash: '0'.repeat(64), on_behalf_of: 'bob.near' });
-    const pay = await oc.quote({ ...runPaymentQuoteRequest({ originAsset: arbUsdc.assetId, refundTo: '0x000000000000000000000000000000000000dEaD', contractId: 'fungible-recipes.near', price: '750000', msg }), dry: true, deadline: new Date(Date.now() + 600_000).toISOString() });
+    const pay = await oc.quote({ ...runPaymentQuoteRequest({ originAsset: arbUsdc.assetId, refundTo: '0x000000000000000000000000000000000000dEaD', contractId: 'sealed-recipes.near', price: '750000', msg }), dry: true, deadline: new Date(Date.now() + 600_000).toISOString() });
     ok(`run-payment dry quote: ${pay.quote.amountInFormatted} USDC(Arbitrum) → exactly 0.75 USDC to the contract with customRecipientMsg`);
   } else skip('Arbitrum USDC not listed; run-payment quote skipped');
 } catch (e) { bad('1Click', e); }

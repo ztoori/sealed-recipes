@@ -1,5 +1,5 @@
 /**
- * FRS-1 (Fungible Recipe Standard) — the no-code / low-code composition standard.
+ * SRS-1 (Sealed Recipe Standard) — the no-code / low-code composition standard.
  * A part declares typed ports; a recipe wires parts into a DAG. This module
  * validates recipes, type-checks wiring, computes cost/capabilities, derives the
  * public listing (what a marketplace may see) and finds drop-in part swaps.
@@ -10,7 +10,7 @@ export type PortSpec = { type: string; description?: string };
 export type ParamSpec = { type: string; default?: unknown; secret?: boolean; description?: string };
 
 /**
- * Disclosure (FRS-1 §2.1). Every part declares its four layers so buyers can judge whether it could be rebuilt
+ * Disclosure (SRS-1 §2.1). Every part declares its four layers so buyers can judge whether it could be rebuilt
  * if its supplier disappeared.
  *  - Parts on open-weights models carry low withdrawal risk: anyone can re-host the weights.
  *  - Parts on closed models carry high withdrawal risk: the provider can retire, change or reprice the model at any time.
@@ -60,7 +60,7 @@ export interface PartManifest {
 
 export interface TypeDef { description: string; extends: string | null }
 
-export interface Catalog { frs: '1.0'; kind: 'part-catalog'; types: Record<string, TypeDef>; parts: PartManifest[]; jobs?: JobType[] }
+export interface Catalog { srs: '1.0'; kind: 'part-catalog'; types: Record<string, TypeDef>; parts: PartManifest[]; jobs?: JobType[] }
 
 export interface FormField {
   id: string;
@@ -82,7 +82,7 @@ export interface RecipeNode {
 }
 
 export interface Recipe {
-  frs: '1.0';
+  srs: '1.0';
   kind: 'recipe';
   meta: { ticker: string; name: string; creator: string; description: string };
   form: FormField[];
@@ -159,7 +159,7 @@ export function validateRecipe(recipe: Recipe, catalog: Catalog): ValidationResu
   const err = (code: string, message: string, node?: string, port?: string) => d.push({ severity: 'error', code, message, node, port });
   const warn = (code: string, message: string, node?: string, port?: string) => d.push({ severity: 'warning', code, message, node, port });
 
-  if (recipe.frs !== '1.0' || recipe.kind !== 'recipe') err('frs.version', 'recipe must declare frs "1.0" and kind "recipe"');
+  if (recipe.srs !== '1.0' || recipe.kind !== 'recipe') err('srs.version', 'recipe must declare srs "1.0" and kind "recipe"');
   if (!TICKER_RE.test(recipe.meta?.ticker ?? '')) err('meta.ticker', 'ticker must be 3-6 chars A-Z/0-9');
   if (!recipe.meta?.name) err('meta.name', 'recipe needs a name');
 
@@ -169,7 +169,7 @@ export function validateRecipe(recipe: Recipe, catalog: Catalog): ValidationResu
     formIds.add(f.id);
     if (!types[f.type]) err('form.type', `form field "${f.id}" has unknown type "${f.type}"`);
   }
-  if ((recipe.form ?? []).length > 6) warn('form.long', 'FRS-1 recommends at most 6 form fields (one short form, no chat)');
+  if ((recipe.form ?? []).length > 6) warn('form.long', 'SRS-1 recommends at most 6 form fields (one short form, no chat)');
 
   const nodes = new Map<string, RecipeNode>();
   for (const n of recipe.nodes ?? []) {
@@ -221,7 +221,7 @@ export function validateRecipe(recipe: Recipe, catalog: Catalog): ValidationResu
       }
     }
   }
-  if (order.length !== nodes.size) err('graph.cycle', 'parts form a cycle; FRS-1 recipes must be acyclic');
+  if (order.length !== nodes.size) err('graph.cycle', 'parts form a cycle; SRS-1 recipes must be acyclic');
 
   let outputType: string | undefined;
   const o = resolveRefType(recipe.output ?? '', recipe, nodes, parts);

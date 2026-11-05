@@ -19,7 +19,7 @@ export const walletScanner: PartHandler = async (inputs, ctx) => {
     // ft_metadata via JSON-RPC call_function (args "{}" base64 = e30=)
     const md = await ctx.http(ctx.endpoints.rpc, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 'frs', method: 'query', params: { request_type: 'call_function', finality: 'final', account_id: t.contract_id, method_name: 'ft_metadata', args_base64: 'e30=' } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 'srs', method: 'query', params: { request_type: 'call_function', finality: 'final', account_id: t.contract_id, method_name: 'ft_metadata', args_base64: 'e30=' } }),
     }).then((r) => r.json() as Promise<{ result?: { result: number[] } }>);
     const meta = md.result ? (JSON.parse(new TextDecoder().decode(Uint8Array.from(md.result.result))) as { symbol: string; name: string; decimals: number }) : { symbol: '?', name: t.contract_id, decimals: 0 };
     const l = byAsset.get(assetId);

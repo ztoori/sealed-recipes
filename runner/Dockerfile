@@ -1,5 +1,5 @@
 # Reproducible runner image. Build from the repo root:
-#   docker build -f runner/Dockerfile -t frs-runner .
+#   docker build -f runner/Dockerfile -t srs-runner .
 # For a reproducible image pin the digest: node:22-bookworm-slim@sha256:<digest from `docker buildx imagetools inspect`>
 FROM node:22-bookworm-slim
 WORKDIR /app

@@ -1,8 +1,8 @@
-# `fungible-recipes` events (exact shapes)
+# `sealed-recipes` events (exact shapes)
 
-Every event is a NEP-297 log line `EVENT_JSON:{"standard":"fungible-recipes","version":"1.0.0","event":<name>,"data":[<object>]}`.
+Every event is a NEP-297 log line `EVENT_JSON:{"standard":"sealed-recipes","version":"1.0.0","event":<name>,"data":[<object>]}`.
 `data` always has exactly one object. Type notation: `U128` / `U64` = decimal **string**; `u16`, `u64` = JSON **number**; `AccountId` = string.
-Source of truth: `contracts/fungible-recipes/src/lib.rs`. The TS mirror (`core/src/ledger.ts`) must emit the same names and fields.
+Source of truth: `contracts/sealed-recipes/src/lib.rs`. The TS mirror (`core/src/ledger.ts`) must emit the same names and fields.
 
 | Event | When | `data[0]` fields |
 |---|---|---|
@@ -17,14 +17,14 @@ Source of truth: `contracts/fungible-recipes/src/lib.rs`. The TS mirror (`core/s
 | `run_checkpoint` | `checkpoint_run` (progress, optional partial billing in checkpoint mode) | `run_id: string, seq: u32, state_hash: string, parts_done: string[], billed: U128 (run total after), payouts: [{account_id: AccountId, role: string, amount: U128}] (part payments made by this call, role `part:<id>`)` |
 | `run_requested` | `ft_on_transfer` action `run` accepted | the full `Run`: `run_id: string, recipe_id: string, buyer: AccountId (on_behalf_of or sender_id), amount: U128 (the quote's signed `price` if quoted, else the current list price; any excess already credited to buyer), inputs_hash: string, sealed_hash: string (snapshot of the recipe's sealed_hash), status: "Pending", created_ns: U64, job_hash: string ("" when unquoted), expected: U128 ("0" when unquoted), promised: U128 ("0" when unquoted), covered: U128 (the bond amount set aside = the quote's signed cover; "0" when unquoted), checkpoint_seq: u32 (0), state_hash: string (""), parts_billed: string[] ([]), billed: U128 ("0"), last_progress_ns: U64 (= created_ns)` |
 | `transfer_rejected` | `ft_on_transfer` with `on_behalf_of` where the run/bond failed a business rule (including quote checks); full amount credited to `on_behalf_of` | `on_behalf_of: AccountId, sender_id: AccountId, amount: U128, reason: string` |
-| `frs_settlement` | `report_run` outcome `ok` | `run_id: string, recipe_id: string, buyer: AccountId, price: U128, output_hash: string, payouts: [{account_id: AccountId, role: string, amount: U128}], reserve: U128 (added to the recipe's guarantee deposit), delivered: U128, compensation: U128` |
+| `srs_settlement` | `report_run` outcome `ok` | `run_id: string, recipe_id: string, buyer: AccountId, price: U128, output_hash: string, payouts: [{account_id: AccountId, role: string, amount: U128}], reserve: U128 (added to the recipe's guarantee deposit), delivered: U128, compensation: U128` |
 | `run_refunded` | `report_run` outcome `fail` or `abort` / `reclaim_run` (the run's `covered` returns to `bond_available`) | `run_id: string, buyer: AccountId, amount: U128 (= run amount - billed), reason: "runner_reported_failure" \| "runner_aborted" \| "timeout"` |
 | `withdrawn` | `on_withdraw` after a successful `ft_transfer` | `account_id: AccountId, amount: U128` |
 | `bond_posted` | `ft_on_transfer` action `bond` | `recipe_id: string, from: AccountId (on_behalf_of or sender_id), amount: U128, bond_available: U128 (after)` |
 | `bond_withdrawn` | `withdraw_bond` (creator only; amount credited to the creator's withdrawable balance) | `recipe_id: string, amount: U128, bond_available: U128 (after)` |
 | `withdraw_failed` | `on_withdraw` after a failed `ft_transfer` (balance restored) | `account_id: AccountId, amount: U128` |
 
-## `frs_settlement.payouts` order and roles
+## `srs_settlement.payouts` order and roles
 
 Always in this order, one entry each, **including zero amounts**:
 1. `protocol` → `protocol_account`, amount = protocol fee + rounding dust
@@ -51,7 +51,7 @@ Bond compensation is not a payout entry: it is credited to `buyer` and reported 
 | job_hash 64 lowercase hex (quoted run) | `job_hash must be 64 lowercase hex` |
 | quote `sealed_hash` equals the recipe's current `sealed_hash` | `quote for an outdated recipe version` |
 | the recipe's runner is active | `runner inactive` |
-| quote signature by the recipe's runner over `frs-quote-v3\|…` (binds recipe version, job, inputs_hash, buyer and price) | `invalid quote signature` |
+| quote signature by the recipe's runner over `srs-quote-v3\|…` (binds recipe version, job, inputs_hash, buyer and price) | `invalid quote signature` |
 | `block_timestamp <= expires_ns` | `quote expired` |
 | sha256 of the quote message not seen before (each quote backs one run) | `quote already used` |
 | `cover <= promised` | `cover exceeds promise` |

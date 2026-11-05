@@ -1,6 +1,6 @@
 # Threat model
 
-What Fungible Recipes protects, from whom, and where the protection ends.
+What Sealed Recipes protects, from whom, and where the protection ends.
 
 ## Assets
 
@@ -19,7 +19,7 @@ What Fungible Recipes protects, from whom, and where the protection ends.
 | Buyer / competitor | Reverse-engineer a recipe from its outputs | Outputs only reveal results. Params and prompts stay inside the runner | Black-box probing over many paid runs, which costs money every time |
 | Chain observer | Link the buyer to the fresh address | Swaps use `confidentiality: "basic"` in 1Click, so deposits and withdrawals cannot be linked on-chain. The fresh key is made in the browser; only the address is sealed | Timing and amount correlation by a determined observer. `advanced` confidentiality is available and is a one-param change in the part |
 | Malicious runner operator | Read plaintext | Production runner runs in an Intel TDX CVM. Keys come from dstack `getKey` and never leave the enclave. Clients verify REPORTDATA = sha256(codehash, keys, nonce) | TEE side channels. Local-dev mode has **no** hardware protection, and the UI says so |
-| Malicious or buggy runner | Bill parts that didn't run / bill extra parts | `parts_used` must be a sub-multiset of the recipe's on-chain part list. Reports must be signed by the registered key | A compromised runner could report success for a run that failed. Mitigation: pin `codehash` to the audited release and verify hardware attestation; quote signatures are already verified on-chain (`frs-quote-v3`) |
+| Malicious or buggy runner | Bill parts that didn't run / bill extra parts | `parts_used` must be a sub-multiset of the recipe's on-chain part list. Reports must be signed by the registered key | A compromised runner could report success for a run that failed. Mitigation: pin `codehash` to the audited release and verify hardware attestation; quote signatures are already verified on-chain (`srs-quote-v3`) |
 | Replay | Re-settle a run | `report_run` requires `Pending`; the signature covers contract id, run id and output hash | — |
 | Forged attestation | Make clients seal to an attacker key | Fresh nonce, key binding in report_data, possession signature, keys must match `add_runner`, and Intel DCAP chain via `scripts/verify-quote.ts` | Owner key compromise (use a DAO as owner) |
 | Part author | Exfiltrate buyer data | Parts only reach hosts declared in `capabilities` (`guardedFetch`); parts are reviewed code in the runner image (code hash) | A part can send data to its own declared host. Buyers see each part's capabilities before paying |
@@ -46,7 +46,7 @@ What Fungible Recipes protects, from whom, and where the protection ends.
 | Recipe creator | Make a closed-model recipe look open or confidential | Risk, privacy and disclosure labels are computed by the marketplace from the on-chain `parts`, never taken from the creator's listing; the runner refuses a sealed recipe whose parts differ from the on-chain list; AI parts call the model their manifest discloses, not a recipe param | — |
 | Runner | Report a false `delivered` value | `delivered` is signed by the attested runner key and covered by the code hash | Same trust as run reports: needs hardware attestation (and later on-chain DCAP) to be meaningful |
 | Quote spammer | Burn runner compute with dry runs | Fan-out capped at 5 recipes per job, 12 jobs per minute per client; dry runs obey each part's resource limits | A quote fee would price this properly on-chain |
-| Part supplier | Withdraw or reprice a model or service a recipe depends on | Bundled parts are pinned code the author can't switch off; FRS-1 labels withdrawal risk (closed models high, remote services medium); drop-in swap search finds replacements | Remote and closed-model parts can still disappear. Planned: fallback parts, notice periods, supplier bonds |
+| Part supplier | Withdraw or reprice a model or service a recipe depends on | Bundled parts are pinned code the author can't switch off; SRS-1 labels withdrawal risk (closed models high, remote services medium); drop-in swap search finds replacements | Remote and closed-model parts can still disappear. Planned: fallback parts, notice periods, supplier bonds |
 | Runaway part | Loop or call models until the bill explodes | Per-part limits on time, HTTP calls, model calls and output size; when one trips, an AbortController cancels the part's in-flight and later requests; the buyer's price is fixed up front and the run is refunded | Limits are cooperative: parts are reviewed in-process TypeScript, so a CPU-bound loop is not preempted. Untrusted parts need WASM with fuel metering (not built) |
 | AI model provider | Read sealed prompts | AI parts call NEAR AI Cloud **private** models. TLS terminates in the gateway TEE, and every response is signed by the attested TEE key and checked | Gateway-kind signatures are checked against the gateway's key. Gateway attestation is not re-verified inside the part |
 

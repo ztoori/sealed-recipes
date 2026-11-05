@@ -44,7 +44,7 @@ export const intentsSwap: PartHandler = async (inputs, ctx) => {
       recipient: to, recipientType: 'DESTINATION_CHAIN',
       confidentiality: confidential ? 'basic' : 'public',
       deadline: new Date(Date.now() + 9 * 60_000).toISOString(),
-      referral: 'fungible-recipes', quoteWaitingTimeMs: 3000,
+      referral: 'sealed-recipes', quoteWaitingTimeMs: 3000,
     };
     const res = await ctx.http(`${ctx.endpoints.oneclick}/v0/quote`, { method: 'POST', headers, body: JSON.stringify(req) });
     if (!res.ok) { ctx.log(`no route for ${h.symbol} (${res.status}); left in wallet`); continue; }

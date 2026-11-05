@@ -7,14 +7,14 @@
 | Creator / buyer client | `web/` (also `scripts/lib/client.ts` for the CLI) | buyer's fresh-address key (browser only) | marketplace, runner attestation (via marketplace) |
 | Marketplace | `server/` | none (ciphertext only) | contract, runner, 1Click |
 | TEE runner | `runner/` | X25519 sealing key, ed25519 report key (from dstack `getKey` in production) | contract (views + relayed report), FastNEAR, NEAR RPC, 1Click, NEAR AI Cloud |
-| Contract | `contracts/fungible-recipes` (mirror: `core/src/ledger.ts`) | none | payment token (NEP-141), 1Click solver deliveries |
+| Contract | `contracts/sealed-recipes` (mirror: `core/src/ledger.ts`) | none | payment token (NEP-141), 1Click solver deliveries |
 
 ## Recipe intents: from job to quotes
 
 A buyer, or an agent acting for one, seals a job once to the attested runner (`{inputs, salt, reply_to}`) and posts it with `job_hash`. The marketplace fans it out, capped and rate-limited, to every listed recipe that implements the job type. For each one the runner:
 1. checks the sealed recipe against its on-chain hash and its parts against the on-chain parts list;
 2. runs it in quote mode (read-only; swaps priced with dry 1Click quotes);
-3. measures the job's value metric, sets `cover = min(promised, bond_available)`, and signs `frs-quote-v3` at the recipe's current list price (bound to the recipe version, job, sealed inputs, buyer and price) with the same key that later signs run reports;
+3. measures the job's value metric, sets `cover = min(promised, bond_available)`, and signs `srs-quote-v3` at the recipe's current list price (bound to the recipe version, job, sealed inputs, buyer and price) with the same key that later signs run reports;
 4. seals the whole quote to the buyer's `reply_to` key. The marketplace adds the public listing facts (price, privacy and risk labels it computes from the on-chain parts, track record) and relays the ciphertext.
 
 The buyer's client opens each quote, verifies the runner signature against the exact message the contract will check, and compares expected value, the signed promise and cover, price, privacy, withdrawal risk and track record. It pays the chosen recipe with the quote attached (or with no quote: no guarantee, nothing written on-chain about the wallet's value). The contract verifies the quote, marks it used and locks `cover` from the bond. Before executing, the runner re-prices the job and aborts with a refund if the wallet no longer supports the quote. At settlement the contract compares `delivered` with `promised` and pays any shortfall from the locked cover.
@@ -27,7 +27,7 @@ sequenceDiagram
   participant B as Buyer browser
   participant M as Marketplace
   participant I as 1Click (NEAR Intents)
-  participant K as fungible-recipes contract
+  participant K as sealed-recipes contract
   participant R as TEE runner
   participant A as NEAR AI Cloud
   B->>M: GET runner attestation (fresh nonce)
@@ -38,7 +38,7 @@ sequenceDiagram
   I->>K: ft_transfer_call(amount=price, msg) → ft_on_transfer → Run{Pending}
   M->>R: run_id + sealed recipe + sealed inputs
   R->>K: view run + recipe: check sealed_hash, inputs_hash, Pending
-  R->>R: decrypt in memory, execute FRS-1 DAG
+  R->>R: decrypt in memory, execute SRS-1 DAG
   R->>A: private classification (sealed prompt), verify TEE signature
   R->>I: confidential quotes (confidentiality=basic) → deposit txs
   R-->>B: approval request (ft_transfers to deposit addresses)
@@ -114,7 +114,7 @@ Publishing is rejected unless the price floor covers `protocol(floor) + runner +
 
 The price of a run is set by demand for that recipe, not by a trading market in anything. The contract counts paid runs per pricing period and moves each recipe's list price toward its demand at every period boundary, inside the band its creator set (EIP-1559's base-fee rule: at most ±12.5% a period, `src/pricing.rs`). Ended periods are applied lazily by the next payment, or by a keeper calling `update_price`; views always show the price a payment made now would pay.
 
-A quote signs the list price at quote time into the quote (`frs-quote-v3`), so the buyer pays exactly what they compared, even if the price moves before payment. Competition happens per job type: every recipe implementing the job quotes, and buyers or agents compare `expected value - price`. A buyer's `max_price` filters recipes before any dry run is spent on them, and the contract enforces it.
+A quote signs the list price at quote time into the quote (`srs-quote-v3`), so the buyer pays exactly what they compared, even if the price moves before payment. Competition happens per job type: every recipe implementing the job quotes, and buyers or agents compare `expected value - price`. A buyer's `max_price` filters recipes before any dry run is spent on them, and the contract enforces it.
 
 ```mermaid
 flowchart LR
@@ -135,7 +135,7 @@ The guarantee deposit is the creator's collateral. Each quote locks part of it a
 ## Local mode wiring
 
 `scripts/demo.mjs` starts the runner with
-`FRS_REWRITE=api.fastnear.com=…/mock/fastnear,rpc.mainnet.fastnear.com=…/mock/rpc,1click.chaindefuser.com=…/mock/1click,cloud-api.near.ai=…/mock/nearai`.
+`SRS_REWRITE=api.fastnear.com=…/mock/fastnear,rpc.mainnet.fastnear.com=…/mock/rpc,1click.chaindefuser.com=…/mock/1click,cloud-api.near.ai=…/mock/nearai`.
 Parts always build real URLs. The capability guard checks the **real** host, then the rewrite swaps in the mock base URL. When a 1Click mock delivery targets the contract with a `customRecipientMsg`, the mock behaves like the solver and calls `ft_on_transfer` on the ledger mirror.
 
 ## Production deployment

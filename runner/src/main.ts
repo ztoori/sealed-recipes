@@ -25,7 +25,7 @@ import { measure, fetchPrices, creditedDelivered } from './metrics.js';
 import { hashObject, sha256Hex } from '../../core/src/canonical.js';
 import { reportData, type RunnerAttestation } from '../../core/src/attestation.js';
 import { computeCodehash, loadCatalog } from '../../core/src/codehash.js';
-import { validateRecipe, type Recipe } from '../../core/src/frs.js';
+import { validateRecipe, type Recipe } from '../../core/src/srs.js';
 import { execute, parseRewrites, type ResumePoint } from './executor.js';
 import { loadKeys } from './keys.js';
 import type { ApprovalRequest, ApprovalResult } from './types.js';
@@ -37,8 +37,8 @@ const RUNNER_ID = env.RUNNER_ID ?? 'tee-runner-1.testnet';
 const CHAIN = env.CHAIN_URL ?? 'http://127.0.0.1:8080/api/chain'; // relayer: views (unless NEAR_RPC_URL) + report submission
 const NEAR_RPC = env.NEAR_RPC_URL; // when set, views are read from the contract directly over NEAR JSON-RPC
 const TOKEN = env.RUNNER_TOKEN ?? '';
-const CONTRACT_ID = env.CONTRACT_ID ?? 'fungible-recipes.testnet';
-const rewrites = parseRewrites(env.FRS_REWRITE);
+const CONTRACT_ID = env.CONTRACT_ID ?? 'sealed-recipes.testnet';
+const rewrites = parseRewrites(env.SRS_REWRITE);
 const ONECLICK = rewrites.get('1click.chaindefuser.com') ?? 'https://1click.chaindefuser.com';
 const QUOTE_TTL_NS = 10n * 60n * 1_000_000_000n;
 /** a quoted run is re-priced right before execution; below this share of the quoted promise the runner aborts
@@ -47,12 +47,12 @@ const RECHECK_MIN_BPS = 9800n;
 /** durable runs: where checkpoints are stored (the marketplace keeps ciphertext; only this runner can open it) */
 const MARKET = env.MARKET_URL ?? CHAIN.replace(/\/api\/chain\/?$/, '');
 /** in "final" settle mode, a heartbeat checkpoint goes on-chain at least this often so long runs never time out */
-const HEARTBEAT_MS = Number(env.FRS_HEARTBEAT_MS ?? 5 * 60_000);
+const HEARTBEAT_MS = Number(env.SRS_HEARTBEAT_MS ?? 5 * 60_000);
 
 /** A signed, sealed checkpoint record as stored by the marketplace. */
 interface CheckpointRecord { run_id: string; local_seq: number; state_hash: string; envelope: SealedEnvelope; signature: string }
 interface DurableState { v: 1; run_id: string; recipe_id: string; local_seq: number; fresh: string; point: ResumePoint }
-const stateMessage = (runId: string, recipeId: string, seq: number, stateHash: string) => ['frs-state-v1', CONTRACT_ID, runId, recipeId, String(seq), stateHash].join('|');
+const stateMessage = (runId: string, recipeId: string, seq: number, stateHash: string) => ['srs-state-v1', CONTRACT_ID, runId, recipeId, String(seq), stateHash].join('|');
 interface ResumeInput { checkpoint: CheckpointRecord | null; approvals: Record<string, ApprovalResult> }
 const catalog = loadCatalog(ROOT);
 const composeHash = sha256Hex(readFileSync(resolve(ROOT, 'runner/docker-compose.yml'), 'utf8').replace(/\r\n/g, '\n'));
@@ -76,7 +76,7 @@ async function chainView<T>(path: string): Promise<T> {
     const [kind, id] = path.split('/');
     const method = kind === 'runs' ? 'get_run' : 'get_recipe';
     const args = kind === 'runs' ? { run_id: id } : { recipe_id: id };
-    const r = (await fetch(NEAR_RPC, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 'frs', method: 'query', params: { request_type: 'call_function', finality: 'final', account_id: CONTRACT_ID, method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString('base64') } }) }).then((x) => x.json())) as { result?: { result: number[] }; error?: unknown };
+    const r = (await fetch(NEAR_RPC, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 'srs', method: 'query', params: { request_type: 'call_function', finality: 'final', account_id: CONTRACT_ID, method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString('base64') } }) }).then((x) => x.json())) as { result?: { result: number[] }; error?: unknown };
     if (!r.result) throw new Error(`rpc ${method}: ${JSON.stringify(r.error)}`);
     const v = JSON.parse(Buffer.from(r.result.result).toString('utf8')) as T | null;
     if (v == null) throw new Error(`${method}(${id}) returned null`);
@@ -91,7 +91,7 @@ async function attestation(nonce: string): Promise<RunnerAttestation> {
   const base = { codehash, enc_pk_hex: keys.encPkHex, nonce, signing_pk: keys.signingPk };
   const rd = reportData(base);
   return {
-    v: 'frs-attest-v1', tee: keys.tee, runner_id: RUNNER_ID, ...base, compose_hash: keys.composeHash,
+    v: 'srs-attest-v1', tee: keys.tee, runner_id: RUNNER_ID, ...base, compose_hash: keys.composeHash,
     report_data: rd, quote: await keys.quote(rd), issued_at: new Date().toISOString(),
     self_sig: base64.enc(nacl.sign.detached(utf8ToBytes(rd), keys.sign.secretKey)),
   };
@@ -334,7 +334,7 @@ app.post('/runs/:id/approval', auth, (req, res) => {
 });
 
 /** local demo only: simulate a hard crash (process killed mid-run) to show runs resuming from checkpoints */
-if (env.FRS_ALLOW_CRASH === '1') app.post('/__crash', auth, (_, res) => { res.json({ ok: true }); setTimeout(() => process.exit(137), 20); });
+if (env.SRS_ALLOW_CRASH === '1') app.post('/__crash', auth, (_, res) => { res.json({ ok: true }); setTimeout(() => process.exit(137), 20); });
 
 const HOST = env.RUNNER_HOST ?? '127.0.0.1';
 app.listen(PORT, HOST, () => {

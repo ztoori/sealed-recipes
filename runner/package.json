@@ -1,5 +1,5 @@
 {
-  "name": "frs-runner",
+  "name": "srs-runner",
   "private": true,
   "type": "module",
   "description": "Container dependencies for the sealed runner (TEE image). The repo root package.json is used for local dev.",

@@ -2,7 +2,7 @@ node_modules/
 web/dist/
 .data/
 .env
-contracts/fungible-recipes/target/
+contracts/sealed-recipes/target/
 docs/media/.video/
 *.log
 .DS_Store

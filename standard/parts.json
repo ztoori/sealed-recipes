@@ -1,5 +1,5 @@
 {
-  "frs": "1.0",
+  "srs": "1.0",
   "kind": "part-catalog",
   "types": {
     "near.account": {

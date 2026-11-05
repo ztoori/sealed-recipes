@@ -2,7 +2,7 @@
  * Job metrics: turn a recipe's output into the value it delivered (or expects to deliver), in payment-token
  * units (USDC, 6 decimals), so quotes from different recipes are comparable and bonds can be enforced.
  */
-import type { JobType } from '../../core/src/frs.js';
+import type { JobType } from '../../core/src/srs.js';
 
 const USDC = 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
 interface Receipt { status: string; assetOut?: string; amountOutUnits?: string; minAmountOutUnits?: string }

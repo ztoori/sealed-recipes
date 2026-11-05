@@ -1,5 +1,5 @@
 /**
- * Market-driven list prices (contract v6). Same functions as contracts/fungible-recipes/src/pricing.rs,
+ * Market-driven list prices (contract v6). Same functions as contracts/sealed-recipes/src/pricing.rs,
  * checked against the vectors generated from the proved model (verification/smt).
  *
  * At the end of each pricing period, with `runs` paid runs against a target of `target`:

@@ -1,6 +1,6 @@
 /**
  * Marketplace server (local mode).
- *  - /api/chain/*  : view/relay surface of the fungible-recipes contract (backed by LocalLedger)
+ *  - /api/chain/*  : view/relay surface of the sealed-recipes contract (backed by LocalLedger)
  *  - /api/*        : marketplace (listings, sealed vault, runs, track records, wallet)
  *  - /mock/*       : offline stand-ins for FastNEAR, NEAR RPC, 1Click, NEAR AI Cloud
  *  - /             : the web app (web/dist)
@@ -20,7 +20,7 @@ import { FileBlobStore, type VaultIndex } from './store.js';
 import { TeeRunnerBackend } from './backends.js';
 import { signNep413, type Nep413Payload, type SignedNep413 } from '../../core/src/nep413.js';
 import { demoWalletKey } from '../../core/src/creator.js';
-import { validateRecipe, labelsFromParts, type Catalog, type PublicListing } from '../../core/src/frs.js';
+import { validateRecipe, labelsFromParts, type Catalog, type PublicListing } from '../../core/src/srs.js';
 import { computeCodehash, loadCatalog } from '../../core/src/codehash.js';
 import { runPaymentQuoteRequest, USDC_NEAR, type Token, type QuoteResponse } from '../../core/src/oneclick.js';
 import { World } from './world.js';
@@ -30,7 +30,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const env = process.env;
 const PORT = Number(env.PORT ?? 8080);
 const RUNNER = env.RUNNER_URL ?? 'http://127.0.0.1:8787';
-const CONTRACT_ID = env.CONTRACT_ID ?? 'fungible-recipes.testnet';
+const CONTRACT_ID = env.CONTRACT_ID ?? 'sealed-recipes.testnet';
 const RUNNER_ID = env.RUNNER_ID ?? 'tee-runner-1.testnet';
 const PAYMENT_TOKEN = USDC_NEAR.replace(/^nep141:/, '');
 const SOLVER = 'solver-relay.intents.testnet';
@@ -43,10 +43,10 @@ const catalog = loadCatalog(ROOT);
 const tokens = JSON.parse(readFileSync(resolve(ROOT, 'fixtures/oneclick-tokens.json'), 'utf8')).tokens as Token[];
 const world = new World(resolve(ROOT, 'fixtures/wallets.json'), resolve(ROOT, 'fixtures/oneclick-tokens.json'));
 /** notice period before a new recipe version takes effect (24 h is the suggested mainnet value; short for the demo) */
-const UPDATE_DELAY_S = Number(env.FRS_UPDATE_DELAY_S ?? 30);
+const UPDATE_DELAY_S = Number(env.SRS_UPDATE_DELAY_S ?? 30);
 /** v6 pricing period: 1 h suggested on mainnet; 2 min in the demo so prices visibly follow demand */
-const PRICE_PERIOD_S = Number(env.FRS_PRICE_PERIOD_S ?? 120);
-const ledger = new LocalLedger({ contractId: CONTRACT_ID, owner: 'frs-dao.testnet', paymentToken: PAYMENT_TOKEN, protocolAccount: 'frs-treasury.testnet', protocolFeeBps: 200, updateDelayNs: BigInt(UPDATE_DELAY_S) * 1_000_000_000n, pricePeriodNs: BigInt(PRICE_PERIOD_S) * 1_000_000_000n });
+const PRICE_PERIOD_S = Number(env.SRS_PRICE_PERIOD_S ?? 120);
+const ledger = new LocalLedger({ contractId: CONTRACT_ID, owner: 'srs-dao.testnet', paymentToken: PAYMENT_TOKEN, protocolAccount: 'srs-treasury.testnet', protocolFeeBps: 200, updateDelayNs: BigInt(UPDATE_DELAY_S) * 1_000_000_000n, pricePeriodNs: BigInt(PRICE_PERIOD_S) * 1_000_000_000n });
 
 // ---------- runs: per-run event log merged from payment (server) + execution (runner) ----------
 type Ev = { seq: number; at: number; source: 'market' | 'intents' | 'runner' | 'chain'; type: string; data: Record<string, unknown> };
@@ -147,8 +147,8 @@ async function followRunner(r: RunCtx) {
 /** ticker → sealed_hash → sealed recipe (ciphertext only). Every version is kept: a run paid for version N must
  *  still execute version N after version N+1 takes effect. Production: a durable store keyed the same way. */
 // Durable content-addressed store (server/src/store.ts). The local contract mirror is in memory, so the demo
-// uses a fresh directory per boot; point FRS_STORE_DIR at a persistent path (or swap in IPFS/S3) in production.
-const store = new FileBlobStore(env.FRS_STORE_DIR ?? resolve(ROOT, '.data/store', `local-${Date.now()}`));
+// uses a fresh directory per boot; point SRS_STORE_DIR at a persistent path (or swap in IPFS/S3) in production.
+const store = new FileBlobStore(env.SRS_STORE_DIR ?? resolve(ROOT, '.data/store', `local-${Date.now()}`));
 const vaultIndex = store.readMeta<VaultIndex>('vault', { recipes: {} });
 const saveIndex = () => store.writeMeta('vault', vaultIndex);
 const vaultPut = (ticker: string, sealed: SealedEnvelope, creatorCopy?: SealedEnvelope) => {
@@ -166,7 +166,7 @@ const vault = { get: (ticker: string) => ({ get: (h: string) => (vaultIndex.reci
 const currentSealed = (ticker: string) => vault.get(ticker).get(ledger.recipes.get(ticker)?.sealed_hash ?? '');
 const listings = new Map<string, PublicListing & { published_at: string; settle_mode?: string }>();
 const USDC = 1e6;
-const settlementsOf = (t: string) => ledger.events.filter((e) => e.event === 'frs_settlement' && (e.data[0] as { recipe_id: string }).recipe_id === t);
+const settlementsOf = (t: string) => ledger.events.filter((e) => e.event === 'srs_settlement' && (e.data[0] as { recipe_id: string }).recipe_id === t);
 /** A recipe's public track record, read from the contract mirror. No prices of anything but the run itself:
  *  nothing here is an investment, so there is nothing to quote but the service. */
 const eventsOf = (name: string, t: string) => ledger.events.filter((e) => e.event === name && (e.data[0] as { recipe_id: string }).recipe_id === t);
@@ -226,7 +226,7 @@ app.get('/api/chain/runners/:id', (req, res) => { const r = ledger.runners.get(S
 app.get('/api/chain/parts', (_, res) => j(res, [...ledger.parts.values()]));
 app.get('/api/chain/events', (req, res) => { const since = req.query.last ? Math.max(0, ledger.events.length - Number(req.query.last)) : Number(req.query.since ?? 0); j(res, { height: ledger.height, events: ledger.events.slice(since).map((e, i) => ({ idx: since + i, ...e })) }); });
 app.post('/api/chain/report_run', guard((req, res) => {
-  const payouts = ledger.call('relayer.frs.testnet', (l) => l.report_run(req.body));
+  const payouts = ledger.call('relayer.srs.testnet', (l) => l.report_run(req.body));
   const run = ledger.runs.get(req.body.run_id);
   const r = runs.get(req.body.run_id);
   const ev = ledger.events.at(-1)!;
@@ -234,7 +234,7 @@ app.post('/api/chain/report_run', guard((req, res) => {
   j(res, { status: run?.status, payouts, tx: ev.tx_hash, height: ev.block_height });
 }));
 app.post('/api/chain/checkpoint_run', guard((req, res) => {
-  const payouts = ledger.call('relayer.frs.testnet', (l) => l.checkpoint_run(req.body));
+  const payouts = ledger.call('relayer.srs.testnet', (l) => l.checkpoint_run(req.body));
   const ev = ledger.events.at(-1)!;
   const r = runs.get(req.body.run_id);
   if (r) pushEv(r, 'chain', ev.event, { tx: ev.tx_hash, height: ev.block_height, ...ev.data[0] });
@@ -258,7 +258,7 @@ app.post('/api/internal/checkpoints', guard((req, res) => {
 app.post('/api/recipes/:ticker/update', guard((req, res) => {
   const t = String(req.params.ticker);
   const { signer, sealed, creator_copy } = req.body as { signer: string; sealed: SealedEnvelope; creator_copy?: SealedEnvelope };
-  if (sealed?.v !== 'frs-seal-v1' || sealed.purpose !== 'recipe') throw new LedgerError('expected a sealed recipe envelope');
+  if (sealed?.v !== 'srs-seal-v1' || sealed.purpose !== 'recipe') throw new LedgerError('expected a sealed recipe envelope');
   if (sealed.to !== ledger.runners.get(RUNNER_ID)!.enc_pk_hex) throw new LedgerError('envelope is not sealed to the registered runner key');
   ledger.call(signer, (l) => l.update_sealed({ id: t, sealed_hash: sealedHash(sealed) }));
   vaultPut(t, sealed, creator_copy); // stored now, served once it takes effect; older versions are kept
@@ -271,11 +271,11 @@ app.post('/api/recipes/:ticker/cancel-update', guard((req, res) => {
 }));
 
 /** local demo only: crash the runner process (it is restarted by the launcher) */
-if (env.FRS_ALLOW_CRASH === '1') app.post('/api/dev/crash-runner', guard(async (_, res) => { await backend.crash(); j(res, { ok: true }); }));
+if (env.SRS_ALLOW_CRASH === '1') app.post('/api/dev/crash-runner', guard(async (_, res) => { await backend.crash(); j(res, { ok: true }); }));
 
 /** local demo only: make the solver back out of fills for an asset, to show an atomic bundle reverting */
-if (env.FRS_ALLOW_CRASH === '1') app.post('/api/dev/solver-fail', guard((req, res) => { const a = String(req.body.asset ?? ''); req.body.on === false ? mocks.verifier.failing.delete(a) : mocks.verifier.failing.add(a); j(res, { failing: [...mocks.verifier.failing] }); }));
-if (env.FRS_ALLOW_CRASH === '1') app.post('/api/dev/verifier-withdraw', guard((req, res) => j(res, { withdrawn: mocks.verifier.withdrawAll(String(req.body.account)) })));
+if (env.SRS_ALLOW_CRASH === '1') app.post('/api/dev/solver-fail', guard((req, res) => { const a = String(req.body.asset ?? ''); req.body.on === false ? mocks.verifier.failing.delete(a) : mocks.verifier.failing.add(a); j(res, { failing: [...mocks.verifier.failing] }); }));
+if (env.SRS_ALLOW_CRASH === '1') app.post('/api/dev/verifier-withdraw', guard((req, res) => j(res, { withdrawn: mocks.verifier.withdrawAll(String(req.body.account)) })));
 app.get('/api/intents/verifier/:account', (req, res) => j(res, { account: req.params.account, balances: Object.fromEntries(mocks.verifier.balances.get(String(req.params.account)) ?? []), log: mocks.verifier.log.slice(-20) }));
 
 /** demo wallet: sign "as" an account. Local mode only — testnet mode uses a real NEAR wallet. */
@@ -321,7 +321,7 @@ app.get('/api/runner/attestation', guard(async (req, res) => {
 
 app.post('/api/publish', guard((req, res) => {
   const { listing, sealed, bond, settle_mode, creator_copy } = req.body as { listing: PublicListing; sealed: SealedEnvelope; bond?: string; settle_mode?: string; creator_copy?: SealedEnvelope };
-  if (sealed?.v !== 'frs-seal-v1' || sealed.purpose !== 'recipe') throw new LedgerError('expected a sealed recipe envelope');
+  if (sealed?.v !== 'srs-seal-v1' || sealed.purpose !== 'recipe') throw new LedgerError('expected a sealed recipe envelope');
   const runner = ledger.runners.get(RUNNER_ID)!;
   if (sealed.to !== runner.enc_pk_hex) throw new LedgerError('envelope is not sealed to the registered runner key');
   if ((listing as unknown as Record<string, unknown>).nodes) throw new LedgerError('refusing plaintext recipe: only the public listing may be sent');
@@ -500,15 +500,15 @@ async function boot() {
   const pinned = resolve(ROOT, 'AUDITED_CODEHASH');
   const audited = existsSync(pinned) ? readFileSync(pinned, 'utf8').trim() : computeCodehash(ROOT).codehash;
   if (att.codehash !== audited) console.warn(`[server] WARNING runner codehash ${att.codehash.slice(0, 12)} != audited ${audited.slice(0, 12)} — UI will show the mismatch`);
-  ledger.call('frs-dao.testnet', (l) => l.add_runner({ id: RUNNER_ID, signing_pk: att!.signing_pk, enc_pk_hex: att!.enc_pk_hex, codehash: audited, fee_per_run: '30000' }));
+  ledger.call('srs-dao.testnet', (l) => l.add_runner({ id: RUNNER_ID, signing_pk: att!.signing_pk, enc_pk_hex: att!.enc_pk_hex, codehash: audited, fee_per_run: '30000' }));
   for (const b of catalog.parts) ledger.call(b.author, (l) => l.register_part({ id: b.id, version: b.id.split('@')[1], fee_per_call: b.fee_per_call, manifest_hash: hashObject(b) }));
   app.listen(PORT, '127.0.0.1', () => console.log(`[server] marketplace on http://127.0.0.1:${PORT}  (contract mirror ${CONTRACT_ID}, runner ${RUNNER})`));
   // keeper: apply ended pricing periods so price_updated events are timely (anyone may call update_price)
-  setInterval(() => { for (const id of ledger.recipes.keys()) { try { ledger.call('keeper.frs.testnet', (l) => l.update_price({ id })); } catch { /* ignore */ } } }, 1000);
+  setInterval(() => { for (const id of ledger.recipes.keys()) { try { ledger.call('keeper.srs.testnet', (l) => l.update_price({ id })); } catch { /* ignore */ } } }, 1000);
   // keeper: activate recipe versions whose notice period has passed (anyone may call apply_update)
   setInterval(() => {
     const now = BigInt(Date.now()) * 1_000_000n;
-    for (const r of ledger.recipes.values()) if (r.pending_sealed_hash && now >= r.update_effective_ns) { try { ledger.call('keeper.frs.testnet', (l) => l.apply_update({ id: r.id })); } catch { /* raced */ } }
+    for (const r of ledger.recipes.values()) if (r.pending_sealed_hash && now >= r.update_effective_ns) { try { ledger.call('keeper.srs.testnet', (l) => l.apply_update({ id: r.id })); } catch { /* raced */ } }
   }, 1000);
 }
 void boot();

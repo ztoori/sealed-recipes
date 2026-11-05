@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Records the demo video + screenshots used in the X post and README.
- *   1. FRS_PRICE_PERIOD_S=20 npm run demo   (in another terminal; restart it first so CLNP is not yet listed)
+ *   1. SRS_PRICE_PERIOD_S=20 npm run demo   (in another terminal; restart it first so CLNP is not yet listed)
  *   2. npm run pricing-demo                 (real paid runs, so the market-price shot has history to show)
  *   3. node scripts/record-demo.mjs        → docs/media/demo.mp4 (needs ffmpeg) + docs/media/*.png
  * Needs Playwright with Chromium: `npx playwright install chromium` if you don't have it.
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const out = resolve(root, 'docs/media');
-const BASE = process.env.FRS_URL ?? 'http://127.0.0.1:8080';
+const BASE = process.env.SRS_URL ?? 'http://127.0.0.1:8080';
 let chromium;
 try { ({ chromium } = await import('playwright')); } catch {
   try { const g = execSync('npm root -g').toString().trim(); ({ chromium } = createRequire(g + '/')('playwright')); } catch { console.error('Playwright not found: npm i -D playwright && npx playwright install chromium'); process.exit(1); }
@@ -40,7 +40,7 @@ const uncard = () => page.evaluate(() => document.getElementById('rec-card')?.re
 const shot = (n) => page.screenshot({ path: resolve(out, n) });
 
 await page.goto(BASE); await page.waitForTimeout(1200);
-await card('Fungible Recipes', 'Intents for workflows: post a job, sealed workflows compete, every builder gets paid.<br/><span style="color:#f2c14e">Built at NEAR HACKATHON</span>');
+await card('Sealed Recipes', 'Intents for workflows: post a job, sealed workflows compete, every builder gets paid.<br/><span style="color:#f2c14e">Built at NEAR HACKATHON</span>');
 await page.waitForTimeout(3500); await uncard();
 await page.waitForTimeout(2500); await shot('01-post-a-job.png');
 await page.getByRole('button', { name: 'Play the demo story' }).click();

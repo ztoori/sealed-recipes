@@ -64,7 +64,7 @@ for (let done = false; !done;) {
       case 'resume_requested': say(`${t}   runner is back; asked it to resume (attempt ${e.data.attempt})`); break;
       case 'resuming': say(`${t}   runner verified and opened checkpoint #${e.data.local_seq}: ${e.data.completed_parts} parts done${e.data.mid_part ? `, inside ${e.data.mid_part}` : ''}`); break;
       case 'part_log': if (/resum|already approved|wait/.test(e.data.msg)) { say(`${t}     ${e.data.msg}`); const m = /(\d+) s of the wait left/.exec(e.data.msg); if (m) waitLeft = Number(m[1]); } break;
-      case 'frs_settlement': say(`${t}   settled: ${e.data.payouts.length} payees in the final receipt, delivered ${usd(e.data.delivered)}`); break;
+      case 'srs_settlement': say(`${t}   settled: ${e.data.payouts.length} payees in the final receipt, delivered ${usd(e.data.delivered)}`); break;
       case 'completed': case 'failed': final = e; done = true; break;
     }
     if (done) break;
@@ -73,7 +73,7 @@ for (let done = false; !done;) {
 
 const chainRun = await api<any>(`/api/chain/runs/${r.run_id}`);
 const recipeParts = (await api<{ parts: string[] }>('/api/chain/recipes/TRCH')).parts;
-const settle = (await api<{ events: any[] }>('/api/chain/events?last=400')).events.filter((x) => x.event === 'frs_settlement' && x.data[0].run_id === r.run_id);
+const settle = (await api<{ events: any[] }>('/api/chain/events?last=400')).events.filter((x) => x.event === 'srs_settlement' && x.data[0].run_id === r.run_id);
 const ckpts = (await api<{ events: any[] }>('/api/chain/events?last=400')).events.filter((x) => x.event === 'run_checkpoint' && x.data[0].run_id === r.run_id);
 const paidParts = [...ckpts.flatMap((x) => x.data[0].payouts.map((p: any) => p.role)), ...settle.flatMap((x) => x.data[0].payouts.filter((p: any) => p.role.startsWith('part:')).map((p: any) => p.role))];
 const total = BigInt(chainRun.billed) + settle.reduce((s, x) => s + x.data[0].payouts.reduce((a: bigint, p: any) => a + BigInt(p.amount), 0n) + BigInt(x.data[0].reserve), 0n);

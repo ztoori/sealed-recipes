@@ -24,7 +24,7 @@ const h = (s: string) => console.log(`\n\x1b[1m\x1b[38;5;48m${s}\x1b[0m`);
 
 h('STEP 1 · creator chains parts into "Clean up and protect" and publishes it privately');
 const v = validateRecipe(recipe, catalog);
-console.log(`  FRS-1 validation: ${v.ok ? 'OK' : 'FAILED'} · ${v.order.length} parts · part fees ${usd(v.partFees.toString())}/run · capabilities: ${v.capabilities.join(', ')}`);
+console.log(`  SRS-1 validation: ${v.ok ? 'OK' : 'FAILED'} · ${v.order.length} parts · part fees ${usd(v.partFees.toString())}/run · capabilities: ${v.capabilities.join(', ')}`);
 const runner = await verifiedRunner();
 for (const c of runner.checks) console.log(`  ${c.status === 'pass' ? '✔' : c.status === 'skip' ? '○' : '✘'} ${c.label}${c.status === 'skip' ? ' — ' + c.detail : ''}`);
 const listings = await api<{ ticker: string }[]>('/api/listings');
@@ -82,7 +82,7 @@ while (!done) {
     else if (e.type === 'part_log') console.log(`${tag}     ${e.data.msg}`);
     else if (e.type === 'approval_required') { console.log(`${tag} 🔐 wallet: "${e.data.title}" — ${e.data.transactions.length} ft_transfer(s); approving`); await api(`/api/runs/${q.run_id}/approve?token=${q.run_token}`, { approved: true, transactions: e.data.transactions }); }
     else if (e.type === 'signed') console.log(`${tag} runner signed report: ${e.data.message.slice(0, 90)}…`);
-    else if (e.type === 'frs_settlement') console.log(`${tag} report_run verified on-chain (tx ${e.data.tx})`);
+    else if (e.type === 'srs_settlement') console.log(`${tag} report_run verified on-chain (tx ${e.data.tx})`);
     else if (e.type === 'completed' || e.type === 'failed') { final = e; done = true; break; }
   }
 }

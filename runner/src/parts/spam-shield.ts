@@ -11,7 +11,7 @@ import type { PartHandler, Flag, Holding } from '../types.js';
  */
 export const spamShield: PartHandler = async (inputs, ctx) => {
   const holdings = inputs.holdings as Holding[];
-  // the model is the one the part discloses (FRS-1 §2.1), never a recipe param: a creator cannot list an
+  // the model is the one the part discloses (SRS-1 §2.1), never a recipe param: a creator cannot list an
   // open-weights part and quietly route it to a different model
   const model = ctx.manifest.disclosure?.model.name;
   if (!model) throw new Error(`${ctx.manifest.id} does not disclose a model name`);

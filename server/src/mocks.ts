@@ -1,7 +1,7 @@
 /**
  * Local stand-ins for external services, served under /mock/*. They reproduce the
  * request/response shapes of the real APIs so the runner's code is identical in
- * live mode (where FRS_REWRITE is unset and it talks to the real hosts).
+ * live mode (where SRS_REWRITE is unset and it talks to the real hosts).
  *
  *   /mock/fastnear  ≈ https://api.fastnear.com            (GET /v1/account/{id}/ft)
  *   /mock/rpc       ≈ https://rpc.mainnet.fastnear.com    (JSON-RPC query: view_account, call_function ft_metadata)

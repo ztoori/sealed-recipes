@@ -1,7 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 
-/** Deterministic JSON: object keys sorted, no whitespace. Used for every hash in FRS-1. */
+/** Deterministic JSON: object keys sorted, no whitespace. Used for every hash in SRS-1. */
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';

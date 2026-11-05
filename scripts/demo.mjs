@@ -21,7 +21,7 @@ const node = process.execPath;
 const tsx = ['--import', 'tsx'];
 const children = [];
 // the pricing test uses short periods so the market visibly moves within a minute
-if (process.argv.includes('--pricing')) process.env.FRS_PRICE_PERIOD_S ??= '15';
+if (process.argv.includes('--pricing')) process.env.SRS_PRICE_PERIOD_S ??= '15';
 const RUNNER_TOKEN = randomBytes(24).toString('hex'); // marketplace ↔ runner job channel
 
 let stopping = false;
@@ -63,23 +63,23 @@ const rewrite = [
   `solver-relay-v2.chaindefuser.com=${base}/mock/solver-relay`,
 ].join(',');
 
-start('runner', 'runner/src/main.ts', { RUNNER_PORT: RPORT, CHAIN_URL: `${base}/api/chain`, FRS_REWRITE: rewrite, RUNNER_TOKEN, TEE_MODE: process.env.TEE_MODE ?? 'local-dev', FRS_ALLOW_CRASH: '1' }, true);
+start('runner', 'runner/src/main.ts', { RUNNER_PORT: RPORT, CHAIN_URL: `${base}/api/chain`, SRS_REWRITE: rewrite, RUNNER_TOKEN, TEE_MODE: process.env.TEE_MODE ?? 'local-dev', SRS_ALLOW_CRASH: '1' }, true);
 await waitFor(`http://127.0.0.1:${RPORT}/health`);
-start('server', 'server/src/main.ts', { PORT, RUNNER_URL: `http://127.0.0.1:${RPORT}`, RUNNER_TOKEN, FRS_ALLOW_CRASH: '1' });
+start('server', 'server/src/main.ts', { PORT, RUNNER_URL: `http://127.0.0.1:${RPORT}`, RUNNER_TOKEN, SRS_ALLOW_CRASH: '1' });
 await waitFor(`${base}/api/mode`);
-const seed = spawnSync(node, [...tsx, 'scripts/seed.ts'], { cwd: root, stdio: 'inherit', env: { ...process.env, FRS_URL: base } });
+const seed = spawnSync(node, [...tsx, 'scripts/seed.ts'], { cwd: root, stdio: 'inherit', env: { ...process.env, SRS_URL: base } });
 if (seed.status) shutdown(seed.status);
 
-console.log(`\n  Fungible Recipes is running →  ${base}\n  (local mode: offline mocks for FastNEAR / RPC / 1Click / NEAR AI Cloud; see README "What is real")\n  Ctrl+C to stop.\n`);
+console.log(`\n  Sealed Recipes is running →  ${base}\n  (local mode: offline mocks for FastNEAR / RPC / 1Click / NEAR AI Cloud; see README "What is real")\n  Ctrl+C to stop.\n`);
 
 for (const [flag, script] of [['--crash-test', 'scripts/crash-test.ts'], ['--versions', 'scripts/versions-demo.ts'], ['--atomic', 'scripts/atomic-demo.ts'], ['--pricing', 'scripts/pricing-demo.ts']]) {
   if (!args.has(flag)) continue;
   // async (not spawnSync): the launcher must stay responsive to restart the runner while the script runs
-  const status = await new Promise((done) => spawn(node, [...tsx, script], { cwd: root, stdio: 'inherit', env: { ...process.env, FRS_URL: base } }).on('exit', (c) => done(c ?? 1)));
+  const status = await new Promise((done) => spawn(node, [...tsx, script], { cwd: root, stdio: 'inherit', env: { ...process.env, SRS_URL: base } }).on('exit', (c) => done(c ?? 1)));
   if (status) shutdown(status);
 }
 if (args.has('--story')) {
-  const s = spawnSync(node, [...tsx, 'scripts/story-cli.ts'], { cwd: root, stdio: 'inherit', env: { ...process.env, FRS_URL: base } });
+  const s = spawnSync(node, [...tsx, 'scripts/story-cli.ts'], { cwd: root, stdio: 'inherit', env: { ...process.env, SRS_URL: base } });
   if (args.has('--exit')) shutdown(s.status ?? 0);
 }
 if (args.has('--exit')) shutdown(0);

@@ -1,13 +1,15 @@
-# Fungible Recipes
+# Sealed Recipes
 
 **Intents for workflows.** A buyer describes a job. Sealed workflows built from other people's parts compete to do it, each quoting the result it expects. The buyer picks one and pays per run from any chain through NEAR Intents. The workflow runs inside secure hardware, so its method can't be copied. One settlement pays every part author, the runner and the creator, and the creator's guarantee deposit pays the buyer if the result falls short of the signed quote.
 
-NEAR Intents lets solvers compete to fill a swap. Fungible Recipes applies the same idea to whole workflows, which needs three things a swap doesn't:
+NEAR Intents lets solvers compete to fill a swap. Sealed Recipes applies the same idea to whole workflows, which needs three things a swap doesn't:
 - a no-code standard for building workflows from other people's parts;
 - sealing, so a workflow's method can't be copied while it competes;
 - attribution, so every part author is paid, not just the winner.
 
 It uses Intents for payment and for the swaps inside workflows.
+
+Every recipe is unique: a sealed combination of standard, swappable parts ([SRS-1](docs/SRS-1.md)). Recipes that do the same job are compared on results and price, never on method.
 
 **No investment features.** A buyer pays for one run of a service. A creator posts collateral that pays buyers when a run falls short. Nothing is sold that gives anyone a share of profits: there are no recipe shares, dividends, tokens or trading. This keeps the product usable by any wallet in any country, and it is deliberate (see [No investment features](#no-investment-features)).
 
@@ -22,7 +24,7 @@ Businesses and agents run on workflows that chain several tools, bots and AI cal
 | Requirement (from the brief) | How it is built here |
 |---|---|
 | Specialized builders deploy utility apps and bots | **Parts**: code, specialist agents or data sources, with typed ports, declared network capabilities, a per-call fee, **disclosure of model, instructions, harness and verification**, and **per-run resource limits**, registered on-chain ([standard/parts.json](standard/parts.json)) |
-| A no-code / low-code standard to compose and swap parts | **FRS-1** ([docs/FRS-1.md](docs/FRS-1.md)): a typed graph with subtyping, validation, drop-in swap search, a withdrawal-risk label and standard **job types**. The visual composer is the Compose tab |
+| A no-code / low-code standard to compose and swap parts | **SRS-1** ([docs/SRS-1.md](docs/SRS-1.md)): a typed graph with subtyping, validation, drop-in swap search, a withdrawal-risk label and standard **job types**. The visual composer is the Compose tab |
 | Users create recipes without patents or licences | The recipe is **sealed** (X25519 + XSalsa20-Poly1305) to the runner's attested key. Only `sha256(envelope)` goes on-chain. See [What the sealing protects](#what-the-sealing-protects-and-what-it-doesnt) for its limits |
 | A decentralized exchange where recipes are listed, bought and traded | **Recipe intents**: a buyer posts a job, every recipe that implements its type quotes from a sealed dry run, and the buyer (or an agent's policy) picks one. Recipes are listed and bought **per run**; what competes is the service, not an asset, so nothing here is a security (see [No investment features](#no-investment-features)) |
 | Attribution that pays everyone involved | **`report_run`**: an ed25519-signed runner report is verified on-chain and splits the payment in one receipt. It also compares delivery with the signed quote and compensates any shortfall from the recipe's **guarantee deposit** (a performance bond the creator posts) |
@@ -61,7 +63,7 @@ There is no fixed price list. Each recipe's price per run follows demand inside 
 - when a period ends, more runs than the target raise the price by up to 12.5%, fewer lower it by up to 12.5%;
 - the price never leaves the band, and the floor must cover every fee, so any price the market reaches still settles.
 
-Recipes for the same job type compete like solvers: the buyer compares their signed prices against the value each one promises. A recipe with no direct rival still gets a market price from its own demand. The rule's bounds, direction and monotonicity are proved with Z3 for every input, and the Rust contract and TypeScript mirror reproduce the model's vectors exactly.
+Unique recipes compete on results: for a job type, the buyer compares each recipe's signed price against the value it promises. A recipe with no direct rival still gets a market price from its own demand. The rule's bounds, direction and monotonicity are proved with Z3 for every input, and the Rust contract and TypeScript mirror reproduce the model's vectors exactly.
 
 ![A recipe's market price following its demand](docs/media/12-market-price.png)
 
@@ -225,7 +227,7 @@ npm run verify:tla      # also the TLC model check (~10 min; Java + tla2tools.ja
 
 ```bash
 npm test                # 38 TypeScript tests: settlement, bond and pricing vectors; quote signatures and expiry;
-                        # event parity with the contract; FRS-1 typing, swaps, job types and withdrawal risk;
+                        # event parity with the contract; SRS-1 typing, swaps, job types and withdrawal risk;
                         # sealing; per-part resource limits; EIP-191; 1Click shapes; attestation; capability guard; code hash
 npm run test:rust       # 105 Rust tests for the NEAR contract (same vectors, conformance with the proved models,
                         # market pricing, versions with notice, checkpoints and partial settlement)
@@ -236,7 +238,7 @@ npm run live-check      # optional, needs internet: real 1Click dry quotes (incl
 
 ## What the sealing protects, and what it doesn't
 
-Fungible Recipes protects a workflow **by default, without filing anything**. The law (copyright, trade secrets, terms of use) becomes the backup instead of the first line of defence.
+Sealed Recipes protects a workflow **by default, without filing anything**. The law (copyright, trade secrets, terms of use) becomes the backup instead of the first line of defence.
 
 | Threat | Covered? | Why |
 |---|---|---|
@@ -255,7 +257,7 @@ These are kept separate so nothing here needs to be taken on faith.
 
 | Component | In `npm run demo` | Production path (in this repo) |
 |---|---|---|
-| Contract logic | `core/src/ledger.ts`, an in-process mirror with the same methods, math and event fields. A test checks every event against `docs/CONTRACT_EVENTS.md` | `contracts/fungible-recipes` (Rust, near-sdk 5.30). Both pass the **same vector files** in `contracts/test-vectors/` |
+| Contract logic | `core/src/ledger.ts`, an in-process mirror with the same methods, math and event fields. A test checks every event against `docs/CONTRACT_EVENTS.md` | `contracts/sealed-recipes` (Rust, near-sdk 5.30). Both pass the **same vector files** in `contracts/test-vectors/` |
 | TEE runner | `runner/` as a separate process with `TEE_MODE=local-dev`: real keys, sealing, signed quotes and reports, enforced limits, **no hardware quote** (shown as skipped). Job endpoints require a token shared only with the marketplace | Same code with `TEE_MODE=dstack` in a TDX CVM (`runner/Dockerfile`, `runner/docker-compose.yml`). `scripts/verify-quote.ts` runs Intel DCAP verification with `@phala/dcap-qvl` |
 | NEAR Intents 1Click | `/mock/1click`: same request and response shapes, a frozen token-price sample, the real status names | `core/src/oneclick.ts` live mode; `npm run live-check` gets real dry quotes. **NEAR Intents has no testnet**, so the demo cannot move real funds |
 | NEAR AI Cloud | `/mock/nearai` signs responses with a real secp256k1 key in the provider-TEE format. The "model" is a transparent heuristic, and there is no hardware quote (reported as skipped) | The same part code calls `cloud-api.near.ai`, and `live-check` verifies a real completion end to end |
@@ -263,11 +265,11 @@ These are kept separate so nothing here needs to be taken on faith.
 | Wallet signing | A local demo wallet "signs as" the selected account. Demo accounts have unlimited demo USDC, so deposit sizes are illustrative | **Not built yet.** The approval dialog shows the exact `signAndSendTransactions` payload a NEAR wallet would sign |
 | Chain view for attestation checks | The browser gets the attestation **directly from the runner**, but the registered keys come from the server's contract mirror, so the marketplace is trusted for that comparison | Clients read `get_runner` from NEAR RPC; the runner reads `get_run` / `get_recipe` over NEAR RPC when `NEAR_RPC_URL` is set |
 
-The runner never sees mock-specific code. It always builds URLs for the real hosts, and `FRS_REWRITE` (set by `scripts/demo.mjs`) maps them to the local mocks.
+The runner never sees mock-specific code. It always builds URLs for the real hosts, and `SRS_REWRITE` (set by `scripts/demo.mjs`) maps them to the local mocks.
 
 ## How NEAR is used
 
-- **NEAR smart contract** (`contracts/fungible-recipes`):
+- **NEAR smart contract** (`contracts/sealed-recipes`):
   - a part and runner registry, and sealed recipe commitments;
   - pay-per-run escrow, with signed quotes (including their price) checked by `env::ed25519_verify`;
   - market-driven list prices per recipe (an EIP-1559-style rule inside a creator-set band);
@@ -289,34 +291,34 @@ flowchart LR
   M -- "fan out to recipes implementing the job type" --> R[TEE runner<br/>dry runs → signed quotes]
   R -- "quotes: expected, promised, signature" --> B
   B -- "pay any chain, signed quote in msg" --> I[NEAR Intents 1Click]
-  I -- "ft_transfer_call + customRecipientMsg" --> K[(fungible-recipes<br/>NEAR contract)]
+  I -- "ft_transfer_call + customRecipientMsg" --> K[(sealed-recipes<br/>NEAR contract)]
   K -- "verify quote, lock deposit cover" --> K
   M -- "sealed recipe + sealed job" --> R
   R -- "AI parts" --> A[NEAR AI Cloud]
   R -- "confidential swaps" --> I
   R -- "report_run(delivered, ed25519 sig)" --> K
   K -- "one receipt: protocol, runner, part authors, creator, reserve + shortfall compensation" --> P((payees))
-  C[Creator<br/>FRS-1 composer] -- "sealed recipe, listing, guarantee deposit" --> M
+  C[Creator<br/>SRS-1 composer] -- "sealed recipe, listing, guarantee deposit" --> M
 ```
 
-Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · threat model: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) · contract interface: [docs/CONTRACT_SPEC.md](docs/CONTRACT_SPEC.md) · standard: [docs/FRS-1.md](docs/FRS-1.md)
+Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · threat model: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) · contract interface: [docs/CONTRACT_SPEC.md](docs/CONTRACT_SPEC.md) · standard: [docs/SRS-1.md](docs/SRS-1.md)
 
 ## Repository map
 
 ```
-contracts/fungible-recipes/   Rust NEAR contract + 105 unit tests
+contracts/sealed-recipes/   Rust NEAR contract + 105 unit tests
 contracts/test-vectors/       settlement and bond vectors shared by Rust and TS; conformance vectors from the proofs
 verification/                 Z3 proofs (settlement, billing, guarantee deposits), TLA+ models (bonds, durable runs, versions), results
-core/src/                     FRS-1 (parts, disclosure, job types), sealing, settlement, ledger mirror, job hashing, clients, attestation
+core/src/                     SRS-1 (parts, disclosure, job types), sealing, settlement, ledger mirror, job hashing, clients, attestation
 runner/                       sealed TEE runner: dry-run quotes, durable execution (checkpoints, resume), resource limits, 11 parts (9 implementation files)
 server/                       marketplace API (jobs, quotes, runs, track records) and local mocks of external services
 web/                          React UI: Post a job, Compose, Wallet, Recipes, Trust & privacy, story mode
-standard/parts.json           FRS-1 part catalog (ports, capabilities, fees, disclosure, limits)
-standard/jobs.json            FRS-1 job types (inputs, output, value metric)
+standard/parts.json           SRS-1 part catalog (ports, capabilities, fees, disclosure, limits)
+standard/jobs.json            SRS-1 job types (inputs, output, value metric)
 seed/recipes/                 plaintext of the demo recipes (in the app they only ever travel sealed)
 fixtures/                     fictional wallets, frozen 1Click token sample
 scripts/                      demo launcher, seed, story CLI, agent buyer, live-check, verify-quote, video recorder
-docs/                         FRS-1, architecture, threat model, contract spec and events, submission kit, media
+docs/                         SRS-1, architecture, threat model, contract spec and events, submission kit, media
 ```
 
 ## Configuration
@@ -335,11 +337,11 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 - **Durable storage is in-memory in the demo.** The vault and checkpoint store would be a database or IPFS in production, keyed by `sealed_hash` and run id. The runner and the contract already behave as if it were durable.
 - **One runner.** Runners are approved by the contract owner. A permissionless set of staked runners, and recipes sealed to several of them, are next.
 - **No triggers or schedules yet.** A run starts when a buyer pays. A workflow can wait inside a run (`time.wait`), but nothing starts a run on a timer or an on-chain event.
-- **Not deployed yet.** The contract has 105 unit tests and the same vectors as the mirror, but it was not built to wasm or deployed from our build machine (no wasm target, no NEAR RPC access). Deploy commands are in [contracts/fungible-recipes/README.md](contracts/fungible-recipes/README.md).
+- **Not deployed yet.** The contract has 105 unit tests and the same vectors as the mirror, but it was not built to wasm or deployed from our build machine (no wasm target, no NEAR RPC access). Deploy commands are in [contracts/sealed-recipes/README.md](contracts/sealed-recipes/README.md).
 - **No live chain adapter or wallet.** The server talks to the in-process mirror. A NEAR RPC adapter and near-connect are the main pieces missing for testnet.
 - **The runner is trusted to measure delivery.** Guarantee deposits pay out on the runner's signed `delivered` value. That is sound only as far as the runner is attested; on-chain DCAP verification of the runner is the next step.
 - **Quotes cost compute.** Dry runs are capped at 5 recipes per job and 12 jobs per minute per client. A small quote fee would be the on-chain version.
-- **Supplier risk.** Bundled parts can't be switched off by their author, but remote and closed-model parts can. FRS-1 labels this risk; fallback parts, notice periods and supplier bonds are planned.
+- **Supplier risk.** Bundled parts can't be switched off by their author, but remote and closed-model parts can. SRS-1 labels this risk; fallback parts, notice periods and supplier bonds are planned.
 - **Thin markets.** Head-to-head price competition needs several recipes per job type; there are 3 job types and 6 recipes today. A niche recipe's price moves with its own demand only.
 - **Demand can be faked, at a cost.** A creator can pay for their own runs to push the price up. Each fake run costs the protocol, runner and part fees, and the price rises at most 12.5% a period while buyers simply pick a cheaper rival or set a max price. Counting only quoted runs from distinct buyers would make it harder.
 - **Unquoted payments can miss a price change.** A payment without a quote is charged the list price when it arrives; if that rose since the payment was quoted, the payment is credited back to the buyer (never overcharged). Paying with a signed quote locks the price.

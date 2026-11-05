@@ -1,8 +1,8 @@
 {
-  "name": "fungible-recipes",
+  "name": "sealed-recipes",
   "version": "0.1.0",
   "private": true,
-  "description": "Fungible Recipes: sealed, composable workflows, paid per run through NEAR Intents, with bonded delivery guarantees.",
+  "description": "Sealed Recipes: sealed, composable workflows, paid per run through NEAR Intents, with bonded delivery guarantees.",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -18,7 +18,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "story": "tsx scripts/story-cli.ts",
     "live-check": "tsx scripts/live-check.ts",
-    "test:rust": "cargo test --manifest-path contracts/fungible-recipes/Cargo.toml",
+    "test:rust": "cargo test --manifest-path contracts/sealed-recipes/Cargo.toml",
     "test:e2e": "node scripts/demo.mjs --no-open --story --exit",
     "record": "node scripts/record-demo.mjs",
     "seed": "tsx scripts/seed.ts",

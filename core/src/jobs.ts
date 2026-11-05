@@ -1,5 +1,5 @@
 /**
- * Recipe intents (FRS-1 §5). A buyer posts a job of a standard type; every recipe implementing that type
+ * Recipe intents (SRS-1 §5). A buyer posts a job of a standard type; every recipe implementing that type
  * quotes for it from a dry run inside the TEE runner.
  *
  * job_hash = sha256(canonical({ inputs, salt })). The salt is random and only travels sealed, so the hash that

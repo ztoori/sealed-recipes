@@ -9,7 +9,7 @@ Deadline: **Nov 14, 2026, 23:59 UTC** (6:59 pm Toronto). Submissions open Nov 1,
 - [ ] Tag `baseline-2026-10-31` exists. It marks the work done before the window opened; everything after it was built during the hackathon, as HACKATHON.md asks.
 - [ ] Push to a **public** GitHub repo (you do this; nothing was uploaded).
 - [ ] On a clean machine: `npm install && npm run test:e2e` ends with `✔ story complete`; `npm test` (27) and `npm run test:rust` (61) pass.
-- [ ] Strongly recommended: `NEAR_AI_API_KEY=… npm run live-check`, and deploy the contract to testnet (commands in `contracts/fungible-recipes/README.md`). Add the results to the README.
+- [ ] Strongly recommended: `NEAR_AI_API_KEY=… npm run live-check`, and deploy the contract to testnet (commands in `contracts/sealed-recipes/README.md`). Add the results to the README.
 - [ ] Post the demo on X (below) with `docs/media/demo.mp4` attached.
 - [ ] Create a **mainnet** NEAR account for the prize payout.
 - [ ] Check that no keys are in the repo history (`.env` is git-ignored).
@@ -19,7 +19,7 @@ Deadline: **Nov 14, 2026, 23:59 UTC** (6:59 pm Toronto). Submissions open Nov 1,
 
 | Field | Value |
 |---|---|
-| Project name | Fungible Recipes |
+| Project name | Sealed Recipes |
 | Team lead | *you* |
 | Email | *you* (max 2 submissions per email) |
 | Team size | *1 / 2-4 / …* |
@@ -28,19 +28,19 @@ Deadline: **Nov 14, 2026, 23:59 UTC** (6:59 pm Toronto). Submissions open Nov 1,
 | Repository link | *your public GitHub URL* |
 | Demo post link | *your X post URL* |
 | Website | leave empty |
-| Project description (1982 / 2000 chars) | see below |
+| Project description (1980 / 2000 chars) | see below |
 
 ```text
 Problem: businesses and AI agents run on workflows that chain tools, bots and models. The workflow (which parts, in what order, with which prompts) is the edge, but it is easy to copy, hard to compare on results, and its parts' builders are rarely paid.
 
-Fungible Recipes is intents for workflows, on NEAR:
+Sealed Recipes is intents for workflows, on NEAR:
 - Post a job: a buyer, or an agent, fills one short form for a standard job type, sealed to an attested TEE runner.
 - Compete: every recipe that does that job quotes from a dry run inside the TEE: expected value, a runner-signed promise backed by the creator's guarantee deposit, a signed price, privacy and withdrawal risk. Buyers compare results, not methods.
 - Market prices: each recipe's price follows its own demand inside a creator-set band (EIP-1559 rule, on-chain, proved); a quote locks it.
 - Pay with NEAR Intents from any chain: a 1Click EXACT_OUTPUT quote delivers the exact run price to our contract via ft_transfer_call, carrying the signed quote.
 - Run privately: parts (code, agents, NEAR AI Cloud private models) run under resource limits; swaps use confidential intents to a fresh address; results are sealed to the buyer's browser.
 - Settle once: the contract verifies the runner's signed report and pays the protocol, the runner, every part author and the creator in one receipt, and pays any shortfall to the buyer from the deposit. Quotes are single-use and bound to buyer and job; a re-check before execution aborts and refunds if the wallet was emptied, so the deposit can't be drained.
-- FRS-1, a no-code standard: typed, swappable parts that disclose model, instructions, harness and withdrawal risk.
+- SRS-1, a no-code standard: typed, swappable parts that disclose model, instructions, harness and withdrawal risk.
 - No investment features: pay per run, creators post collateral; no shares, tokens or trading.
 
 Includes: Rust NEAR contract (105 tests) with Z3/TLA+ proofs of its money, pricing, durable-run and version logic, a TS mirror on shared vectors, the TEE runner, an agent buyer, the UI, an e2e story, a live-check against real 1Click and NEAR AI Cloud.
@@ -55,7 +55,7 @@ Attach `docs/media/demo.mp4`, or the screenshots `03-quotes.png`, `02-sealed.png
 ```text
 Your workflow is your edge. Copy it once and it's gone.
 
-Fungible Recipes: intents for workflows. Post a job, sealed workflows compete with signed quotes, pay via NEAR Intents, and every builder gets paid in one settlement.
+Sealed Recipes: intents for workflows. Post a job, sealed workflows compete with signed quotes, pay via NEAR Intents, and every builder gets paid in one settlement.
 
 Built at NEAR HACKATHON @NEARProtocol #NEARHackathon
 ```
@@ -84,7 +84,7 @@ Optional tags: @NearLegion @NearBuilders.
 ```json
 {
   "requestId": "<uuid v4>",
-  "projectName": "Fungible Recipes",
+  "projectName": "Sealed Recipes",
   "leadName": "<lead name>",
   "email": "<email>",
   "size": "<1 | 2-4 | 4-6 | 6-8 | 8+>",
@@ -101,7 +101,7 @@ Optional tags: @NearLegion @NearBuilders.
 
 | Screen | Say |
 |---|---|
-| Title card | "Your workflow is your edge. Fungible Recipes lets workflows compete for jobs without giving their method away." |
+| Title card | "Your workflow is your edge. Sealed Recipes lets workflows compete for jobs without giving their method away." |
 | Composer, parts snapping in | "Five parts from five builders, type-checked as they connect. Each part discloses its model and harness, so buyers can see what could be withdrawn." |
 | Seal dialog | "We verify the runner's attestation, seal the recipe in the browser and back its quotes with a guarantee deposit. The chain stores only a hash." |
 | Job form and quotes | "A buyer posts one short job. Every recipe that does it quotes from a sealed dry run: expected value, a signed promise, price, privacy and risk. SWPR offers more but is public; Bob picks CLNP." |

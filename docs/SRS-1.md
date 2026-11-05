@@ -1,8 +1,8 @@
-# FRS-1: Fungible Recipe Standard (v1.0)
+# SRS-1: Sealed Recipe Standard (v1.0)
 
-FRS-1 is the no-code / low-code format for composing **parts** (code, specialist agents or data sources) into workflows that can be **sealed, priced and settled**. It has four documents: a **part manifest** (published by a builder), a **job type** (a standard request buyers can post), a **recipe** (written by a creator, sealed) and a **public listing** (derived from the recipe, which is all the market sees).
+SRS-1 is the no-code / low-code format for composing **parts** (code, specialist agents or data sources) into workflows that can be **sealed, priced and settled**. It has four documents: a **part manifest** (published by a builder), a **job type** (a standard request buyers can post), a **recipe** (written by a creator, sealed) and a **public listing** (derived from the recipe, which is all the market sees).
 
-Reference implementation: [`core/src/frs.ts`](../core/src/frs.ts). Catalogs: [`standard/parts.json`](../standard/parts.json), [`standard/jobs.json`](../standard/jobs.json).
+Reference implementation: [`core/src/srs.ts`](../core/src/srs.ts). Catalogs: [`standard/parts.json`](../standard/parts.json), [`standard/jobs.json`](../standard/jobs.json).
 
 ## 1. Types
 
@@ -85,7 +85,7 @@ A part that goes over fails the run, and the contract refunds the buyer. The buy
 
 ```json
 {
-  "frs": "1.0", "kind": "recipe",
+  "srs": "1.0", "kind": "recipe",
   "meta":   { "ticker": "CLNP", "name": "Clean up and protect", "creator": "chef.testnet", "description": "…" },
   "form":   [ { "id": "wallet", "label": "Wallet to clean", "type": "near.account", "required": true },
               { "id": "recipient", "label": "Fresh address", "type": "address.near", "generator": "fresh-implicit" } ],
@@ -103,7 +103,7 @@ References are `form.<field>`, `const.<name>` or `<node>.<output port>`.
 
 | Code | Rule |
 |---|---|
-| `frs.version` | `frs: "1.0"`, `kind: "recipe"` |
+| `srs.version` | `srs: "1.0"`, `kind: "recipe"` |
 | `meta.ticker` | `^[A-Z0-9]{3,6}$` (also the on-chain recipe id) |
 | `form.type` / `form.duplicate` | form fields have known types and unique ids |
 | `form.long` (warning) | at most 6 form fields: *one short form, no chat* |
@@ -135,7 +135,7 @@ Wiring, params and consts are **not** included, so the listing shows what a buye
 
 ## 5. Sealing
 
-`seal(payload, runnerEncPk, purpose)` produces an `frs-seal-v1` envelope: an anonymous NaCl box (ephemeral X25519 key, XSalsa20-Poly1305) over `canonical({salt, payload})`. The random salt stops anyone from confirming a guessed recipe against the on-chain hash.
+`seal(payload, runnerEncPk, purpose)` produces an `srs-seal-v1` envelope: an anonymous NaCl box (ephemeral X25519 key, XSalsa20-Poly1305) over `canonical({salt, payload})`. The random salt stops anyone from confirming a guessed recipe against the on-chain hash.
 On-chain commitment: `sealed_hash = sha256(canonical(envelope))`. Buyer inputs are sealed the same way, and their hash is the run's `inputs_hash`.
 
 ## 6. Execution and report
@@ -144,7 +144,7 @@ The runner takes the recipe id from the paid run and refuses to execute unless `
 It executes nodes in topological order, then signs:
 
 ```
-frs-run-v3|<contract>|<run_id>|<recipe_id>|<ok|fail|abort>|<output_hash>|<delivered>|<parts_used,…>
+srs-run-v3|<contract>|<run_id>|<recipe_id>|<ok|fail|abort>|<output_hash>|<delivered>|<parts_used,…>
 ```
 
 `ok` settles; `fail` and `abort` refund the buyer and release any locked cover (`abort` means the runner chose not to execute, see §7, and is counted separately from failures). Once a run is verified as paid, pending and assigned to it, the runner signs a report on every exit path, so a buyer never waits for the reclaim timeout. Before executing, the runner also checks that the decrypted recipe uses exactly the parts listed on-chain; the public trust labels are computed from that list.
@@ -169,14 +169,14 @@ A recipe opts in with `"implements": "job.wallet-cleanup@1.0.0"`. The validator 
 1. **Post.** The buyer seals `{inputs, salt, reply_to}` once to the attested runner and posts it with
    `job_hash = sha256(canonical({inputs, salt}))`. The random salt means the on-chain hash can't be brute-forced back to the wallet.
 2. **Quote.** For each listed recipe implementing the type (capped), the runner checks the recipe against its on-chain hash and the job against `job_hash`. It then runs the recipe in **quote mode**: read-only, swaps priced with dry 1Click quotes, no approvals. The output is measured with the job's metric (value in payment-token units): `expected` from expected outputs, and `promised` from the post-slippage minimums. The runner signs
-   `frs-quote-v3|<contract>|<recipe>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<price>|<expected>|<promised>|<cover>|<expires_ns>`,
+   `srs-quote-v3|<contract>|<recipe>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<price>|<expected>|<promised>|<cover>|<expires_ns>`,
    where `inputs_hash` is the hash of the sealed job the buyer will pay with, `price` is the recipe's current market price (locked for this job), and `cover = min(promised, bond_available)`.
    A job may carry a `max_price`: recipes listed above it are not asked to quote.
    The whole quote is sealed to `reply_to`; the marketplace relays ciphertext, and the buyer's client checks the signature before paying.
 3. **Choose.** The buyer, or an agent's policy, compares expected value, promise, price, privacy, withdrawal risk and the on-chain track record.
 4. **Pay.** The signed quote rides in the run payment's `customRecipientMsg` (so its values become public; paying without a quote is always allowed and keeps them private). The contract checks the price (in the recipe's band, at most the buyer's `max_price`), then, in order: `job_hash` format, recipe version, runner active, signature, expiry, single use, `cover ≤ promised`, `bond_available ≥ cover`; then it locks `cover`.
 5. **Re-check.** Right before executing, the runner re-prices the job in quote mode. If the fresh promise is below 98% of the quoted one (the wallet changed), it signs `abort`: the buyer is refunded and the cover goes back to the bond.
-6. **Settle.** The runner measures `delivered` (for bonded runs, credited with any value the buyer withheld after the re-check: drained funds or deposits smaller than asked count at their quoted minimum, so the bond insures the market, not the buyer's own choices) and signs `frs-run-v3|…|ok|…|<delivered>|…`. The contract pays `min(max(0, promised − delivered), cover)` to the buyer from the locked cover, updates the recipe's track record and releases the rest.
+6. **Settle.** The runner measures `delivered` (for bonded runs, credited with any value the buyer withheld after the re-check: drained funds or deposits smaller than asked count at their quoted minimum, so the bond insures the market, not the buyer's own choices) and signs `srs-run-v3|…|ok|…|<delivered>|…`. The contract pays `min(max(0, promised − delivered), cover)` to the buyer from the locked cover, updates the recipe's track record and releases the rest.
 
 A job with no implementing recipe is recorded as **open demand**, a signal for builders.
 

@@ -3,7 +3,7 @@ use ed25519_dalek::{Signer, SigningKey};
 use near_sdk::test_utils::VMContextBuilder;
 use near_sdk::testing_env;
 
-const CONTRACT: &str = "frs.testnet";
+const CONTRACT: &str = "srs.testnet";
 const USDC: &str = "usdc.testnet";
 const DELAY: u64 = 60_000_000_000;
 /// Pricing period in the tests (1 hour), so DELAY-scale timestamps stay inside the first period.
@@ -510,12 +510,12 @@ fn report_rejects_malformed_output_hash() {
 
 #[test]
 fn signed_message_format_is_stable() {
-    let m = run_report_message("frs.testnet", "r-1", "CLNP", "ok", "sha256:ab", 28_024_900, &["a".into(), "b".into()]);
-    assert_eq!(m, "frs-run-v3|frs.testnet|r-1|CLNP|ok|sha256:ab|28024900|a,b");
-    let m = run_report_message("frs.testnet", "r-1", "CLNP", "abort", "sha256:ab", 0, &[]);
-    assert_eq!(m, "frs-run-v3|frs.testnet|r-1|CLNP|abort|sha256:ab|0|");
+    let m = run_report_message("srs.testnet", "r-1", "CLNP", "ok", "sha256:ab", 28_024_900, &["a".into(), "b".into()]);
+    assert_eq!(m, "srs-run-v3|srs.testnet|r-1|CLNP|ok|sha256:ab|28024900|a,b");
+    let m = run_report_message("srs.testnet", "r-1", "CLNP", "abort", "sha256:ab", 0, &[]);
+    assert_eq!(m, "srs-run-v3|srs.testnet|r-1|CLNP|abort|sha256:ab|0|");
     let q = quote_message(
-        "frs.testnet",
+        "srs.testnet",
         "CLNP",
         "sha256:sealed",
         &"ab".repeat(32),
@@ -530,7 +530,7 @@ fn signed_message_format_is_stable() {
     assert_eq!(
         q,
         format!(
-            "frs-quote-v3|frs.testnet|CLNP|sha256:sealed|{}|{}|bob.testnet|750000|28000000|27500000|25000000|1000",
+            "srs-quote-v3|srs.testnet|CLNP|sha256:sealed|{}|{}|bob.testnet|750000|28000000|27500000|25000000|1000",
             "ab".repeat(32),
             "ff".repeat(32)
         )
@@ -1235,8 +1235,8 @@ fn setup_checkpoint_mode() -> Contract {
 #[test]
 fn checkpoint_message_format() {
     assert_eq!(
-        checkpoint_message("frs.testnet", "r1", "CLNP", 2, "ab", &["a".into(), "b".into()]),
-        "frs-ckpt-v1|frs.testnet|r1|CLNP|2|ab|a,b"
+        checkpoint_message("srs.testnet", "r1", "CLNP", 2, "ab", &["a".into(), "b".into()]),
+        "srs-ckpt-v1|srs.testnet|r1|CLNP|2|ab|a,b"
     );
 }
 
@@ -1460,7 +1460,7 @@ fn settlement_event_has_v5_fields_in_order() {
     let mut c = setup_reserve();
     run_ok(&mut c, "RSRV", "a1", 0);
     let e = last_event();
-    assert_eq!(e["event"], "frs_settlement");
+    assert_eq!(e["event"], "srs_settlement");
     let d = e["data"][0].as_object().unwrap();
     let keys: Vec<&str> = d.keys().map(|k| k.as_str()).collect();
     // serde_json is built with preserve_order, so the logged order is the spec order

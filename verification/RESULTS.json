@@ -37,7 +37,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.008,
+   "seconds": 0.01,
    "detail": ""
   },
   {
@@ -67,7 +67,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.009,
+   "seconds": 0.01,
    "detail": ""
   },
   {
@@ -87,7 +87,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.013,
+   "seconds": 0.012,
    "detail": ""
   },
   {
@@ -107,7 +107,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.008,
+   "seconds": 0.009,
    "detail": ""
   },
   {
@@ -127,7 +127,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.014,
+   "seconds": 0.011,
    "detail": ""
   },
   {
@@ -317,7 +317,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.01,
+   "seconds": 0.009,
    "detail": ""
   },
   {
@@ -377,7 +377,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.02,
+   "seconds": 0.021,
    "detail": ""
   },
   {
@@ -487,7 +487,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.002,
+   "seconds": 0.003,
    "detail": ""
   },
   {
@@ -537,7 +537,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.002,
+   "seconds": 0.003,
    "detail": ""
   },
   {
@@ -567,7 +567,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.002,
+   "seconds": 0.003,
    "detail": ""
   },
   {
@@ -577,7 +577,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.002,
+   "seconds": 0.003,
    "detail": ""
   },
   {
@@ -607,7 +607,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.015,
+   "seconds": 0.017,
    "detail": ""
   },
   {
@@ -617,7 +617,7 @@
    "outcome": "counterexample",
    "expected": "counterexample",
    "ok": true,
-   "seconds": 0.008,
+   "seconds": 0.007,
    "detail": ""
   },
   {
@@ -627,7 +627,7 @@
    "outcome": "counterexample",
    "expected": "counterexample",
    "ok": true,
-   "seconds": 0.007,
+   "seconds": 0.006,
    "detail": ""
   },
   {
@@ -637,7 +637,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.004,
+   "seconds": 0.003,
    "detail": ""
   },
   {
@@ -647,7 +647,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.049,
+   "seconds": 0.047,
    "detail": ""
   },
   {

@@ -56,7 +56,7 @@ export function Run() {
   const genFresh = (fid: string) => { const kp = nacl.sign.keyPair(); const account = hex(kp.publicKey); setFreshKey({ account, sk: kp.secretKey }); setValues((v) => ({ ...v, [fid]: account })); };
   const downloadKey = () => {
     if (!freshKey) return;
-    const blob = new Blob([JSON.stringify({ account_id: freshKey.account, public_key: 'ed25519:' + freshKey.account, secret_key_hex: hex(freshKey.sk), note: 'Fresh implicit NEAR account generated in your browser by Fungible Recipes. Keep this file private.' }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ account_id: freshKey.account, public_key: 'ed25519:' + freshKey.account, secret_key_hex: hex(freshKey.sk), note: 'Fresh implicit NEAR account generated in your browser by Sealed Recipes. Keep this file private.' }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `fresh-${freshKey.account.slice(0, 8)}.json`; a.click();
   };
 
@@ -158,7 +158,7 @@ export function Run() {
   if (!job) return <div className="panel body">Loading job types…</div>;
   const rows = timeline(events);
   const settlement = completed?.data?.settlement;
-  const settleEv = events.find((e) => e.type === 'frs_settlement')?.data;
+  const settleEv = events.find((e) => e.type === 'srs_settlement')?.data;
   const reserve = settlement ? Number(settleEv?.reserve ?? 0) : 0;
   const priceOf = (q: any) => Number(q.price ?? q.listing.price_per_run); // the quote's signed price
   const net = (q: any) => Number(q.expected) - priceOf(q);
@@ -232,7 +232,7 @@ export function Run() {
               <label className="small muted">Sort by <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} aria-label="Sort quotes"><option value="net">best result after price</option><option value="value">most value</option><option value="price">lowest price</option><option value="risk">lowest risk</option></select></label>
             </header>
             <table className="quotes">
-              <thead><tr><th>Recipe</th><th className="r">Expected</th><th className="r">Promised</th><th className="r">Price</th><th>Privacy</th><th title="FRS-1 §2.1: how likely a part's model or service is withdrawn or changed under the recipe">Withdrawal risk</th><th>Track record</th><th /></tr></thead>
+              <thead><tr><th>Recipe</th><th className="r">Expected</th><th className="r">Promised</th><th className="r">Price</th><th>Privacy</th><th title="SRS-1 §2.1: how likely a part's model or service is withdrawn or changed under the recipe">Withdrawal risk</th><th>Track record</th><th /></tr></thead>
               <tbody>
                 {sorted.map((q) => {
                   const t = q.track, quoted = Number(t.promised_total);
@@ -355,7 +355,7 @@ function timeline(events: Ev[]): Row[] {
       case 'approval_required': part?.logs.push(`wallet approval requested: ${d.transactions.length} transfers`); break;
       case 'approval_result': part?.logs.push(d.approved ? `approved, ${d.transfers} transfers sent` : 'rejected by buyer'); break;
       case 'signed': rows.push({ title: 'Runner signed the report', sub: d.message.length > 100 ? d.message.slice(0, 100) + '…' : d.message, source: 'runner', logs: [] }); break;
-      case 'frs_settlement': rows.push({ title: 'report_run verified the ed25519 signature and settled', sub: `tx ${short(d.tx, 8, 6)} · ${d.payouts.length} payees + guarantee deposit`, source: 'contract', logs: [] }); break;
+      case 'srs_settlement': rows.push({ title: 'report_run verified the ed25519 signature and settled', sub: `tx ${short(d.tx, 8, 6)} · ${d.payouts.length} payees + guarantee deposit`, source: 'contract', logs: [] }); break;
       case 'run_refunded': rows.push({ title: 'Run refunded to the buyer', sub: d.reason, source: 'contract', logs: [] }); break;
       case 'failed': rows.push({ title: 'Run failed', sub: d.error, source: 'runner', logs: [], state: 'fail' }); break;
       case 'completed': if (!d.ok) rows.push({ title: d.outcome === 'abort' ? 'Run aborted and refunded' : 'Run failed and was refunded', sub: d.reason ?? d.error, source: 'runner', logs: [], state: 'fail' }); break;

@@ -1,7 +1,7 @@
-# `fungible-recipes` contract — interface & settlement spec
+# `sealed-recipes` contract — interface & settlement spec
 
 This file is the single source of truth shared by the Rust contract
-(`contracts/fungible-recipes`) and the TypeScript local mirror
+(`contracts/sealed-recipes`) and the TypeScript local mirror
 (`core/src/ledger.ts`). Both are tested against the same vectors in
 `contracts/test-vectors/*.json`.
 
@@ -47,7 +47,7 @@ always shows what a payment made now would be charged. Event `price_updated {rec
 target_runs}` when the price moved.
 
 **Quotes lock a price.** The quote message is now
-`frs-quote-v3|<contract>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<price>|<expected>|<promised>|<cover>|<expires_ns>`
+`srs-quote-v3|<contract>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<price>|<expected>|<promised>|<cover>|<expires_ns>`
 and `QuoteMsg` gains `price: U128`. A quoted run is charged the signed `price`; an unquoted run the current list price.
 
 **Buyer cap.** The `run` msg accepts `"max_price": U128`. Checks after `recipe not listed`, before the quote checks:
@@ -92,7 +92,7 @@ Conservation is exact: `protocol + r + Σ b_i + creator + reserve = P`.
 
 The reserve is the creator's own money held as collateral. It grows the deposit that backs the recipe's quotes, and the creator can withdraw the free part with `withdraw_bond` like any other deposit.
 
-**`frs_settlement` data.** `run_id, recipe_id, buyer, price, output_hash, payouts, reserve, delivered, compensation`.
+**`srs_settlement` data.** `run_id, recipe_id, buyer, price, output_hash, payouts, reserve, delivered, compensation`.
 `payouts` lists, in order: `protocol`, `runner`, the `part:<id>` entries not yet billed, then `creator`. `shareholder_pool` and `acc_increment` are removed.
 
 **`Recipe` field order.** `id, name, creator, sealed_hash, runner_id, parts, price_per_run, reserve_bps, runs, revenue, listed, failed, aborted, promised_total, delivered_total, compensated_total, bond_available, bond_locked, settle_mode, version, pending_sealed_hash, update_effective_ns`.
@@ -140,7 +140,7 @@ local demo uses 30 s). `get_config` returns it.
 relay. Checks, in order: `unknown run`, `run not pending`, runner active (`runner inactive`),
 `seq must be checkpoint_seq + 1`, `state_hash must be 64 lowercase hex`, signature over
 ```
-frs-ckpt-v1|<contract>|<run_id>|<recipe_id>|<seq>|<state_hash>|<parts_done joined by ",">
+srs-ckpt-v1|<contract>|<run_id>|<recipe_id>|<seq>|<state_hash>|<parts_done joined by ",">
 ```
 (`invalid runner signature`); then, if `parts_done` is non-empty: the recipe's `settle_mode` must be `"checkpoint"`
 (`parts can only be billed at checkpoints in checkpoint mode`) and `parts_billed + parts_done` must be a sub-multiset
@@ -167,7 +167,7 @@ These supersede the v2 quote, bond and report rules wherever they differ. Implem
 The runner now signs:
 
 ```
-frs-quote-v2|<contract>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<expected>|<promised>|<cover>|<expires_ns>
+srs-quote-v2|<contract>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<expected>|<promised>|<cover>|<expires_ns>
 ```
 
 - `buyer` is the account the run belongs to (`on_behalf_of`, else `sender_id`).
@@ -191,7 +191,7 @@ Failures follow the `on_behalf_of` rules (credit and `transfer_rejected`, or pan
 `report_run(run_id, outcome, parts_used, output_hash, delivered, signature)`, where `outcome` is `"ok"`, `"fail"` or `"abort"`, signed as:
 
 ```
-frs-run-v3|<contract>|<run_id>|<recipe_id>|<outcome>|<output_hash>|<delivered>|<parts_used joined by ",">
+srs-run-v3|<contract>|<run_id>|<recipe_id>|<outcome>|<output_hash>|<delivered>|<parts_used joined by ",">
 ```
 
 - **ok**: v1 settlement, then `compensation = min(max(0, promised - delivered), covered)` credited to the buyer; `bond_locked -= covered`; `bond_available += covered - compensation`.
@@ -225,7 +225,7 @@ Off-chain, every listed recipe that implements the job's type does a **dry run**
 returns a quote: the value it expects to deliver, in payment-token units (`promised`). The runner signs it:
 
 ```
-frs-quote-v1|<contract_account_id>|<recipe_id>|<job_hash>|<promised>|<expires_ns>
+srs-quote-v1|<contract_account_id>|<recipe_id>|<job_hash>|<promised>|<expires_ns>
 ```
 
 `job_hash = sha256(canonical(job inputs))`, computed by the buyer; the runner checks it against the decrypted
@@ -248,7 +248,7 @@ Failures follow the v1 `on_behalf_of` rules (credit and `transfer_rejected`, or 
 `report_run(run_id, success, parts_used, output_hash, delivered: U128, signature)` where the signed message is now
 
 ```
-frs-run-v2|<contract_account_id>|<run_id>|<recipe_id>|<ok|fail>|<output_hash>|<delivered>|<parts_used joined by ",">
+srs-run-v2|<contract_account_id>|<run_id>|<recipe_id>|<ok|fail>|<output_hash>|<delivered>|<parts_used joined by ",">
 ```
 
 On success, the v1 settlement runs unchanged, then:
@@ -264,7 +264,7 @@ Unquoted runs have `promised = covered = 0`.
 
 #### Events
 - `run_requested` carries the full Run, which now includes `job_hash` (string, `""` when unquoted), `promised` and `covered`.
-- `frs_settlement` adds `delivered: U128` and `compensation: U128`.
+- `srs_settlement` adds `delivered: U128` and `compensation: U128`.
 - New: `bond_posted`, `bond_withdrawn` (fields above).
 
 ## Roles
@@ -322,7 +322,7 @@ delivery arrives as `ft_transfer_call` → `ft_on_transfer(sender_id, amount, ms
   - optional `quote` = `{sealed_hash, job_hash, price, expected, promised, cover, expires_ns, signature}` (numbers are
     decimal strings; a malformed quote object makes the msg unparseable → panic), signed by the recipe's runner over
     ```
-    frs-quote-v3|<contract>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<price>|<expected>|<promised>|<cover>|<expires_ns>
+    srs-quote-v3|<contract>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<price>|<expected>|<promised>|<cover>|<expires_ns>
     ```
     where `buyer` = `on_behalf_of`, else `sender_id`, and `inputs_hash` is this msg's `inputs_hash`. Checked after
     the run checks below, in order: `job_hash must be 64 lowercase hex`, `quote for an outdated recipe version`
@@ -351,7 +351,7 @@ delivery arrives as `ft_transfer_call` → `ft_on_transfer(sender_id, amount, ms
 (usually the runner's relayer); authority comes from the signature, not the caller.
 - `signature` = base64 ed25519 signature by the recipe's runner `signing_pk` over the UTF-8 string
   ```
-  frs-run-v3|<contract_account_id>|<run_id>|<recipe_id>|<outcome>|<output_hash>|<delivered>|<parts_used joined by ",">
+  srs-run-v3|<contract_account_id>|<run_id>|<recipe_id>|<outcome>|<output_hash>|<delivered>|<parts_used joined by ",">
   ```
 - `outcome` is `"ok"`, `"fail"` or `"abort"` (anything else: `invalid outcome`).
 - `output_hash` must be 64 lowercase hex. `delivered` is the value delivered, in payment-token units, as measured by the runner.
@@ -382,14 +382,14 @@ part of the creator's own cut, held as collateral. Both are proved for every inp
 Any checked operation that would exceed u128 makes the split `None` and `report_run` panics; this cannot happen
 once the publish minimum holds and `P < 2^128 / 10^4`.
 All payouts are credited to internal withdrawable balances inside the same receipt
-and a single NEP-297 event `frs_settlement` lists every payout.
+and a single NEP-297 event `srs_settlement` lists every payout.
 `withdraw(amount?)` (requires exactly 1 yoctoNEAR attached) sends `ft_transfer` of the caller's balance; the `#[private]` callback `on_withdraw` checks the promise result with `env::promise_result_checked` (ft_transfer returns no value): success emits `withdrawn`, failure restores the credit and emits `withdraw_failed`.
 
 ### Views
 `get_config`, `get_recipe` (includes the track record and guarantee deposit), `list_recipes`, `get_part`, `list_parts`, `get_runner`, `get_run`,
 `balance_of(account_id)`, `quote_settlement(recipe_id, parts_used?)` → `{price, protocol, runner, parts, remainder, reserve, creator}` (the split above, without state change).
 
-### Events (NEP-297, standard `fungible-recipes`, version `1.0.0`)
+### Events (NEP-297, standard `sealed-recipes`, version `1.0.0`)
 Exact field shapes: [CONTRACT_EVENTS.md](CONTRACT_EVENTS.md).
-`runner_added`, `part_registered`, `recipe_published`, `recipe_updated`, `run_requested`, `frs_settlement`, `run_refunded`,
+`runner_added`, `part_registered`, `recipe_published`, `recipe_updated`, `run_requested`, `srs_settlement`, `run_refunded`,
 `recipe_update_scheduled`, `recipe_update_cancelled`, `run_checkpoint`, `price_updated`, `pricing_updated`, `withdrawn`, `withdraw_failed`, `transfer_rejected`, `bond_posted`, `bond_withdrawn`.

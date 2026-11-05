@@ -2,16 +2,16 @@
 # (Phala Cloud / NEAR Shade Agent stack). In dstack, sha256 of this file is measured
 # into the quote (mr_config / compose_hash), so verifiers can pin exactly what runs.
 services:
-  frs-runner:
-    # set to the digest you pushed (docker build -f runner/Dockerfile -t <registry>/frs-runner . && docker push …);
+  srs-runner:
+    # set to the digest you pushed (docker build -f runner/Dockerfile -t <registry>/srs-runner . && docker push …);
     # the digest is part of the measured compose, so it is what the attestation pins
-    image: ${FRS_RUNNER_IMAGE:?set FRS_RUNNER_IMAGE to <registry>/frs-runner@sha256:<digest>}
+    image: ${SRS_RUNNER_IMAGE:?set SRS_RUNNER_IMAGE to <registry>/srs-runner@sha256:<digest>}
     environment:
       TEE_MODE: dstack
       RUNNER_ID: tee-runner-1.testnet
-      CONTRACT_ID: fungible-recipes.testnet
+      CONTRACT_ID: sealed-recipes.testnet
       NEAR_RPC_URL: https://rpc.testnet.fastnear.com   # commitments are read from the contract directly
-      CHAIN_URL: ${FRS_RELAYER_URL}                     # untrusted relayer: only forwards signed report_run
+      CHAIN_URL: ${SRS_RELAYER_URL}                     # untrusted relayer: only forwards signed report_run
       NEAR_AI_API_KEY: ${NEAR_AI_API_KEY}
       ONECLICK_JWT: ${ONECLICK_JWT}
     volumes:

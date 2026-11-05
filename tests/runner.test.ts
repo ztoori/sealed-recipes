@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { guardedFetch, validateInputs, parseRewrites, HANDLERS } from '../runner/src/executor.js';
 import { computeCodehash } from '../core/src/codehash.js';
-import type { Catalog, FormField } from '../core/src/frs.js';
+import type { Catalog, FormField } from '../core/src/srs.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
@@ -38,7 +38,7 @@ test('the marketplace server never touches plaintext recipes', () => {
 });
 
 test('code hash is stable across line endings and changes when code changes', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'frs-'));
+  const dir = mkdtempSync(join(tmpdir(), 'srs-'));
   for (const d of ['runner/src', 'core/src', 'standard']) mkdirSync(join(dir, d), { recursive: true });
   cpSync(join(root, 'runner/src'), join(dir, 'runner/src'), { recursive: true });
   cpSync(join(root, 'core/src'), join(dir, 'core/src'), { recursive: true });
@@ -92,7 +92,7 @@ test('durable store: content-addressed, integrity-checked, survives a restart', 
   const { mkdtempSync, writeFileSync, readFileSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
-  const dir = mkdtempSync(join(tmpdir(), 'frs-store-'));
+  const dir = mkdtempSync(join(tmpdir(), 'srs-store-'));
   const env = seal({ hello: 'world' }, 'ab'.repeat(32), 'recipe');
   const a = new FileBlobStore(dir);
   const h = a.put(env);

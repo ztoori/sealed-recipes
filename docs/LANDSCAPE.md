@@ -1,6 +1,6 @@
 # Landscape: comparable offerings, integrations, and where this project adds value
 
-Fungible Recipes is not a workflow engine. It is a market and settlement layer for **sealed workflows that other
+Sealed Recipes is not a workflow engine. It is a market and settlement layer for **sealed workflows that other
 people pay to run**: buyers post a job, sealed recipes compete with signed and bonded quotes, and one settlement pays
 every part author, the runner and the creator. Several products overlap with pieces of that. This page
 says what each does, where it overlaps, how this project would use it, and what is actually built in this repo.
@@ -108,7 +108,7 @@ Facts we could not confirm from a primary source are marked *unverified*.
   instead of paying per run.
 - **Status.** Integration path (not built).
 
-## What only Fungible Recipes offers
+## What only Sealed Recipes offers
 
 Among the offerings above, as far as their public documentation shows:
 
@@ -124,11 +124,11 @@ Among the offerings above, as far as their public documentation shows:
   Rust.
 - **Per-part attribution and settlement in one receipt.** Every part author, the runner and the creator
   are paid in the same settlement, with conservation proved.
-- **FRS-1 typed parts.** Swappable parts with typed ports, capability limits, resource limits, and disclosure of model,
+- **SRS-1 typed parts.** Swappable parts with typed ports, capability limits, resource limits, and disclosure of model,
   instructions, harness and verification with a withdrawal-risk label.
 - **Market-driven prices for workflows.** Each recipe's price per run follows its demand inside a band its creator
-  sets (an EIP-1559-style rule, on-chain and proved), and quotes lock the price; recipes for one job type compete on
-  price and promised value like solvers. CRE and n8n-style tools price compute, not outcomes.
+  sets (an EIP-1559-style rule, on-chain and proved), and quotes lock the price; unique recipes for one job type compete
+  on price and promised value. CRE and n8n-style tools price compute, not outcomes.
 - **No investment features.** Buyers pay for a service and creators post collateral; there are no shares, dividends,
   tokens or trading, so nothing in the product is plausibly a security and any wallet can use it.
 - **Durable runs with partial settlement.** Runs survive runner crashes with exactly-once deposits; in checkpoint mode

@@ -42,7 +42,7 @@ for (let done = false; !done;) {
       await api(`/api/runs/${r.run_id}/approve?token=${r.run_token}`, { approved: ok, transactions: ok ? e.data.transactions : [] });
     }
     if (e.type === 'result') result = e.data;
-    if (e.type === 'frs_settlement') settled = e.data;
+    if (e.type === 'srs_settlement') settled = e.data;
     if (e.type === 'completed' || e.type === 'failed') { done = true; break; }
   }
 }

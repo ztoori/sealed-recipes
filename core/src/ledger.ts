@@ -1,5 +1,5 @@
 /**
- * LocalLedger — an in-process mirror of the `fungible-recipes` NEAR contract used
+ * LocalLedger — an in-process mirror of the `sealed-recipes` NEAR contract used
  * by the offline demo. Same methods, same arguments, same settlement math, same
  * signed-report format, same NEP-297 events. Parity is enforced by tests that run
  * the shared vectors in contracts/test-vectors against both implementations.
@@ -16,7 +16,7 @@ import { rollPrice, MAX_PRICE, MAX_TARGET_RUNS } from './pricing.js';
 import { settlementSplit, minimumPrice, bondLock, bondRelease, bondSettle, bondWithdraw, bondDeposit, type Bond } from './settlement.js';
 
 export const RUN_TIMEOUT_NS = 15n * 60n * 1_000_000_000n;
-export const EVENT_STANDARD = 'fungible-recipes';
+export const EVENT_STANDARD = 'sealed-recipes';
 export const EVENT_VERSION = '1.0.0';
 
 export interface LedgerPart { id: string; version: string; author: string; fee_per_call: bigint; manifest_hash: string; active: boolean }
@@ -41,7 +41,7 @@ export interface Payout { account_id: string; role: string; amount: bigint }
 
 export type Outcome = 'ok' | 'fail' | 'abort';
 export function runReportMessage(contractId: string, runId: string, recipeId: string, outcome: Outcome, outputHash: string, delivered: string, partsUsed: string[]): string {
-  return ['frs-run-v3', contractId, runId, recipeId, outcome, outputHash, delivered, partsUsed.join(',')].join('|');
+  return ['srs-run-v3', contractId, runId, recipeId, outcome, outputHash, delivered, partsUsed.join(',')].join('|');
 }
 /** what a runner signs when a recipe quotes for a job: bound to the recipe version, the sealed job, the buyer and the cover */
 export interface PricingInput { price_floor: string; price_ceiling: string; target_runs: number }
@@ -49,7 +49,7 @@ export interface QuoteFields { sealed_hash: string; job_hash: string; price: str
 export interface SignedQuote extends QuoteFields { signature: string }
 /** what a runner signs at a checkpoint (v4): progress, the sealed state's hash, and parts to bill now */
 export function checkpointMessage(contractId: string, runId: string, recipeId: string, seq: number, stateHash: string, partsDone: string[]): string {
-  return ['frs-ckpt-v1', contractId, runId, recipeId, String(seq), stateHash, partsDone.join(',')].join('|');
+  return ['srs-ckpt-v1', contractId, runId, recipeId, String(seq), stateHash, partsDone.join(',')].join('|');
 }
 /** removes `sub` from `pool` by first occurrences; null when `sub` is not a sub-multiset */
 export function subtractMultiset(pool: string[], sub: string[]): string[] | null {
@@ -58,7 +58,7 @@ export function subtractMultiset(pool: string[], sub: string[]): string[] | null
   return rest;
 }
 export function quoteMessage(contractId: string, recipeId: string, inputsHash: string, buyer: string, q: QuoteFields): string {
-  return ['frs-quote-v3', contractId, recipeId, q.sealed_hash, q.job_hash, inputsHash, buyer, q.price, q.expected, q.promised, q.cover, q.expires_ns].join('|');
+  return ['srs-quote-v3', contractId, recipeId, q.sealed_hash, q.job_hash, inputsHash, buyer, q.price, q.expected, q.promised, q.cover, q.expires_ns].join('|');
 }
 
 function assert(cond: unknown, msg: string): asserts cond {
@@ -355,7 +355,7 @@ export class LocalLedger {
     if (run.job_hash) { r.promised_total += run.promised; r.delivered_total += delivered; }
     r.compensated_total += compensation;
     run.status = 'Settled';
-    this.emit('frs_settlement', { run_id: run.run_id, recipe_id: r.id, buyer: run.buyer, price: run.amount, output_hash: a.output_hash, payouts, reserve: s.reserve, delivered, compensation });
+    this.emit('srs_settlement', { run_id: run.run_id, recipe_id: r.id, buyer: run.buyer, price: run.amount, output_hash: a.output_hash, payouts, reserve: s.reserve, delivered, compensation });
     return payouts;
   }
 

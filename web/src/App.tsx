@@ -58,7 +58,7 @@ export function App() {
       <div className="top">
         <a className="brand" href="/" onClick={(e) => { e.preventDefault(); go('run'); }}>
           <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden><circle cx="16" cy="16" r="14" fill="#F2C14E" /><circle cx="16" cy="16" r="10" fill="none" stroke="#9A5F00" strokeWidth="1.5" /><path d="M11 16.5l3.5 3.5 7-8" stroke="#15233F" strokeWidth="2.6" fill="none" strokeLinecap="round" /></svg>
-          <b>Fungible Recipes</b>
+          <b>Sealed Recipes</b>
         </a>
         <nav className="nav" aria-label="Sections">
           {([['run', 'Post a job'], ['compose', 'Compose'], ['wallet', 'Wallet'], ['recipes', 'Recipes'], ['trust', 'Trust & privacy'], ['landscape', 'Landscape']] as [Tab, string][]).map(([t, l]) => (

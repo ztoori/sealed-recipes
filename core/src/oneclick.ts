@@ -185,6 +185,6 @@ export function runPaymentQuoteRequest(o: { originAsset: string; refundTo: strin
     recipient: o.contractId,
     recipientType: 'DESTINATION_CHAIN',
     customRecipientMsg: o.msg,
-    referral: 'fungible-recipes',
+    referral: 'sealed-recipes',
   };
 }

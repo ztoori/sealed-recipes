@@ -1,4 +1,4 @@
-/** Settlement math — must match `settlement_split` in contracts/fungible-recipes (see docs/CONTRACT_SPEC.md). */
+/** Settlement math — must match `settlement_split` in contracts/sealed-recipes (see docs/CONTRACT_SPEC.md). */
 
 export interface SplitInput {
   price: bigint;
@@ -43,7 +43,7 @@ export function settlementSplit(i: SplitInput): Split {
   return { protocol, runner: i.runnerFee, parts: [...i.partFees], remainder, reserve, creator: remainder - reserve };
 }
 
-// ---- bonds: same rules as contracts/fungible-recipes/src/bond.rs ----
+// ---- bonds: same rules as contracts/sealed-recipes/src/bond.rs ----
 export interface Bond { available: bigint; locked: bigint }
 export const bondLock = (b: Bond, cover: bigint): Bond | null => (b.available < cover ? null : { available: b.available - cover, locked: checked(b.locked + cover) });
 export const bondRelease = (b: Bond, covered: bigint): Bond | null => (b.locked < covered ? null : { available: checked(b.available + covered), locked: b.locked - covered });

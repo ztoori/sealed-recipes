@@ -7,7 +7,7 @@ import nacl from 'tweetnacl';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { seal, publicListing, validateRecipe, verifyRunnerAttestation, creatorKeyFromSignature, creatorKeyMessage, demoWalletSign, type Catalog, type Recipe, type RunnerAttestation } from '../../core/src/index.js';
 
-export const BASE = process.env.FRS_URL ?? 'http://127.0.0.1:8080';
+export const BASE = process.env.SRS_URL ?? 'http://127.0.0.1:8080';
 
 export async function api<T = any>(path: string, body?: unknown): Promise<T> {
   const r = await fetch(BASE + path, body === undefined ? undefined : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

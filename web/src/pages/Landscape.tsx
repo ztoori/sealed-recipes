@@ -26,7 +26,7 @@ const VALUE = [
   ['Competing signed quotes', 'Recipes implementing a job type quote from dry runs; quotes are signed, bound to buyer, job and version, and single use.'],
   ['Guaranteed outcomes', 'The creator’s guarantee deposit pays any shortfall up to the quoted cover. Deposit safety is model-checked (TLA+) and its arithmetic proved (Z3), on models tied to the code by conformance tests.'],
   ['One receipt, every contributor', 'Part authors, runner and creator paid in the same settlement, with conservation proved.'],
-  ['FRS-1 typed parts', 'Swappable parts with typed ports, capability and resource limits, and model/harness disclosure with a withdrawal-risk label.'],
+  ['SRS-1 typed parts', 'Swappable parts with typed ports, capability and resource limits, and model/harness disclosure with a withdrawal-risk label.'],
   ['Market-driven prices', 'Each recipe’s price per run follows its own demand inside a creator-set band (EIP-1559 rule, proved); quotes lock the price.'],
   ['No investment features', 'Buyers pay for a service, creators post collateral. No shares, dividends or trading, so any wallet anywhere can use it.'],
   ['Durable runs, partial settlement', 'Runs survive runner crashes with exactly-once deposits; in checkpoint mode each part is paid when it finishes.'],
@@ -46,7 +46,7 @@ export function Landscape() {
       <div className="panel">
         <header><h2>Landscape</h2><span className="small muted">comparable offerings, how this project would use them, and what is built here · docs/LANDSCAPE.md</span></header>
         <div className="body small" style={{ paddingBottom: 0 }}>
-          Fungible Recipes is not a workflow engine. It is the market and settlement layer for sealed workflows that other people pay to run. Where others already provide a piece, the plan is to integrate, not compete.
+          Sealed Recipes is not a workflow engine. It is the market and settlement layer for sealed workflows that other people pay to run. Where others already provide a piece, the plan is to integrate, not compete.
         </div>
         <div className="body" style={{ overflowX: 'auto' }}>
           <table className="small landscape">

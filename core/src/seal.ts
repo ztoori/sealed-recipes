@@ -11,7 +11,7 @@ import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 import { canonicalJson, sha256Hex } from './canonical.js';
 
 export interface SealedEnvelope {
-  v: 'frs-seal-v1';
+  v: 'srs-seal-v1';
   alg: 'x25519-xsalsa20poly1305';
   purpose: 'recipe' | 'inputs' | 'output' | 'state' | 'creator-copy';
   to: string; // runner X25519 public key (hex)
@@ -45,12 +45,12 @@ export function seal(payload: unknown, runnerEncPkHex: string, purpose: SealedEn
   const msg = utf8ToBytes(canonicalJson({ salt, payload }));
   const ct = nacl.box(msg, nonce, to, eph.secretKey);
   eph.secretKey.fill(0);
-  return { v: 'frs-seal-v1', alg: 'x25519-xsalsa20poly1305', purpose, to: runnerEncPkHex, epk: bytesToHex(eph.publicKey), nonce: b64.enc(nonce), ct: b64.enc(ct) };
+  return { v: 'srs-seal-v1', alg: 'x25519-xsalsa20poly1305', purpose, to: runnerEncPkHex, epk: bytesToHex(eph.publicKey), nonce: b64.enc(nonce), ct: b64.enc(ct) };
 }
 
 /** Only callable where the runner's secret key lives (inside the TEE). */
 export function open<T = unknown>(env: SealedEnvelope, runnerEncSecretKey: Uint8Array): T {
-  if (env.v !== 'frs-seal-v1') throw new Error('unsupported envelope version');
+  if (env.v !== 'srs-seal-v1') throw new Error('unsupported envelope version');
   const pt = nacl.box.open(b64.dec(env.ct), b64.dec(env.nonce), hexToBytes(env.epk), runnerEncSecretKey);
   if (!pt) throw new Error('decryption failed: envelope was not sealed to this enclave or was tampered with');
   return (JSON.parse(new TextDecoder().decode(pt)) as { payload: T }).payload;

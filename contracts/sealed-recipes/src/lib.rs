@@ -1,4 +1,4 @@
-//! # Fungible Recipes
+//! # Sealed Recipes
 //!
 //! Sealed no-code workflows ("recipes") composed from third-party parts, sold
 //! pay-per-run through NEAR Intents and executed by an attested TEE runner.
@@ -30,11 +30,11 @@ mod tests;
 
 pub const RUN_TIMEOUT_NS: u64 = 15 * 60 * 1_000_000_000;
 pub const MAX_PROTOCOL_FEE_BPS: u16 = 1_000;
-pub const EVENT_STANDARD: &str = "fungible-recipes";
+pub const EVENT_STANDARD: &str = "sealed-recipes";
 pub const EVENT_VERSION: &str = "1.0.0";
-pub const SIGNED_MESSAGE_PREFIX: &str = "frs-run-v3";
-pub const QUOTE_MESSAGE_PREFIX: &str = "frs-quote-v3";
-pub const CHECKPOINT_MESSAGE_PREFIX: &str = "frs-ckpt-v1";
+pub const SIGNED_MESSAGE_PREFIX: &str = "srs-run-v3";
+pub const QUOTE_MESSAGE_PREFIX: &str = "srs-quote-v3";
+pub const CHECKPOINT_MESSAGE_PREFIX: &str = "srs-ckpt-v1";
 /// Accepted `settle_mode` values: settle everything at the end, or bill parts at checkpoints.
 pub const SETTLE_MODES: [&str; 2] = ["final", "checkpoint"];
 const GAS_FT_TRANSFER: Gas = Gas::from_tgas(10);
@@ -334,7 +334,7 @@ fn parse_ed25519(pk: &str) -> [u8; 32] {
 /// Accepted `report_run` outcomes.
 pub const OUTCOMES: [&str; 3] = ["ok", "fail", "abort"];
 
-/// The exact UTF-8 message a runner signs for `report_run` (frs-run-v3).
+/// The exact UTF-8 message a runner signs for `report_run` (srs-run-v3).
 pub fn run_report_message(
     contract_id: &str,
     run_id: &str,
@@ -357,7 +357,7 @@ pub fn run_report_message(
     )
 }
 
-/// The exact UTF-8 message a runner signs for `checkpoint_run` (frs-ckpt-v1).
+/// The exact UTF-8 message a runner signs for `checkpoint_run` (srs-ckpt-v1).
 pub fn checkpoint_message(
     contract_id: &str,
     run_id: &str,
@@ -388,7 +388,7 @@ fn multiset_minus(from: &[String], remove: &[String]) -> Option<Vec<String>> {
     Some(left)
 }
 
-/// The exact UTF-8 message a runner signs for a quote (frs-quote-v3). It binds the quote to
+/// The exact UTF-8 message a runner signs for a quote (srs-quote-v3). It binds the quote to
 /// the recipe version, the job, the buyer's sealed inputs, the buyer and the price, so it can't be
 /// replayed for another version, another job, another input set, another account or another price.
 pub fn quote_message(
@@ -1158,7 +1158,7 @@ impl Contract {
         self.set_run_status(&run_id, RunStatus::Settled);
 
         emit(
-            "frs_settlement",
+            "srs_settlement",
             json!({
                 "run_id": run_id,
                 "recipe_id": recipe.id,
@@ -1308,7 +1308,7 @@ impl Contract {
         Promise::new(self.payment_token.clone())
             .function_call(
                 "ft_transfer".to_string(),
-                json!({"receiver_id": account, "amount": U128(amount), "memo": "fungible-recipes withdraw"})
+                json!({"receiver_id": account, "amount": U128(amount), "memo": "sealed-recipes withdraw"})
                     .to_string()
                     .into_bytes(),
                 NearToken::from_yoctonear(1),

@@ -28,8 +28,8 @@ export async function loadKeys(mode: string, devKeyFile: string, composeHash: st
     // Imported lazily: the SDK is only installed inside the runner container (runner/package.json).
     const { DstackClient } = (await import('@phala/dstack-sdk' as string)) as { DstackClient: new () => { getKey(p: string, purpose?: string): Promise<{ key: Uint8Array }>; getQuote(rd: Uint8Array): Promise<{ quote: string }>; info(): Promise<{ compose_hash?: string }> } };
     const c = new DstackClient();
-    const sk = await c.getKey('fungible-recipes/runner/sign', 'ed25519-seed');
-    const ek = await c.getKey('fungible-recipes/runner/enc', 'x25519-seed');
+    const sk = await c.getKey('sealed-recipes/runner/sign', 'ed25519-seed');
+    const ek = await c.getKey('sealed-recipes/runner/enc', 'x25519-seed');
     const info = await c.info();
     const sign = nacl.sign.keyPair.fromSeed(sha256(sk.key));
     const box = nacl.box.keyPair.fromSecretKey(sha256(ek.key));

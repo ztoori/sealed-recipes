@@ -57,7 +57,7 @@ export function Trust() {
         <div className="panel">
           <header><h2>What is real in local mode</h2></header>
           <div className="body small grid" style={{ gap: 6 }}>
-            <div><span className="pill ok">real</span> FRS-1 validation, sealing (X25519/XSalsa20-Poly1305), ed25519 run reports, settlement math, guarantee-deposit accounting and market-driven pricing (same vectors as the Rust contract)</div>
+            <div><span className="pill ok">real</span> SRS-1 validation, sealing (X25519/XSalsa20-Poly1305), ed25519 run reports, settlement math, guarantee-deposit accounting and market-driven pricing (same vectors as the Rust contract)</div>
             <div><span className="pill ok">real</span> the runner's HTTP calls use the exact request shapes of FastNEAR, NEAR RPC, 1Click and NEAR AI Cloud</div>
             <div><span className="pill ok">real</span> NEAR AI chat signatures: secp256k1, EIP-191, recovered and matched to the attested address</div>
             {mode && Object.entries(mode.services).map(([k, v]) => <div key={k}><span className="pill warn">local</span> {k}: {String(v)}</div>)}

@@ -1,5 +1,5 @@
 import type { Nep413Payload, SignedNep413 } from '../../core/src/nep413.js';
-import type { PartManifest } from '../../core/src/frs.js';
+import type { PartManifest } from '../../core/src/srs.js';
 
 export interface Holding {
   owner: string;

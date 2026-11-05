@@ -45,7 +45,7 @@ export const ACCOUNTS = [
   { id: 'scanlabs.testnet', role: 'Part author' },
   { id: 'dana.testnet', role: 'Trader' },
   { id: 'tee-runner-1.testnet', role: 'TEE runner' },
-  { id: 'frs-treasury.testnet', role: 'Protocol' },
+  { id: 'srs-treasury.testnet', role: 'Protocol' },
 ];
 
 export const ASSET_LABEL: Record<string, string> = {

@@ -7,7 +7,7 @@ export function Wallet() {
   const [ev] = usePoll<any>('/api/chain/events?last=600', 3000);
   const income = (ev?.events ?? []).flatMap((e: any) => {
     const d = e.data[0];
-    if (e.event === 'frs_settlement') return [...(d.buyer === acting && d.compensation !== '0' ? [{ what: 'shortfall paid from the guarantee deposit', ref: d.recipe_id, amount: Number(d.compensation), tx: e.tx_hash }] : []), ...d.payouts.filter((x: any) => x.account_id === acting).map((x: any) => ({ what: x.role.startsWith('part:') ? `part fee (${x.role.slice(5).split('@')[0]})` : x.role.replace('_', ' '), ref: d.recipe_id, amount: Number(x.amount), tx: e.tx_hash }))];
+    if (e.event === 'srs_settlement') return [...(d.buyer === acting && d.compensation !== '0' ? [{ what: 'shortfall paid from the guarantee deposit', ref: d.recipe_id, amount: Number(d.compensation), tx: e.tx_hash }] : []), ...d.payouts.filter((x: any) => x.account_id === acting).map((x: any) => ({ what: x.role.startsWith('part:') ? `part fee (${x.role.slice(5).split('@')[0]})` : x.role.replace('_', ' '), ref: d.recipe_id, amount: Number(x.amount), tx: e.tx_hash }))];
     return [];
   }).reverse();
   const tx = async (method: string, args: Record<string, unknown>, ok: string) => {

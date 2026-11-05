@@ -1,6 +1,6 @@
 ---------------------------- MODULE BondedRuns ----------------------------
 (***************************************************************************)
-(* The run / quote / bond lifecycle of Fungible Recipes, including a buyer *)
+(* The run / quote / bond lifecycle of Sealed Recipes, including a buyer *)
 (* who tries to drain the recipe's bond.                                   *)
 (*                                                                         *)
 (* Actors and what they control in this model:                            *)

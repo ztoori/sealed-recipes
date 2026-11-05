@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ReactFlow, Background, Controls, Handle, Position, applyNodeChanges, type Connection, type Edge, type Node, type NodeChange, type NodeProps, type EdgeChange, ReactFlowProvider, useReactFlow } from '@xyflow/react';
-import { compatibleSwaps, swapPart, validateRecipe, withdrawalRisk, type PartManifest, type Catalog, type Recipe, type FormField } from '../../../core/src/frs';
+import { compatibleSwaps, swapPart, validateRecipe, withdrawalRisk, type PartManifest, type Catalog, type Recipe, type FormField } from '../../../core/src/srs';
 import { api, money, usd, usePoll } from '../api';
 import { useApp } from '../App';
 import { SealModal } from '../components/SealModal';
@@ -16,7 +16,7 @@ const CAT_ORDER = ['source', 'guard', 'transform', 'action', 'sink'];
 const CAT_LABEL: Record<string, string> = { source: 'Sources', guard: 'Guards', transform: 'Transforms', action: 'Actions', sink: 'Outputs' };
 
 function blank(): Recipe {
-  return { frs: '1.0', kind: 'recipe', meta: { ticker: '', name: 'Untitled recipe', creator: 'chef.testnet', description: '' }, form: [], nodes: [], output: '', listing: { price_per_run: '500000', reserve_bps: 1000, pricing: { price_floor: '300000', price_ceiling: '1000000', target_runs: 2 } } };
+  return { srs: '1.0', kind: 'recipe', meta: { ticker: '', name: 'Untitled recipe', creator: 'chef.testnet', description: '' }, form: [], nodes: [], output: '', listing: { price_per_run: '500000', reserve_bps: 1000, pricing: { price_floor: '300000', price_ceiling: '1000000', target_runs: 2 } } };
 }
 
 type PartData = { manifest: PartManifest; label: string; errors: number };
@@ -114,7 +114,7 @@ function ComposeInner() {
   };
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    const id = e.dataTransfer.getData('application/frs-part'); const m = manifests.get(id); if (!m) return;
+    const id = e.dataTransfer.getData('application/srs-part'); const m = manifests.get(id); if (!m) return;
     addPart(m, rf.screenToFlowPosition({ x: e.clientX, y: e.clientY }));
   };
 
@@ -187,7 +187,7 @@ function ComposeInner() {
           <div key={c}>
             <div className="cat">{CAT_LABEL[c]}</div>
             {(catalog?.parts ?? []).filter((b) => b.category === c).map((b) => (
-              <div key={b.id} className="item" draggable onDragStart={(e) => e.dataTransfer.setData('application/frs-part', b.id)} onDoubleClick={() => addPart(b)} title={b.summary} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && addPart(b)}>
+              <div key={b.id} className="item" draggable onDragStart={(e) => e.dataTransfer.setData('application/srs-part', b.id)} onDoubleClick={() => addPart(b)} title={b.summary} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && addPart(b)}>
                 <b>{b.name}</b><span>{b.author} · {usd(b.fee_per_call, 2)} per call</span>
               </div>
             ))}
@@ -296,7 +296,7 @@ function FormInspector({ recipe, setRecipe, types }: { recipe: Recipe; setRecipe
   const [id, setId] = useState(''); const [label, setLabel] = useState(''); const [type, setType] = useState('near.account');
   return (
     <div className="panel">
-      <header><h2>Buyer form</h2><span className="small muted">FRS-1 recommends six fields or fewer</span></header>
+      <header><h2>Buyer form</h2><span className="small muted">SRS-1 recommends six fields or fewer</span></header>
       <div className="body grid" style={{ gap: 8 }}>
         {recipe.form.map((f) => (
           <div key={f.id} className="row between small"><span><b>{f.label}</b> <span className="muted">{f.id}: {f.type}</span></span>

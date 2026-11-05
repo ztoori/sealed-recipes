@@ -1,5 +1,5 @@
 export * from './canonical.js';
-export * from './frs.js';
+export * from './srs.js';
 export * from './seal.js';
 export * from './settlement.js';
 export * from './pricing.js';

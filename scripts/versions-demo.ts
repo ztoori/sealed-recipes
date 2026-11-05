@@ -2,7 +2,7 @@
  * Versioned recipes with notice, against a running demo (`npm run demo`, or `npm run test:versions`).
  *
  * The creator of SWPR ships version 2 (tighter slippage). It is announced on-chain and takes effect only after the
- * notice period (FRS_UPDATE_DELAY_S, 30 s in the demo; 24 h suggested on mainnet), so buyers see
+ * notice period (SRS_UPDATE_DELAY_S, 30 s in the demo; 24 h suggested on mainnet), so buyers see
  * it coming. The script checks that:
  *   - an announcement can be cancelled, and a new one scheduled;
  *   - during the notice period, quotes and runs use version 1;

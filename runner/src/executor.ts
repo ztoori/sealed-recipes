@@ -1,5 +1,5 @@
 import { hashObject } from '../../core/src/canonical.js';
-import { validateRecipe, type Catalog, type Recipe, type FormField } from '../../core/src/frs.js';
+import { validateRecipe, type Catalog, type Recipe, type FormField } from '../../core/src/srs.js';
 import type { ApprovalRequest, ApprovalResult, PartHandler, Emit, Endpoints } from './types.js';
 import { enforceLimits } from './limits.js';
 import { walletScanner } from './parts/wallet-scanner.js';
@@ -90,7 +90,7 @@ export interface ExecResult { ok: boolean; output: unknown; partsUsed: string[];
 
 export async function execute(runId: string, recipe: Recipe, inputs: Record<string, unknown>, deps: ExecDeps): Promise<ExecResult> {
   const v = validateRecipe(recipe, deps.catalog);
-  if (!v.ok) throw new Error('sealed recipe failed FRS-1 validation: ' + v.diagnostics.map((d) => d.message).join('; '));
+  if (!v.ok) throw new Error('sealed recipe failed SRS-1 validation: ' + v.diagnostics.map((d) => d.message).join('; '));
   const inErr = validateInputs(recipe.form, inputs);
   if (inErr.length) throw new Error(inErr.join('; '));
   const values = new Map<string, unknown>(); // "<node>.<port>" | "form.x" | "const.x"
@@ -115,7 +115,7 @@ export async function execute(runId: string, recipe: Recipe, inputs: Record<stri
       const t0 = Date.now();
       const resumeHere = deps.resume?.node === nodeId ? deps.resume.partState : undefined;
       deps.emit('part_start', { node: nodeId, part: m.id, name: m.name, author: m.author, fee: m.fee_per_call, resumed: resumeHere !== undefined });
-      // per-run resource limits declared in the manifest (FRS-1 §2.2); exceeding one fails the run → buyer refunded
+      // per-run resource limits declared in the manifest (SRS-1 §2.2); exceeding one fails the run → buyer refunded
       const out = await enforceLimits(m, guardedFetch(m.id, m.capabilities, deps.rewrites), (http, approval) => handler(partInputs, {
         nodeId, manifest: m, params, http,
         log: (msg, data) => deps.emit('part_log', { node: nodeId, msg, data }),

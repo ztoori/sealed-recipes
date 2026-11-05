@@ -1,5 +1,5 @@
 /**
- * Per-run resource limits (FRS-1 §2.2). Each part declares max wall time, HTTP calls, model calls and output
+ * Per-run resource limits (SRS-1 §2.2). Each part declares max wall time, HTTP calls, model calls and output
  * size. The runner enforces them; a part that goes over fails the run, and the contract refunds the buyer.
  * Time spent waiting for the buyer's wallet approval does not count against max_ms.
  *
@@ -9,7 +9,7 @@
  * tries to start afterwards. A hostile part could still burn CPU in a tight loop; untrusted third-party parts
  * would run as WASM with fuel metering (see docs/THREAT_MODEL.md), which is not built here.
  */
-import type { PartManifest } from '../../core/src/frs.js';
+import type { PartManifest } from '../../core/src/srs.js';
 
 export const MODEL_HOSTS = new Set(['cloud-api.near.ai']);
 

@@ -11,7 +11,7 @@ from common import BPS, U128, Ctx
 
 
 def settlement(c: Ctx, price, bps, runner, fees, rbps):
-    """contracts/fungible-recipes/src/settlement.rs :: settlement_split (contract v5)
+    """contracts/sealed-recipes/src/settlement.rs :: settlement_split (contract v5)
 
     Returns the split and `ok`, the condition under which Rust returns Some: both bps values are at most 10000,
     the fixed fees fit in the price, and every checked operation stays below 2^128.
@@ -27,7 +27,7 @@ def settlement(c: Ctx, price, bps, runner, fees, rbps):
                 conds=conds)
 
 
-# ---- bonds (contracts/fungible-recipes/src/bond.rs) ----
+# ---- bonds (contracts/sealed-recipes/src/bond.rs) ----
 
 def bond_lock(c: Ctx, available, locked, cover):
     """bond::lock — Some iff available >= cover."""
@@ -58,7 +58,7 @@ def bond_deposit(c: Ctx, available, locked, amount):
     return dict(ok=available + amount < U128, available=available + amount, locked=locked)
 
 
-# ---- market-driven pricing (contracts/fungible-recipes/src/pricing.rs, contract v6) ----
+# ---- market-driven pricing (contracts/sealed-recipes/src/pricing.rs, contract v6) ----
 
 MAX_PRICE = 10**30
 MAX_TARGET_RUNS = 1_000_000

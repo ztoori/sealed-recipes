@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { seal, sealedHash, type SealedEnvelope } from '../../../core/src/seal';
-import { publicListing, type Catalog, type Recipe } from '../../../core/src/frs';
+import { publicListing, type Catalog, type Recipe } from '../../../core/src/srs';
 import { verifyRunnerAttestation } from '../../../core/src/attestation';
 import { creatorKeyFromSignature, creatorKeyMessage, demoWalletSign } from '../../../core/src/creator';
 import type { Check } from '../../../core/src/nearai';
