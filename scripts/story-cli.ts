@@ -42,7 +42,7 @@ const inputs = { wallet: 'bob.testnet', threshold_usd: 25, target: USDC_NEAR, re
 console.log('  job: "Clean up my wallet"', JSON.stringify({ ...inputs, recipient: fresh.account.slice(0, 12) + '… (fresh, generated client-side)' }));
 const before = await api<{ wallet: { symbol: string; balance: string; decimals: number }[] }>('/api/account/bob.testnet');
 const job = await postJob('job.wallet-cleanup@1.0.0', inputs, runner.onchain, 'bob.testnet');
-for (const qt of job.quotes) if (!qt.ok) console.log(`  quote ${qt.listing.ticker.padEnd(5)} rejected: ${qt.error}`); else console.log(`  quote ${qt.listing.ticker.padEnd(5)} expects ${usd(qt.expected).padStart(9)}  promises ${usd(qt.promised).padStart(9)} (bond covers ${usd(qt.cover ?? '0')})  price ${usd(qt.listing.price_per_run)}  ${qt.listing.privacy.padEnd(12)} risk ${qt.listing.risk}`);
+for (const qt of job.quotes) if (!qt.ok) console.log(`  quote ${qt.listing.ticker.padEnd(5)} rejected: ${qt.error}`); else console.log(`  quote ${qt.listing.ticker.padEnd(5)} expects ${usd(qt.expected).padStart(9)}  promises ${usd(qt.promised).padStart(9)} (deposit covers ${usd(qt.cover ?? '0')})  price ${usd(qt.price)} (signed; band ${usd(qt.listing.price_floor)}–${usd(qt.listing.price_ceiling)})  ${qt.listing.privacy.padEnd(12)} risk ${qt.listing.risk}`);
 const policy = { requirePrivacy: 'confidential' as const, maxRisk: 'medium' as const, sort: 'net' as const };
 const chosen = pickQuote(job.quotes, policy);
 if (!chosen) { console.error('✘ no quote satisfies the policy'); process.exit(1); }

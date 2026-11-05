@@ -126,6 +126,9 @@ Among the offerings above, as far as their public documentation shows:
   are paid in the same settlement, with conservation proved.
 - **FRS-1 typed parts.** Swappable parts with typed ports, capability limits, resource limits, and disclosure of model,
   instructions, harness and verification with a withdrawal-risk label.
+- **Market-driven prices for workflows.** Each recipe's price per run follows its demand inside a band its creator
+  sets (an EIP-1559-style rule, on-chain and proved), and quotes lock the price; recipes for one job type compete on
+  price and promised value like solvers. CRE and n8n-style tools price compute, not outcomes.
 - **No investment features.** Buyers pay for a service and creators post collateral; there are no shares, dividends,
   tokens or trading, so nothing in the product is plausibly a security and any wallet can use it.
 - **Durable runs with partial settlement.** Runs survive runner crashes with exactly-once deposits; in checkpoint mode

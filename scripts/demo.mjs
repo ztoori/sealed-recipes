@@ -20,6 +20,8 @@ const base = `http://127.0.0.1:${PORT}`;
 const node = process.execPath;
 const tsx = ['--import', 'tsx'];
 const children = [];
+// the pricing test uses short periods so the market visibly moves within a minute
+if (process.argv.includes('--pricing')) process.env.FRS_PRICE_PERIOD_S ??= '15';
 const RUNNER_TOKEN = randomBytes(24).toString('hex'); // marketplace ↔ runner job channel
 
 let stopping = false;
@@ -70,7 +72,7 @@ if (seed.status) shutdown(seed.status);
 
 console.log(`\n  Fungible Recipes is running →  ${base}\n  (local mode: offline mocks for FastNEAR / RPC / 1Click / NEAR AI Cloud; see README "What is real")\n  Ctrl+C to stop.\n`);
 
-for (const [flag, script] of [['--crash-test', 'scripts/crash-test.ts'], ['--versions', 'scripts/versions-demo.ts'], ['--atomic', 'scripts/atomic-demo.ts']]) {
+for (const [flag, script] of [['--crash-test', 'scripts/crash-test.ts'], ['--versions', 'scripts/versions-demo.ts'], ['--atomic', 'scripts/atomic-demo.ts'], ['--pricing', 'scripts/pricing-demo.ts']]) {
   if (!args.has(flag)) continue;
   // async (not spawnSync): the launcher must stay responsive to restart the runner while the script runs
   const status = await new Promise((done) => spawn(node, [...tsx, script], { cwd: root, stdio: 'inherit', env: { ...process.env, FRS_URL: base } }).on('exit', (c) => done(c ?? 1)));

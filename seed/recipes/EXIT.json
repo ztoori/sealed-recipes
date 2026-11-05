@@ -87,10 +87,6 @@
     }
   },
   "output": "swap.receipts",
-  "listing": {
-    "price_per_run": "1500000",
-    "reserve_bps": 1000,
-    "bond": "40000000"
-  },
+  "listing": {"price_per_run": "1500000", "reserve_bps": 1000, "bond": "40000000", "pricing": {"price_floor": "900000", "price_ceiling": "3000000", "target_runs": 1}},
   "implements": "job.wallet-exit@1.0.0"
 }

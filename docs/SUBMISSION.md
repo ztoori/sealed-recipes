@@ -28,21 +28,22 @@ Deadline: **Nov 14, 2026, 23:59 UTC** (6:59 pm Toronto). Submissions open Nov 1,
 | Repository link | *your public GitHub URL* |
 | Demo post link | *your X post URL* |
 | Website | leave empty |
-| Project description (1999 / 2000 chars) | see below |
+| Project description (1982 / 2000 chars) | see below |
 
 ```text
-Problem: businesses and AI agents run on workflows that chain tools, bots and models. The workflow (which parts, in what order, with which prompts and thresholds) is the edge, but it is protected only by NDAs, easy to copy, hard to compare on results, and the builders of its parts are rarely paid.
+Problem: businesses and AI agents run on workflows that chain tools, bots and models. The workflow (which parts, in what order, with which prompts) is the edge, but it is easy to copy, hard to compare on results, and its parts' builders are rarely paid.
 
 Fungible Recipes is intents for workflows, on NEAR:
 - Post a job: a buyer, or an agent, fills one short form for a standard job type, sealed to an attested TEE runner.
-- Compete: every recipe that does that job quotes from a dry run inside the TEE: expected value, a runner-signed promise backed by the creator's guarantee deposit, price, privacy and a withdrawal-risk label. Buyers compare results, not methods; recipes stay sealed. Unserved jobs become open demand for builders.
+- Compete: every recipe that does that job quotes from a dry run inside the TEE: expected value, a runner-signed promise backed by the creator's guarantee deposit, a signed price, privacy and withdrawal risk. Buyers compare results, not methods.
+- Market prices: each recipe's price follows its own demand inside a creator-set band (EIP-1559 rule, on-chain, proved); a quote locks it.
 - Pay with NEAR Intents from any chain: a 1Click EXACT_OUTPUT quote delivers the exact run price to our contract via ft_transfer_call, carrying the signed quote.
-- Run privately: parts (code, specialist agents, NEAR AI Cloud private models) run under per-part resource limits; swaps use confidential intents to a fresh address; quotes, logs and results are sealed back to a key in their browser.
+- Run privately: parts (code, agents, NEAR AI Cloud private models) run under resource limits; swaps use confidential intents to a fresh address; results are sealed to the buyer's browser.
 - Settle once: the contract verifies the runner's signed report and pays the protocol, the runner, every part author and the creator in one receipt, and pays any shortfall to the buyer from the deposit. Quotes are single-use and bound to buyer and job; a re-check before execution aborts and refunds if the wallet was emptied, so the deposit can't be drained.
 - FRS-1, a no-code standard: typed, swappable parts that disclose model, instructions, harness and withdrawal risk.
 - No investment features: pay per run, creators post collateral; no shares, tokens or trading.
 
-Includes: Rust NEAR contract (93 tests) with Z3/TLA+ proofs of its money, deposit, durable-run and version logic, a TS mirror on shared vectors, the TEE runner, an agent buyer, the UI, an e2e story, a live-check against real 1Click and NEAR AI Cloud.
+Includes: Rust NEAR contract (105 tests) with Z3/TLA+ proofs of its money, pricing, durable-run and version logic, a TS mirror on shared vectors, the TEE runner, an agent buyer, the UI, an e2e story, a live-check against real 1Click and NEAR AI Cloud.
 ```
 
 ## 3. X demo post
@@ -70,7 +71,7 @@ Built at NEAR HACKATHON @NEARProtocol #NEARHackathon
 
 3/ Bob posts "Clean up my wallet". SWPR quotes more USDC but is public and sweeps his wNEAR; CLNP is confidential, backed by a $25 deposit. He picks CLNP, pays $0.75 from Arbitrum, gets $28.02 vs $27.81 promised. 5 part authors, the runner and the creator: one receipt.
 
-4/ Repo (MIT, 127 tests + formal proofs, one-command demo, agent buyer included): <repo link>
+4/ Repo (MIT, 143 tests + formal proofs, one-command demo, agent buyer included): <repo link>
 Question for builders: which workflow would you seal and let compete first?
 ```
 
@@ -106,4 +107,4 @@ Optional tags: @NearLegion @NearBuilders.
 | Job form and quotes | "A buyer posts one short job. Every recipe that does it quotes from a sealed dry run: expected value, a signed promise, price, privacy and risk. SWPR offers more but is public; Bob picks CLNP." |
 | Intents payment, execution | "He pays seventy-five cents from Arbitrum through NEAR Intents. The runner checks the commitments, quarantines two scam airdrops and routes four confidential swaps to a fresh address." |
 | Settlement | "One receipt pays five builders, the runner and the creator, and tops up the guarantee deposit. Delivery beat the promise, so the deposit stays untouched." |
-| Recipes, Trust | "Each recipe shows its on-chain track record and the deposit behind its quotes. No shares, no tokens: you pay for a run. Every proof is on the Trust page." |
+| Recipes, Trust | "Prices are set by demand: a busy recipe gets dearer, an idle one cheaper, inside its creator's band, by an on-chain rule we proved. Each recipe shows its track record and the deposit behind its quotes. No shares, no tokens: you pay for a run." |

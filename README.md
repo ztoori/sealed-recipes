@@ -41,15 +41,35 @@ Businesses and agents run on workflows that chain several tools, bots and AI cal
    | verification | open, sealed or closed |
 
    Parts on open-weights models are labelled **low** withdrawal risk, because anyone can re-host the weights. Parts on closed models are **high** risk, because their provider can retire, change or reprice the model at any time.
-2. **Creators compose recipes** in a no-code canvas, declare which job type they compete for, back their quotes with a guarantee deposit, and publish the recipe sealed.
+2. **Creators compose recipes** in a no-code canvas, declare which job type they compete for, set a **price band** (floor, ceiling and a target number of paid runs per period), back their quotes with a guarantee deposit, and publish the recipe sealed.
 3. **Buyers post a job.** They fill one short form, sealed once to the attested runner. Every recipe implementing the job type quotes from a dry run inside the runner, with:
    - the value it expects to deliver, a conservative **signed promise**, and how much of it the guarantee deposit covers;
-   - its price, privacy, withdrawal risk and on-chain track record.
+   - its **price**, signed into the quote: the recipe's current market price (below), locked for this job;
+   - its privacy, withdrawal risk and on-chain track record.
+
+   A buyer or agent can set a **max price**: recipes listed above it aren't even asked to quote, and the contract refuses to charge more.
 
    Each quote is sealed to the buyer's browser, which checks the runner's signature before paying. The signature binds the quote to that buyer, that job and that recipe version, and it can be used once. Recipes stay sealed: buyers compare results, not methods. A job nobody serves yet is recorded as **open demand** for builders.
 4. **The buyer picks a quote and pays** from any chain through NEAR Intents. The signed promise travels with the payment, so the contract can enforce it (it is then public on-chain; a buyer who prefers privacy can choose "No guarantee" and skip the promise and the bond).
 5. **The sealed workflow runs.** First the runner re-prices the job: if the wallet changed since the quote, it aborts and refunds instead of letting the deposit pay for an emptied wallet (`npm run attack:drain` shows this). Each part runs under declared limits on time, HTTP calls, model calls and output size; a run that goes over is cancelled and refunded. Part logs, wallet requests and the result leave the runner encrypted to a one-time key in the buyer's browser.
 6. **One settlement** pays the protocol, the runner, every part author used and the creator. A share of the creator's cut that the creator chose (`reserve_bps`) tops up the recipe's guarantee deposit. Delivery is checked against the promise, and any shortfall is paid to the buyer from the deposit, up to the cover in the quote.
+
+### Market-driven prices
+
+There is no fixed price list. Each recipe's price per run follows demand inside the band its creator set, using the same rule Ethereum uses for its base fee (EIP-1559), applied on-chain:
+- the contract counts paid runs per pricing period (1 hour suggested on mainnet; 2 minutes in the demo);
+- when a period ends, more runs than the target raise the price by up to 12.5%, fewer lower it by up to 12.5%;
+- the price never leaves the band, and the floor must cover every fee, so any price the market reaches still settles.
+
+Recipes for the same job type compete like solvers: the buyer compares their signed prices against the value each one promises. A recipe with no direct rival still gets a market price from its own demand. The rule's bounds, direction and monotonicity are proved with Z3 for every input, and the Rust contract and TypeScript mirror reproduce the model's vectors exactly.
+
+![A recipe's market price following its demand](docs/media/12-market-price.png)
+
+```bash
+npm run test:pricing    # SAFE with 15-second periods: 4 buyers pay in one period (twice the target) -> +12.5%;
+                        # the next quote locks the new price; settlement pays exactly it; a buyer's max price
+                        # excludes SAFE; two idle periods pull it back toward the floor
+```
 
 ## Try it in two minutes (no keys, no network needed)
 
@@ -178,16 +198,17 @@ This is a design choice, not legal advice: anyone launching this commercially sh
 
 The money logic and the protocol are machine-checked, not only tested ([verification/README.md](verification/README.md)):
 
-- **Z3 proofs (58 theorems)** for every input in the u128 range:
+- **Z3 proofs (66 theorems)** for every input in the u128 range:
   - settlement conserves the price exactly, to the unit, for 0 to 8 parts (also when parts are paid at checkpoints), the creator's reserve is the creator's own money, and a split never fails once the fees fit the price;
-  - guarantee-deposit accounting can't be overdrawn, and its ledger invariant (including reserves added at settlement) holds by induction over any history.
+  - guarantee-deposit accounting can't be overdrawn, and its ledger invariant (including reserves added at settlement) holds by induction over any history;
+  - market prices stay in the creator's band, move at most 12.5% a period, move the way demand points and never fall as demand rises, never overflow, and every price in the band covers the fees.
 - **Three TLA+ models**, checked exhaustively by TLC:
   - the bond lifecycle with an adversarial buyer: bond conservation, single-use quotes and **no bond drain**, over 22.7M states;
   - durable runs with a runner that crashes at any point: **deposits exactly once**, every part paid exactly once, and the run always finishes;
   - versions with notice: every run executes the version it paid for, and no version goes live early.
 
   Each model also has a variant without the safeguard (the old bond rule, no write-ahead checkpoint, a vault that keeps only the current version), and TLC is expected to find a counterexample in each.
-- **Conformance vectors** generated by the proved models (400 settlement cases, 200 deposit operations) must be reproduced exactly by both the Rust contract and the TypeScript mirror. This keeps the proofs tied to the shipped code.
+- **Conformance vectors** generated by the proved models (400 settlement cases, 200 deposit operations, 300 price updates) must be reproduced exactly by both the Rust contract and the TypeScript mirror. This keeps the proofs tied to the shipped code.
 
 The proofs found three real bugs, all fixed:
 - a way to drain the bond by depositing less than asked after the re-check (TLA+; the model and the fix are still here);
@@ -203,11 +224,11 @@ npm run verify:tla      # also the TLC model check (~10 min; Java + tla2tools.ja
 ## Tests
 
 ```bash
-npm test                # 34 TypeScript tests: settlement and bond vectors; quote signatures and expiry;
+npm test                # 38 TypeScript tests: settlement, bond and pricing vectors; quote signatures and expiry;
                         # event parity with the contract; FRS-1 typing, swaps, job types and withdrawal risk;
                         # sealing; per-part resource limits; EIP-191; 1Click shapes; attestation; capability guard; code hash
-npm run test:rust       # 93 Rust tests for the NEAR contract (same vectors, conformance with the proved models,
-                        # versions with notice, checkpoints and partial settlement)
+npm run test:rust       # 105 Rust tests for the NEAR contract (same vectors, conformance with the proved models,
+                        # market pricing, versions with notice, checkpoints and partial settlement)
 npm run typecheck
 npm run live-check      # optional, needs internet: real 1Click dry quotes (incl. confidential), FastNEAR, NEAR RPC,
                         # and with NEAR_AI_API_KEY a real TEE-signed NEAR AI Cloud completion, verified
@@ -248,7 +269,8 @@ The runner never sees mock-specific code. It always builds URLs for the real hos
 
 - **NEAR smart contract** (`contracts/fungible-recipes`):
   - a part and runner registry, and sealed recipe commitments;
-  - pay-per-run escrow, with signed quotes checked by `env::ed25519_verify`;
+  - pay-per-run escrow, with signed quotes (including their price) checked by `env::ed25519_verify`;
+  - market-driven list prices per recipe (an EIP-1559-style rule inside a creator-set band);
   - guarantee deposits (performance bonds) that compensate shortfalls, and an on-chain track record per recipe;
   - one-receipt settlement with NEP-297 events;
 - **NEAR Intents / 1Click**:
@@ -282,7 +304,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · threat model: [docs/THR
 ## Repository map
 
 ```
-contracts/fungible-recipes/   Rust NEAR contract + 93 unit tests
+contracts/fungible-recipes/   Rust NEAR contract + 105 unit tests
 contracts/test-vectors/       settlement and bond vectors shared by Rust and TS; conformance vectors from the proofs
 verification/                 Z3 proofs (settlement, billing, guarantee deposits), TLA+ models (bonds, durable runs, versions), results
 core/src/                     FRS-1 (parts, disclosure, job types), sealing, settlement, ledger mirror, job hashing, clients, attestation
@@ -313,11 +335,14 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 - **Durable storage is in-memory in the demo.** The vault and checkpoint store would be a database or IPFS in production, keyed by `sealed_hash` and run id. The runner and the contract already behave as if it were durable.
 - **One runner.** Runners are approved by the contract owner. A permissionless set of staked runners, and recipes sealed to several of them, are next.
 - **No triggers or schedules yet.** A run starts when a buyer pays. A workflow can wait inside a run (`time.wait`), but nothing starts a run on a timer or an on-chain event.
-- **Not deployed yet.** The contract has 93 unit tests and the same vectors as the mirror, but it was not built to wasm or deployed from our build machine (no wasm target, no NEAR RPC access). Deploy commands are in [contracts/fungible-recipes/README.md](contracts/fungible-recipes/README.md).
+- **Not deployed yet.** The contract has 105 unit tests and the same vectors as the mirror, but it was not built to wasm or deployed from our build machine (no wasm target, no NEAR RPC access). Deploy commands are in [contracts/fungible-recipes/README.md](contracts/fungible-recipes/README.md).
 - **No live chain adapter or wallet.** The server talks to the in-process mirror. A NEAR RPC adapter and near-connect are the main pieces missing for testnet.
 - **The runner is trusted to measure delivery.** Guarantee deposits pay out on the runner's signed `delivered` value. That is sound only as far as the runner is attested; on-chain DCAP verification of the runner is the next step.
 - **Quotes cost compute.** Dry runs are capped at 5 recipes per job and 12 jobs per minute per client. A small quote fee would be the on-chain version.
 - **Supplier risk.** Bundled parts can't be switched off by their author, but remote and closed-model parts can. FRS-1 labels this risk; fallback parts, notice periods and supplier bonds are planned.
+- **Thin markets.** Head-to-head price competition needs several recipes per job type; there are 3 job types and 6 recipes today. A niche recipe's price moves with its own demand only.
+- **Demand can be faked, at a cost.** A creator can pay for their own runs to push the price up. Each fake run costs the protocol, runner and part fees, and the price rises at most 12.5% a period while buyers simply pick a cheaper rival or set a max price. Counting only quoted runs from distinct buyers would make it harder.
+- **Unquoted payments can miss a price change.** A payment without a quote is charged the list price when it arrives; if that rose since the payment was quoted, the payment is credited back to the buyer (never overcharged). Paying with a signed quote locks the price.
 - **Spam.** No storage deposits yet.
 - **What 1Click sees.** Confidential intents hide the deposit-to-payout link from chain observers, not from the 1Click service. See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 

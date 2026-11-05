@@ -6,11 +6,11 @@ Contract v5 removed revenue shares, dividends and the share auction (see the mai
 
 | What | Tool | Result |
 |---|---|---|
-| Settlement split (0–8 parts), partial settlement at checkpoints, guarantee-deposit (bond) accounting | Z3 4.x SMT, unbounded integers in the u128 range | 58 theorems, all proved for all inputs |
+| Settlement split (0–8 parts), partial settlement at checkpoints, guarantee-deposit (bond) accounting, market-driven pricing (v6) | Z3 4.x SMT, unbounded integers in the u128 range | 66 theorems: 64 proved for all inputs, 2 reachability witnesses found as expected |
 | Run / quote / bond lifecycle with an adversarial buyer | TLA+ / TLC | 7 invariants hold over 22,748,834 distinct states; the old rule is caught violating `NoBondDrain` |
 | Durable runs: crashes anywhere, resume from checkpoints, partial billing | TLA+ / TLC | `DepositsOnce`, `PaidExactlyOnce` and liveness `EventuallyDone` hold (all 313 states); without the write-ahead checkpoint TLC finds a double deposit |
 | Recipe versions with notice and the vault | TLA+ / TLC | `NoticeRespected`, `ExecutesPaidVersion` and `NoStrandedRun` hold (13,622 states); keeping only the current version strands runs |
-| The proved models match the shipped code | Conformance vectors | 400 settlement and 200 deposit cases, replayed by the Rust contract and the TypeScript mirror |
+| The proved models match the shipped code | Conformance vectors | 400 settlement, 200 deposit and 300 pricing cases, replayed by the Rust contract and the TypeScript mirror |
 
 ```bash
 pip install z3-solver
@@ -44,6 +44,23 @@ For recipes with 1, 3 and 5 parts and any subset of parts already billed at chec
 - A deposit (a top-up, or a settlement's reserve) only adds to `available` and leaves locked cover untouched.
 - Compensation is exactly `min(max(0, promised − delivered), cover)`. A covered shortfall is paid in full.
 - **Inductive ledger invariant over unbounded histories:** `locked = Σ cover of pending runs` and `deposited = available + locked + withdrawn + compensated`. It is preserved by deposit, withdraw, lock, refund, settle, and settle with the creator's reserve added.
+
+### Market-driven pricing (`models.py :: next_price` ⇔ `src/pricing.rs`, contract v6)
+
+For every list price, demand (`runs` < 2^64), target (1..10^6) and band (`floor <= ceiling <= 10^30`):
+- **Never overflows.** Every checked operation in `next_price` fits in u128.
+- **Stays in the band.** `floor <= next price <= ceiling`, whatever the starting price.
+- **Bounded step.** From a price in the band, one period moves it by at most 1/8 (12.5%) either way.
+- **Right direction.** `runs >= target` never lowers the price; `runs <= target` never raises it.
+- **Monotone in demand.** More paid runs in a period never give a lower next price.
+- **Every price in the band is viable.** If the floor covers the protocol fee on itself plus runner and part fees (checked at publish and `set_pricing`), so does every price `>= floor`.
+
+Two extra checks make sure both branches of the rule are reachable under the hypotheses (Z3 finds a witness with
+`runs > target` and one with `runs < target`). They were added after a near-miss: the first encoding computed both
+branches' divisions unconditionally, and a division with a negative numerator has no solution, so the hypotheses
+quietly excluded every case but `runs == target`. The vacuity check did not catch it (`runs == target` is satisfiable);
+a mutation did (a 25% step still "proved"). The fixed encoding clamps both numerators at 0, and the same mutation now
+fails `step-at-most-12.5%`.
 
 ### Protocol (`tla/BondedRuns.tla`)
 
@@ -104,15 +121,16 @@ The Rust contract (`conformance_*` tests) and the TypeScript mirror must reprodu
 
 Mutation checks confirm the link works. Each of these deliberate bugs is caught:
 - paying the creator one unit more in the model fails 21 theorems;
+- a 25% price step in the pricing model fails `step-at-most-12.5%`;
 - rounding the reserve up in the Rust contract fails `conformance_settlement_matches_proved_model`.
 
 Every proof also checks that its hypotheses are satisfiable, so nothing can pass vacuously.
 
 ## What is *not* proven (stated plainly)
 
-- **The compiled Rust itself.** These are proofs about models that are line-by-line transcriptions of the Rust and are tied to it by conformance tests, not proofs over the compiled code. The next step is [Kani](https://github.com/model-checking/kani) harnesses on `settlement.rs` and `bond.rs`. Kani needs a nightly toolchain that this build environment could not download.
+- **The compiled Rust itself.** These are proofs about models that are line-by-line transcriptions of the Rust and are tied to it by conformance tests, not proofs over the compiled code. The next step is [Kani](https://github.com/model-checking/kani) harnesses on `settlement.rs`, `bond.rs` and `pricing.rs`. Kani needs a nightly toolchain that this build environment could not download.
 - **The protocol beyond the models' bounds.** The bonds model uses 2 runs and wallets up to 3. The durable model uses 1 run, 3 parts and 3 crashes. The versions model uses 3 versions, 2 runs and 6 time steps. TLC is exhaustive within these bounds.
 - **The durable store itself.** The models assume the marketplace's checkpoint store is durable once it acknowledges a write. In the demo it is in memory.
 - **Signatures, hashing and TEE attestation.** These are assumed sound (ed25519, sha256, Intel TDX). In the model, a quote "binds the buyer" because the contract verifies a signature.
-- **The runner, the marketplace server, the web UI, the local mocks and external services.** They are covered by tests (34 TypeScript, 93 Rust, an end-to-end story, an attack script, crash, version and atomicity suites), not by proofs. Formal proof is not meaningful for a UI or for third-party APIs.
+- **The runner, the marketplace server, the web UI, the local mocks and external services.** They are covered by tests (38 TypeScript, 105 Rust, an end-to-end story, an attack script, crash, version and atomicity suites), not by proofs. Formal proof is not meaningful for a UI or for third-party APIs.
 - **Market moves in the seconds between the re-check and execution.** These are not insured by the bond, by design.

@@ -2,6 +2,7 @@ export * from './canonical.js';
 export * from './frs.js';
 export * from './seal.js';
 export * from './settlement.js';
+export * from './pricing.js';
 export * from './ledger.js';
 export * from './oneclick.js';
 export * from './nearai.js';

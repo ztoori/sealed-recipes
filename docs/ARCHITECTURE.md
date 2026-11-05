@@ -14,7 +14,7 @@
 A buyer, or an agent acting for one, seals a job once to the attested runner (`{inputs, salt, reply_to}`) and posts it with `job_hash`. The marketplace fans it out, capped and rate-limited, to every listed recipe that implements the job type. For each one the runner:
 1. checks the sealed recipe against its on-chain hash and its parts against the on-chain parts list;
 2. runs it in quote mode (read-only; swaps priced with dry 1Click quotes);
-3. measures the job's value metric, sets `cover = min(promised, bond_available)`, and signs `frs-quote-v2` (bound to the recipe version, job, sealed inputs and buyer) with the same key that later signs run reports;
+3. measures the job's value metric, sets `cover = min(promised, bond_available)`, and signs `frs-quote-v3` at the recipe's current list price (bound to the recipe version, job, sealed inputs, buyer and price) with the same key that later signs run reports;
 4. seals the whole quote to the buyer's `reply_to` key. The marketplace adds the public listing facts (price, privacy and risk labels it computes from the on-chain parts, track record) and relays the ciphertext.
 
 The buyer's client opens each quote, verifies the runner signature against the exact message the contract will check, and compares expected value, the signed promise and cover, price, privacy, withdrawal risk and track record. It pays the chosen recipe with the quote attached (or with no quote: no guarantee, nothing written on-chain about the wallet's value). The contract verifies the quote, marks it used and locks `cover` from the bond. Before executing, the runner re-prices the job and aborts with a refund if the wallet no longer supports the quote. At settlement the contract compares `delivered` with `promised` and pays any shortfall from the locked cover.
@@ -98,7 +98,7 @@ Each run keeps the version it paid for. The marketplace vault stores every versi
 | Plaintext recipe, inputs, intermediate values | runner memory, inside the TEE | nobody else | during execution |
 | Runner keys | dstack KMS inside the TEE | nobody | for the runner's lifetime |
 
-## Money flow (CLNP, $0.75 per run)
+## Money flow (CLNP at a list price of $0.75 per run)
 
 | Payee | Rule | Amount |
 |---|---|---|
@@ -108,11 +108,27 @@ Each run keeps the version it paid for. The marketplace vault stores every versi
 | Creator | the remainder, minus the reserve | $0.5085 |
 | Guarantee deposit | `reserve_bps` (10% for CLNP) of the remainder, added to `bond_available` | $0.0565 |
 
-Publishing is rejected unless `price ≥ protocol + runner + Σ part fees`. Fees cannot be changed after a recipe is published, so a published recipe can never go under water. The five lines sum to the price exactly, proved for every input (verification/).
+Publishing is rejected unless the price floor covers `protocol(floor) + runner + Σ part fees`, so every price the market can reach covers the fees too. Fees cannot be changed after a recipe is published, so a published recipe can never go under water. The five lines sum to the price exactly, proved for every input (verification/).
+
+## Market-driven prices
+
+The price of a run is set by demand for that recipe, not by a trading market in anything. The contract counts paid runs per pricing period and moves each recipe's list price toward its demand at every period boundary, inside the band its creator set (EIP-1559's base-fee rule: at most ±12.5% a period, `src/pricing.rs`). Ended periods are applied lazily by the next payment, or by a keeper calling `update_price`; views always show the price a payment made now would pay.
+
+A quote signs the list price at quote time into the quote (`frs-quote-v3`), so the buyer pays exactly what they compared, even if the price moves before payment. Competition happens per job type: every recipe implementing the job quotes, and buyers or agents compare `expected value - price`. A buyer's `max_price` filters recipes before any dry run is spent on them, and the contract enforces it.
+
+```mermaid
+flowchart LR
+  P[paid runs in period] --> R{end of period}
+  R -- "runs > target" --> U[price + up to 12.5%]
+  R -- "runs < target" --> D[price - up to 12.5%]
+  U --> C[clamp to floor..ceiling]
+  D --> C
+  C --> Q[next quotes sign this price]
+```
 
 ## Track record instead of a share price
 
-There is no tradable asset, so there is no market price to read a recipe's quality from. Buyers and agents compare recipes on what the contract records instead: runs, refunds and aborts, delivered value against signed promises, compensation paid, the guarantee deposit backing new quotes, and the version history. A recipe with a real edge (CLNP: private AI guard + confidential routing) can charge more per run than a public copycat (SWPR) and still win jobs on net value. Nobody has to reveal the recipe for that comparison.
+There is no tradable asset, so a recipe's quality has to be read from what the contract records rather than from an asset price. Buyers and agents compare recipes on what the contract records instead: runs, refunds and aborts, delivered value against signed promises, compensation paid, the guarantee deposit backing new quotes, and the version history. A recipe with a real edge (CLNP: private AI guard + confidential routing) can charge more per run than a public copycat (SWPR) and still win jobs on net value. Nobody has to reveal the recipe for that comparison.
 
 The guarantee deposit is the creator's collateral. Each quote locks part of it as cover; a shortfall is paid from that cover in the run's settlement, the rest is released. It grows by top-ups (`ft_transfer_call` with `{"action":"bond"}`) and by the creator's `reserve_bps` share of each run, and only the creator can withdraw the unlocked part. It pays no return and nobody but shorted buyers can claim from it. Revenue shares, dividends and batch auctions existed in earlier builds and were removed so that no part of the product is an investment (git tag `archive/revenue-shares`).
 

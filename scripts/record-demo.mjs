@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Records the demo video + screenshots used in the X post and README.
- *   1. npm run demo   (in another terminal; restart it first so CLNP is not yet listed)
- *   2. node scripts/record-demo.mjs        → docs/media/demo.mp4 (needs ffmpeg) + docs/media/*.png
+ *   1. FRS_PRICE_PERIOD_S=20 npm run demo   (in another terminal; restart it first so CLNP is not yet listed)
+ *   2. npm run pricing-demo                 (real paid runs, so the market-price shot has history to show)
+ *   3. node scripts/record-demo.mjs        → docs/media/demo.mp4 (needs ffmpeg) + docs/media/*.png
  * Needs Playwright with Chromium: `npx playwright install chromium` if you don't have it.
  */
 import { createRequire } from 'node:module';
@@ -59,6 +60,8 @@ await page.selectOption('select[aria-label="Acting as account"]', 'chef.testnet'
 await page.getByRole('button', { name: 'Wallet', exact: true }).click(); await page.waitForTimeout(2500); await shot('08-wallet.png');
 await page.getByRole('button', { name: 'Trust & privacy', exact: true }).click(); await page.waitForTimeout(3500); await shot('09-trust.png');
 await page.getByRole('button', { name: 'Landscape', exact: true }).click(); await page.waitForTimeout(2500); await shot('11-landscape.png');
+await page.getByRole('button', { name: 'Recipes', exact: true }).click(); await page.waitForTimeout(1200);
+await page.getByText('Scam airdrop audit').first().click(); await page.waitForTimeout(3000); await shot('12-market-price.png');
 await page.getByRole('button', { name: 'Compose', exact: true }).click(); await page.waitForTimeout(800);
 await page.getByText('Load “Dust sweeper”').click(); await page.waitForTimeout(1200);
 await page.locator('.react-flow__node').filter({ hasText: 'Allowlist Shield' }).click(); await page.waitForTimeout(1200);

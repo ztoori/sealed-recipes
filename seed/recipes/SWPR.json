@@ -98,10 +98,6 @@
     }
   ],
   "output": "swap.receipts",
-  "listing": {
-    "price_per_run": "200000",
-    "reserve_bps": 500,
-    "bond": "10000000"
-  },
+  "listing": {"price_per_run": "200000", "reserve_bps": 500, "bond": "10000000", "pricing": {"price_floor": "100000", "price_ceiling": "500000", "target_runs": 2}},
   "implements": "job.wallet-cleanup@1.0.0"
 }

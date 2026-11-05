@@ -5,7 +5,8 @@ Writes test vectors computed *by the models the proofs are about* (verification/
 tests and the TypeScript mirror tests must reproduce every vector exactly, so a proof can't silently drift away
 from the code it describes.
 
-  contracts/test-vectors/conformance-money.json    settlement v5 (incl. overflow and bad bps -> None), bonds
+  contracts/test-vectors/conformance-money.json    settlement v5 (incl. overflow and bad bps -> None), bonds,
+                                                   market pricing v6 (incl. out-of-range -> None)
 
 Deterministic (fixed seed): re-running it must leave the file unchanged (`npm run verify` checks this).
 The v4 auction, dividend and solvency vectors are archived in archive/revenue-shares-2026-11-04/.
@@ -18,7 +19,7 @@ import sys
 from pathlib import Path
 
 from common import BPS, U128, Ctx
-from models import bond_deposit, bond_lock, bond_release, bond_settle, settlement
+from models import MAX_PRICE, bond_deposit, bond_lock, bond_release, bond_settle, next_price, settlement
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "contracts" / "test-vectors"
@@ -72,7 +73,18 @@ def money_vectors():
                    if r["ok"] and r["available"] < U128 else None)
             bonds.append({"op": op, "available": str(av), "locked": str(lk), "amount": str(x), "promised": str(pr),
                           "delivered": str(dl), "expected": exp})
-    return {"source": "verification/smt/models.py (the models proved in prove_money.py)", "settlement": st, "bonds": bonds}
+    pricing = []
+    for k in range(300):
+        price = rnd.choice([0, 1, 7, 8, 999, rnd.randint(0, 5_000_000), rnd.randint(0, 10**18), MAX_PRICE, MAX_PRICE + 1])
+        floor = rnd.choice([0, price // 2, price, rnd.randint(0, 2_000_000)])
+        ceiling = rnd.choice([price, price * 2, floor, MAX_PRICE, MAX_PRICE + 1, rnd.randint(0, 10**7)])
+        target = rnd.choice([0, 1, 2, 3, 10, 1_000_000, 1_000_001, rnd.randint(1, 1000)])
+        runs = rnd.choice([0, 1, target, 2 * target, 2 * target + 5, rnd.randint(0, 3 * target + 3), 2**64 - 1])
+        r = next_price(C, price, runs, target, floor, ceiling)
+        pricing.append({"price": str(price), "runs": runs, "target": target, "floor": str(floor), "ceiling": str(ceiling),
+                        "expected": None if r["price"] is None else str(r["price"])})
+    return {"source": "verification/smt/models.py (the models proved in prove_money.py)", "settlement": st, "bonds": bonds,
+            "pricing": pricing}
 
 
 def main():

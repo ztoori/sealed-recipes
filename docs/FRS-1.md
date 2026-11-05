@@ -131,7 +131,7 @@ The validator also returns `partsUsed` (the billable list, in execution order), 
 `ticker, name, creator, description, form, parts, capabilities, output_type, price_per_run, reserve_bps, interface_hash`.
 Wiring, params and consts are **not** included, so the listing shows what a buyer must provide and which builders get paid, but not how the recipe works.
 
-`listing.reserve_bps` (0–10000) is the share of the creator's cut of each run that is added to the recipe's guarantee deposit instead of paid out. `listing.bond` is the deposit the creator posts at publish. Both are the creator's own collateral; a listing has no shares, supply or other investment fields.
+`listing.pricing` (`{price_floor, price_ceiling, target_runs}`) makes the price market-driven: `price_per_run` is the starting list price, which then follows paid runs per period inside the band (contract v6). Omitted, the price is fixed. `listing.reserve_bps` (0–10000) is the share of the creator's cut of each run that is added to the recipe's guarantee deposit instead of paid out. `listing.bond` is the deposit the creator posts at publish. Both are the creator's own collateral; a listing has no shares, supply or other investment fields.
 
 ## 5. Sealing
 
@@ -169,11 +169,12 @@ A recipe opts in with `"implements": "job.wallet-cleanup@1.0.0"`. The validator 
 1. **Post.** The buyer seals `{inputs, salt, reply_to}` once to the attested runner and posts it with
    `job_hash = sha256(canonical({inputs, salt}))`. The random salt means the on-chain hash can't be brute-forced back to the wallet.
 2. **Quote.** For each listed recipe implementing the type (capped), the runner checks the recipe against its on-chain hash and the job against `job_hash`. It then runs the recipe in **quote mode**: read-only, swaps priced with dry 1Click quotes, no approvals. The output is measured with the job's metric (value in payment-token units): `expected` from expected outputs, and `promised` from the post-slippage minimums. The runner signs
-   `frs-quote-v2|<contract>|<recipe>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<expected>|<promised>|<cover>|<expires_ns>`,
-   where `inputs_hash` is the hash of the sealed job the buyer will pay with and `cover = min(promised, bond_available)`.
+   `frs-quote-v3|<contract>|<recipe>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<price>|<expected>|<promised>|<cover>|<expires_ns>`,
+   where `inputs_hash` is the hash of the sealed job the buyer will pay with, `price` is the recipe's current market price (locked for this job), and `cover = min(promised, bond_available)`.
+   A job may carry a `max_price`: recipes listed above it are not asked to quote.
    The whole quote is sealed to `reply_to`; the marketplace relays ciphertext, and the buyer's client checks the signature before paying.
 3. **Choose.** The buyer, or an agent's policy, compares expected value, promise, price, privacy, withdrawal risk and the on-chain track record.
-4. **Pay.** The signed quote rides in the run payment's `customRecipientMsg` (so its values become public; paying without a quote is always allowed and keeps them private). The contract checks, in order: `job_hash` format, recipe version, runner active, signature, expiry, single use, `cover ≤ promised`, `bond_available ≥ cover`; then it locks `cover`.
+4. **Pay.** The signed quote rides in the run payment's `customRecipientMsg` (so its values become public; paying without a quote is always allowed and keeps them private). The contract checks the price (in the recipe's band, at most the buyer's `max_price`), then, in order: `job_hash` format, recipe version, runner active, signature, expiry, single use, `cover ≤ promised`, `bond_available ≥ cover`; then it locks `cover`.
 5. **Re-check.** Right before executing, the runner re-prices the job in quote mode. If the fresh promise is below 98% of the quoted one (the wallet changed), it signs `abort`: the buyer is refunded and the cover goes back to the bond.
 6. **Settle.** The runner measures `delivered` (for bonded runs, credited with any value the buyer withheld after the re-check: drained funds or deposits smaller than asked count at their quoted minimum, so the bond insures the market, not the buyer's own choices) and signs `frs-run-v3|…|ok|…|<delivered>|…`. The contract pays `min(max(0, promised − delivered), cover)` to the buyer from the locked cover, updates the recipe's track record and releases the rest.
 

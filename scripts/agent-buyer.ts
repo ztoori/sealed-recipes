@@ -17,10 +17,11 @@ const all: Record<string, unknown> = { wallet: 'carol.testnet', threshold_usd: 3
 const jt = (await api<{ id: string; inputs: Record<string, unknown> }[]>('/api/jobs')).find((j) => j.id === jobType);
 if (!jt) throw new Error('unknown job type ' + jobType);
 const inputs = Object.fromEntries(Object.keys(jt.inputs).map((k) => [k, all[k]]));
-const job = await postJob(jobType, inputs, runner.onchain, 'carol.testnet');
+// the agent's budget travels with the job: recipes listed above it are not even asked to quote
+const job = await postJob(jobType, inputs, runner.onchain, 'carol.testnet', undefined, BigInt(Math.round(policy.maxPriceUsd * 1e6)));
 if (job.open_demand) { console.log(`[agent] no recipe implements ${jobType} yet: recorded as open demand`); process.exit(0); }
-for (const q of job.quotes) console.log(`[agent] quote ${q.listing.ticker}: ${q.ok ? `expects ${usd(q.expected)}, promises ${usd(q.promised)}, price ${usd(q.listing.price_per_run)}, ${q.listing.privacy}, risk ${q.listing.risk}` : 'failed: ' + q.error}`);
-const pick = pickQuote(job.quotes.filter((q) => Number(q.listing.price_per_run) <= policy.maxPriceUsd * 1e6), policy);
+for (const q of job.quotes) console.log(`[agent] quote ${q.listing.ticker}: ${q.ok ? `expects ${usd(q.expected)}, promises ${usd(q.promised)}, price ${usd(q.price ?? q.listing.price_per_run)}, ${q.listing.privacy}, risk ${q.listing.risk}` : 'failed: ' + q.error}`);
+const pick = pickQuote(job.quotes.filter((q) => Number(q.price ?? q.listing.price_per_run) <= policy.maxPriceUsd * 1e6), policy);
 if (!pick) { console.log('[agent] no quote meets my policy; not buying'); process.exit(0); }
 console.log(`[agent] policy picks ${pick.listing.ticker}`);
 const r = await api<{ run_id: string; run_token: string }>('/api/runs/quote', { recipe_id: pick.listing.ticker, buyer: 'carol.testnet', pay_asset: 'nep141:wrap.near', refund_to: 'carol.testnet', sealed_inputs: job.sealed_job, signed_quote: signedQuote(pick) });

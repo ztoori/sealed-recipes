@@ -33,12 +33,12 @@ export interface OpenedQuote extends QuoteBody { verified: boolean; problem?: st
 
 /**
  * Open a sealed quote and check it the way the contract will: the runner's signature over the exact message
- * (contract, recipe, recipe version, job, sealed inputs, buyer, values, cover, expiry). A quote that fails here
+ * (contract, recipe, recipe version, job, sealed inputs, buyer, price, values, cover, expiry). A quote that fails here
  * would be rejected on-chain, so clients drop it before paying.
  */
 export function openQuote(sealed: SealedEnvelope, replySecret: Uint8Array, ctx: { contractId: string; recipeId: string; signingPk: string; buyer: string; inputsHash: string; jobHash: string }): OpenedQuote {
   const b = open<QuoteBody>(sealed, replySecret);
-  const fields: QuoteFields = { sealed_hash: b.sealed_hash, job_hash: b.job_hash, expected: b.expected, promised: b.promised, cover: b.cover, expires_ns: b.expires_ns };
+  const fields: QuoteFields = { sealed_hash: b.sealed_hash, job_hash: b.job_hash, price: b.price, expected: b.expected, promised: b.promised, cover: b.cover, expires_ns: b.expires_ns };
   const problem =
     b.recipe_id !== ctx.recipeId ? 'quote is for a different recipe'
     : b.buyer !== ctx.buyer ? 'quote is bound to a different buyer'

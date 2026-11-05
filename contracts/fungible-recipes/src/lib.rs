@@ -5,7 +5,8 @@
 //! Every run is settled in one receipt: protocol fee, runner fee, part fees,
 //! then the creator. A recipe can set aside `reserve_bps` of the creator's
 //! remainder into its guarantee deposit (`bond_available`), which backs quotes.
-//! There are no shares, dividends or order books (v5).
+//! There are no shares, dividends or order books (v5). Each recipe's price per run follows
+//! demand inside a band its creator sets (v6, `pricing.rs`), and a signed quote can lock a price.
 //!
 //! Canonical interface: `docs/CONTRACT_SPEC.md`.
 
@@ -20,6 +21,7 @@ use near_sdk::{
 use serde_json::json;
 
 pub mod bond;
+pub mod pricing;
 pub mod settlement;
 pub use settlement::{protocol_fee, settlement_split, Split};
 
@@ -31,7 +33,7 @@ pub const MAX_PROTOCOL_FEE_BPS: u16 = 1_000;
 pub const EVENT_STANDARD: &str = "fungible-recipes";
 pub const EVENT_VERSION: &str = "1.0.0";
 pub const SIGNED_MESSAGE_PREFIX: &str = "frs-run-v3";
-pub const QUOTE_MESSAGE_PREFIX: &str = "frs-quote-v2";
+pub const QUOTE_MESSAGE_PREFIX: &str = "frs-quote-v3";
 pub const CHECKPOINT_MESSAGE_PREFIX: &str = "frs-ckpt-v1";
 /// Accepted `settle_mode` values: settle everything at the end, or bill parts at checkpoints.
 pub const SETTLE_MODES: [&str; 2] = ["final", "checkpoint"];
@@ -117,6 +119,26 @@ pub struct Recipe {
     /// Announced next version (`""` when none). Takes effect at `update_effective_ns`.
     pub pending_sealed_hash: String,
     pub update_effective_ns: U64,
+    // ---- v6: market-driven pricing (`price_per_run` is the current list price) ----
+    /// Lowest list price; at least the minimum viable price (protocol + runner + part fees).
+    pub price_floor: U128,
+    /// Highest list price.
+    pub price_ceiling: U128,
+    /// Paid runs per period at which the list price holds steady.
+    pub target_runs: u32,
+    /// Start of the current pricing period.
+    pub period_start_ns: U64,
+    /// Paid runs counted in the current period.
+    pub period_runs: u64,
+}
+
+/// Creator-set pricing band (v6). Omitted at publish: a fixed price (floor = ceiling = price).
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct PricingInput {
+    pub price_floor: U128,
+    pub price_ceiling: U128,
+    pub target_runs: u32,
 }
 
 #[near(serializers = [json, borsh])]
@@ -190,6 +212,7 @@ pub struct ConfigView {
     pub protocol_account: AccountId,
     pub protocol_fee_bps: u16,
     pub update_delay_ns: U64,
+    pub price_period_ns: U64,
 }
 
 /// A runner-signed quote attached to a run payment (recipe intents).
@@ -199,6 +222,8 @@ pub struct QuoteMsg {
     /// The recipe version that was quoted; must equal the recipe's current `sealed_hash`.
     pub sealed_hash: String,
     pub job_hash: String,
+    /// Price per run this quote locks in (v6); must lie within the recipe's floor and ceiling.
+    pub price: U128,
     pub expected: U128,
     pub promised: U128,
     /// Amount of the promise the bond guarantees; `cover <= promised`.
@@ -211,6 +236,7 @@ pub struct QuoteMsg {
 /// `msg` accepted by `ft_on_transfer`.
 #[near(serializers = [json])]
 #[serde(tag = "action", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)] // parsed once per call; boxing would complicate the serde shape
 pub enum TransferMsg {
     Run {
         recipe_id: String,
@@ -223,6 +249,9 @@ pub enum TransferMsg {
         /// Optional signed quote; when present the run is backed by the recipe's bond.
         #[serde(default)]
         quote: Option<QuoteMsg>,
+        /// Most the buyer will pay (v6): the run is rejected if the price is above it.
+        #[serde(default)]
+        max_price: Option<U128>,
     },
     /// Adds to a recipe's bond, which backs its quotes.
     Bond {
@@ -248,6 +277,8 @@ pub struct Contract {
     used_quotes: LookupSet<Vec<u8>>,
     /// Notice period before an announced recipe version takes effect.
     update_delay_ns: u64,
+    /// Length of a pricing period (v6).
+    price_period_ns: u64,
 }
 
 fn emit(event: &str, data: serde_json::Value) {
@@ -357,9 +388,9 @@ fn multiset_minus(from: &[String], remove: &[String]) -> Option<Vec<String>> {
     Some(left)
 }
 
-/// The exact UTF-8 message a runner signs for a quote (frs-quote-v2). It binds the quote to
-/// the recipe version, the job, the buyer's sealed inputs and the buyer, so it can't be
-/// replayed for another version, another job, another input set or another account.
+/// The exact UTF-8 message a runner signs for a quote (frs-quote-v3). It binds the quote to
+/// the recipe version, the job, the buyer's sealed inputs, the buyer and the price, so it can't be
+/// replayed for another version, another job, another input set, another account or another price.
 pub fn quote_message(
     contract_id: &str,
     recipe_id: &str,
@@ -367,13 +398,14 @@ pub fn quote_message(
     job_hash: &str,
     inputs_hash: &str,
     buyer: &str,
+    price: u128,
     expected: u128,
     promised: u128,
     cover: u128,
     expires_ns: u64,
 ) -> String {
     format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         QUOTE_MESSAGE_PREFIX,
         contract_id,
         recipe_id,
@@ -381,6 +413,7 @@ pub fn quote_message(
         job_hash,
         inputs_hash,
         buyer,
+        price,
         expected,
         promised,
         cover,
@@ -420,11 +453,13 @@ impl Contract {
         protocol_account: AccountId,
         protocol_fee_bps: u16,
         update_delay_ns: U64,
+        price_period_ns: U64,
     ) -> Self {
         require!(
             protocol_fee_bps <= MAX_PROTOCOL_FEE_BPS,
             "protocol fee too high"
         );
+        require!(price_period_ns.0 > 0, "price_period_ns must be > 0");
         Self {
             owner,
             payment_token,
@@ -437,6 +472,7 @@ impl Contract {
             balances: LookupMap::new(StorageKey::Balances),
             used_quotes: LookupSet::new(StorageKey::UsedQuotes),
             update_delay_ns: update_delay_ns.0,
+            price_period_ns: price_period_ns.0,
         }
     }
 
@@ -517,6 +553,7 @@ impl Contract {
         price_per_run: U128,
         reserve_bps: u16,
         settle_mode: Option<String>,
+        pricing: Option<PricingInput>,
     ) {
         require!(valid_ticker(&id), "recipe id must match ^[A-Z0-9]{3,6}$");
         let settle_mode = settle_mode.unwrap_or_else(|| "final".to_string());
@@ -533,21 +570,24 @@ impl Contract {
             .get(&runner_id)
             .unwrap_or_else(|| env::panic_str("unknown runner"));
         require!(runner.active, "runner inactive");
-        let mut fixed = protocol_fee(price_per_run.0, self.protocol_fee_bps) + runner.fee_per_run.0;
+        let pricing = pricing.unwrap_or(PricingInput {
+            price_floor: price_per_run,
+            price_ceiling: price_per_run,
+            target_runs: 1,
+        });
+        let mut fees = runner.fee_per_run.0;
         for part_id in &parts {
             let part = self
                 .parts
                 .get(part_id)
                 .unwrap_or_else(|| env::panic_str(&format!("unknown part {}", part_id)));
             require!(part.active, "part inactive");
-            fixed += part.fee_per_call.0;
+            fees += part.fee_per_call.0;
         }
+        self.check_pricing(&pricing, fees);
         require!(
-            price_per_run.0 >= fixed,
-            format!(
-                "price_per_run below minimum viable price {} (protocol + runner + part fees)",
-                fixed
-            )
+            pricing.price_floor.0 <= price_per_run.0 && price_per_run.0 <= pricing.price_ceiling.0,
+            "price_per_run must be within price_floor and price_ceiling"
         );
         let creator = env::predecessor_account_id();
         let recipe = Recipe {
@@ -573,9 +613,109 @@ impl Contract {
             version: 1,
             pending_sealed_hash: String::new(),
             update_effective_ns: U64(0),
+            price_floor: pricing.price_floor,
+            price_ceiling: pricing.price_ceiling,
+            target_runs: pricing.target_runs,
+            period_start_ns: U64(env::block_timestamp()),
+            period_runs: 0,
         };
         emit("recipe_published", json!(recipe));
         self.recipes.insert(id, recipe);
+    }
+
+    /// Validates a pricing band: `floor` must cover the protocol fee on itself plus the runner and
+    /// part fees (the protocol fee only grows with the price, so every price >= floor is viable).
+    fn check_pricing(&self, p: &PricingInput, fees: u128) {
+        require!(
+            p.target_runs >= 1 && p.target_runs <= pricing::MAX_TARGET_RUNS,
+            "target_runs must be 1..=1000000"
+        );
+        require!(p.price_floor.0 <= p.price_ceiling.0, "price_floor must be <= price_ceiling");
+        require!(p.price_ceiling.0 <= pricing::MAX_PRICE, "price_ceiling too high");
+        let fixed = protocol_fee(p.price_floor.0, self.protocol_fee_bps) + fees;
+        require!(
+            p.price_floor.0 >= fixed,
+            format!(
+                "price_floor below minimum viable price {} (protocol + runner + part fees)",
+                fixed
+            )
+        );
+    }
+
+    /// Creator changes the pricing band. The list price is first brought up to date, then
+    /// clamped into the new band; the current period's count carries over.
+    pub fn set_pricing(&mut self, id: String, pricing: PricingInput) {
+        let r = self
+            .recipes
+            .get(&id)
+            .unwrap_or_else(|| env::panic_str("unknown recipe"))
+            .clone();
+        require!(env::predecessor_account_id() == r.creator, "creator only");
+        let runner = self.runners.get(&r.runner_id).unwrap_or_else(|| env::panic_str("unknown runner"));
+        let mut fees = runner.fee_per_run.0;
+        for part_id in &r.parts {
+            fees += self.parts.get(part_id).map(|p| p.fee_per_call.0).unwrap_or(0);
+        }
+        self.check_pricing(&pricing, fees);
+        self.roll_price(&id);
+        let r = self.recipes.get_mut(&id).unwrap();
+        r.price_floor = pricing.price_floor;
+        r.price_ceiling = pricing.price_ceiling;
+        r.target_runs = pricing.target_runs;
+        r.price_per_run = U128(r.price_per_run.0.clamp(pricing.price_floor.0, pricing.price_ceiling.0));
+        emit(
+            "pricing_updated",
+            json!({"recipe_id": id, "price_floor": r.price_floor, "price_ceiling": r.price_ceiling,
+                   "target_runs": r.target_runs, "price": r.price_per_run}),
+        );
+    }
+
+    /// Anyone may apply ended pricing periods (a keeper keeps `price_updated` events timely; a
+    /// payment would apply them anyway). Returns the current list price.
+    pub fn update_price(&mut self, id: String) -> U128 {
+        require!(self.recipes.contains_key(&id), "unknown recipe");
+        self.roll_price(&id);
+        self.recipes.get(&id).unwrap().price_per_run
+    }
+
+    /// The recipe with every ended pricing period applied (pure).
+    fn rolled(&self, r: &Recipe) -> (Recipe, u64) {
+        let (price, start, ended) = pricing::roll(
+            r.price_per_run.0,
+            r.period_runs,
+            r.period_start_ns.0,
+            self.price_period_ns,
+            env::block_timestamp(),
+            r.target_runs,
+            r.price_floor.0,
+            r.price_ceiling.0,
+        )
+        .unwrap_or_else(|| env::panic_str("pricing out of range"));
+        let mut out = r.clone();
+        if ended > 0 {
+            out.price_per_run = U128(price);
+            out.period_start_ns = U64(start);
+            out.period_runs = 0;
+        }
+        (out, ended)
+    }
+
+    /// Applies ended pricing periods to storage; emits `price_updated` when the price moved.
+    fn roll_price(&mut self, id: &str) {
+        let Some(r) = self.recipes.get(id) else { return };
+        let (next, ended) = self.rolled(r);
+        if ended == 0 {
+            return;
+        }
+        let (previous, runs) = (r.price_per_run, r.period_runs);
+        if next.price_per_run.0 != previous.0 {
+            emit(
+                "price_updated",
+                json!({"recipe_id": id, "previous": previous, "price": next.price_per_run,
+                       "periods": U64(ended), "runs": U64(runs), "target_runs": next.target_runs}),
+            );
+        }
+        self.recipes.insert(id.to_string(), next);
     }
 
     /// Announces a new sealed version. It takes effect `update_delay_ns` later, so buyers get
@@ -667,13 +807,15 @@ impl Contract {
                 inputs_hash,
                 on_behalf_of,
                 quote,
+                max_price,
             } => {
                 let owner = on_behalf_of.clone().unwrap_or_else(|| sender_id.clone());
-                // a due recipe update takes effect before this payment is checked against it
+                // a due recipe update and ended pricing periods take effect before this payment is checked
                 self.activate_due(&recipe_id);
+                self.roll_price(&recipe_id);
                 (
                     on_behalf_of,
-                    self.internal_request_run(owner, amount.0, recipe_id, run_id, inputs_hash, quote),
+                    self.internal_request_run(owner, amount.0, recipe_id, run_id, inputs_hash, quote, max_price),
                 )
             }
             TransferMsg::Bond {
@@ -710,6 +852,7 @@ impl Contract {
         run_id: String,
         inputs_hash: String,
         quote: Option<QuoteMsg>,
+        max_price: Option<U128>,
     ) -> Result<(), String> {
         // All checks happen before any state change, so a rejection leaves no partial state.
         if !valid_run_id(&run_id) {
@@ -725,10 +868,22 @@ impl Contract {
         if !recipe.listed {
             return Err("recipe not listed".into());
         }
-        let price = recipe.price_per_run.0;
+        // a signed quote locks its price (within the band); otherwise the current list price applies
+        let price = match &quote {
+            Some(q) => q.price.0,
+            None => recipe.price_per_run.0,
+        };
+        if price < recipe.price_floor.0 || price > recipe.price_ceiling.0 {
+            return Err("quoted price outside price_floor..price_ceiling".into());
+        }
+        if let Some(m) = max_price {
+            if price > m.0 {
+                return Err("price above max_price".into());
+            }
+        }
         let sealed_hash = recipe.sealed_hash.clone();
         if amount < price {
-            return Err("payment below price_per_run".into());
+            return Err("payment below price".into());
         }
         // signed quote (recipe intents): checked after the plain run checks, before any state change
         let (job_hash, expected, promised, covered, quote_key) = match &quote {
@@ -751,6 +906,7 @@ impl Contract {
                     &q.job_hash,
                     &inputs_hash,
                     buyer.as_str(),
+                    q.price.0,
                     q.expected.0,
                     q.promised.0,
                     q.cover.0,
@@ -781,10 +937,13 @@ impl Contract {
         if amount > price {
             self.credit(&buyer, amount - price);
         }
-        if covered > 0 {
+        {
             let r = self.recipes.get_mut(&recipe_id).unwrap();
-            let b = bond::lock(bond_of(r), covered).unwrap_or_else(|| env::panic_str("bond below quoted cover"));
-            set_bond(r, b);
+            if covered > 0 {
+                let b = bond::lock(bond_of(r), covered).unwrap_or_else(|| env::panic_str("bond below quoted cover"));
+                set_bond(r, b);
+            }
+            r.period_runs += 1; // demand counted at payment
         }
         let run = Run {
             run_id: run_id.clone(),
@@ -1192,11 +1351,14 @@ impl Contract {
             protocol_account: self.protocol_account.clone(),
             protocol_fee_bps: self.protocol_fee_bps,
             update_delay_ns: U64(self.update_delay_ns),
+            price_period_ns: U64(self.price_period_ns),
         }
     }
 
+    /// The recipe as of now: ended pricing periods are applied to the returned copy, so
+    /// `price_per_run` is the price a payment made now would be charged.
     pub fn get_recipe(&self, recipe_id: String) -> Option<Recipe> {
-        self.recipes.get(&recipe_id).cloned()
+        self.recipes.get(&recipe_id).map(|r| self.rolled(r).0)
     }
 
     pub fn list_recipes(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<Recipe> {
@@ -1204,7 +1366,7 @@ impl Contract {
             .values()
             .skip(from_index.unwrap_or(0) as usize)
             .take(limit.unwrap_or(50) as usize)
-            .cloned()
+            .map(|r| self.rolled(r).0)
             .collect()
     }
 
@@ -1237,6 +1399,7 @@ impl Contract {
         let recipe = self
             .recipes
             .get(&recipe_id)
+            .map(|r| self.rolled(r).0)
             .unwrap_or_else(|| env::panic_str("unknown recipe"));
         let used = parts_used.unwrap_or_else(|| recipe.parts.clone());
         require!(is_sub_multiset(&used, &recipe.parts), "parts_used not part of recipe");

@@ -6,6 +6,8 @@ use near_sdk::testing_env;
 const CONTRACT: &str = "frs.testnet";
 const USDC: &str = "usdc.testnet";
 const DELAY: u64 = 60_000_000_000;
+/// Pricing period in the tests (1 hour), so DELAY-scale timestamps stay inside the first period.
+const PERIOD: u64 = 3_600_000_000_000;
 const V2: &str = "2222222222222222222222222222222222222222222222222222222222222222";
 const OUT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -51,7 +53,7 @@ const PARTS: [(&str, &str, u128); 5] = [
 /// Contract with the demo recipe "CLNP" published by creator.testnet.
 fn setup() -> Contract {
     ctx("owner.testnet", 0);
-    let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), 200, U64(DELAY));
+    let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), 200, U64(DELAY), U64(PERIOD));
     c.add_runner(
         acct("runner.testnet"),
         runner_pk_string(),
@@ -72,6 +74,7 @@ fn setup() -> Contract {
         PARTS.iter().map(|b| b.0.to_string()).collect(),
         U128(750_000),
         0,
+        None,
         None,
     );
     c
@@ -143,12 +146,12 @@ fn settlement_rejects_bad_inputs() {
 }
 
 #[test]
-#[should_panic(expected = "price_per_run below minimum viable price")]
+#[should_panic(expected = "price_floor below minimum viable price")]
 fn publish_rejects_price_below_fees() {
     let mut c = setup();
     ctx("creator.testnet", 0);
     // fees: protocol 2% + runner 30_000 + parts 140_000 => 170_000 > 150_000
-    c.publish_recipe("CHEAP".into(), "x".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(150_000), 0, None);
+    c.publish_recipe("CHEAP".into(), "x".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(150_000), 0, None, None);
 }
 
 #[test]
@@ -156,7 +159,7 @@ fn publish_rejects_price_below_fees() {
 fn publish_rejects_bad_ticker() {
     let mut c = setup();
     ctx("creator.testnet", 0);
-    c.publish_recipe("bad".into(), "x".into(), "h".into(), acct("runner.testnet"), vec![], U128(1_000_000), 0, None);
+    c.publish_recipe("bad".into(), "x".into(), "h".into(), acct("runner.testnet"), vec![], U128(1_000_000), 0, None, None);
 }
 
 #[test]
@@ -164,7 +167,7 @@ fn publish_rejects_bad_ticker() {
 fn publish_rejects_unknown_part() {
     let mut c = setup();
     ctx("creator.testnet", 0);
-    c.publish_recipe("NOPE".into(), "x".into(), "h".into(), acct("runner.testnet"), vec!["ghost".into()], U128(1_000_000), 0, None);
+    c.publish_recipe("NOPE".into(), "x".into(), "h".into(), acct("runner.testnet"), vec!["ghost".into()], U128(1_000_000), 0, None, None);
 }
 
 #[test]
@@ -172,14 +175,14 @@ fn publish_rejects_unknown_part() {
 fn publish_rejects_reserve_above_10000() {
     let mut c = setup();
     ctx("creator.testnet", 0);
-    c.publish_recipe("RSV".into(), "r".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 10_001, None);
+    c.publish_recipe("RSV".into(), "r".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 10_001, None, None);
 }
 
 #[test]
 fn publish_accepts_full_reserve_and_quotes_it() {
     let mut c = setup();
     ctx("creator.testnet", 0);
-    c.publish_recipe("RSV".into(), "r".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 10_000, None);
+    c.publish_recipe("RSV".into(), "r".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 10_000, None, None);
     let q = c.quote_settlement("RSV".into(), None);
     assert_eq!((q.remainder.0, q.reserve.0, q.creator.0), (565_000, 565_000, 0));
     let ev = last_event();
@@ -200,7 +203,7 @@ fn ft_on_transfer_rejects_wrong_token() {
 }
 
 #[test]
-#[should_panic(expected = "payment below price_per_run")]
+#[should_panic(expected = "payment below price")]
 fn ft_on_transfer_rejects_underpayment() {
     let mut c = setup();
     pay_run(&mut c, "buyer.testnet", "r1", 749_999, 0);
@@ -441,7 +444,7 @@ fn intents_bad_inputs_hash_credits_buyer() { intents_reject_case(json!({"inputs_
 #[test]
 fn intents_bad_run_id_credits_buyer() { intents_reject_case(json!({"run_id":"bad|id"}), 800_000, "run_id must match"); }
 #[test]
-fn intents_underpayment_credits_buyer() { intents_reject_case(json!({}), 749_999, "payment below price_per_run"); }
+fn intents_underpayment_credits_buyer() { intents_reject_case(json!({}), 749_999, "payment below price"); }
 
 #[test]
 fn intents_duplicate_run_id_credits_buyer() {
@@ -492,7 +495,7 @@ fn part_id_cannot_contain_pipe() {
 fn publish_rejects_empty_parts() {
     let mut c = setup();
     ctx("creator.testnet", 0);
-    c.publish_recipe("EMPTY".into(), "e".into(), "h".into(), acct("runner.testnet"), vec![], U128(100_000), 0, None);
+    c.publish_recipe("EMPTY".into(), "e".into(), "h".into(), acct("runner.testnet"), vec![], U128(100_000), 0, None, None);
 }
 
 #[test]
@@ -518,6 +521,7 @@ fn signed_message_format_is_stable() {
         &"ab".repeat(32),
         &"ff".repeat(32),
         "bob.testnet",
+        750_000,
         28_000_000,
         27_500_000,
         25_000_000,
@@ -526,7 +530,7 @@ fn signed_message_format_is_stable() {
     assert_eq!(
         q,
         format!(
-            "frs-quote-v2|frs.testnet|CLNP|sha256:sealed|{}|{}|bob.testnet|28000000|27500000|25000000|1000",
+            "frs-quote-v3|frs.testnet|CLNP|sha256:sealed|{}|{}|bob.testnet|750000|28000000|27500000|25000000|1000",
             "ab".repeat(32),
             "ff".repeat(32)
         )
@@ -558,6 +562,7 @@ struct Q {
     job_hash: String,
     inputs_hash: String,
     buyer: String,
+    price: u128,
     expected: u128,
     promised: u128,
     cover: u128,
@@ -572,6 +577,7 @@ impl Q {
             job_hash: JOB.into(),
             inputs_hash: "ff".repeat(32),
             buyer: "bob.testnet".into(),
+            price: 750_000,
             expected: promised + promised / 10,
             promised,
             cover,
@@ -579,13 +585,17 @@ impl Q {
         }
     }
     fn json(&self) -> serde_json::Value {
+        self.json_for("CLNP")
+    }
+    fn json_for(&self, recipe: &str) -> serde_json::Value {
         let m = quote_message(
             CONTRACT,
-            "CLNP",
+            recipe,
             &self.sealed_hash,
             &self.job_hash,
             &self.inputs_hash,
             &self.buyer,
+            self.price,
             self.expected,
             self.promised,
             self.cover,
@@ -598,6 +608,7 @@ impl Q {
         json!({
             "sealed_hash": self.sealed_hash,
             "job_hash": self.job_hash,
+            "price": U128(self.price),
             "expected": U128(self.expected),
             "promised": U128(self.promised),
             "cover": U128(self.cover),
@@ -605,6 +616,12 @@ impl Q {
             "signature": sig,
         })
     }
+}
+
+fn post_bond_to(c: &mut Contract, recipe: &str, amount: u128) {
+    ctx(USDC, 0);
+    let msg = json!({"action":"bond","recipe_id":recipe}).to_string();
+    let _ = c.ft_on_transfer(acct("creator.testnet"), U128(amount), msg);
 }
 
 fn post_bond(c: &mut Contract, from: &str, amount: u128) {
@@ -1172,7 +1189,7 @@ fn apply_update_without_pending() {
 fn publish_rejects_unknown_settle_mode() {
     let mut c = setup();
     ctx("creator.testnet", 0);
-    c.publish_recipe("ODD".into(), "o".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 0, Some("weekly".into()));
+    c.publish_recipe("ODD".into(), "o".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 0, Some("weekly".into()), None);
 }
 
 #[test]
@@ -1208,7 +1225,7 @@ fn checkpoint(c: &mut Contract, run_id: &str, recipe: &str, seq: u32, parts: &[&
 fn setup_checkpoint_mode() -> Contract {
     let mut c = setup();
     ctx("creator.testnet", 0);
-    c.publish_recipe("DURA".into(), "Durable".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 1000, Some("checkpoint".into()));
+    c.publish_recipe("DURA".into(), "Durable".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 1000, Some("checkpoint".into()), None);
     ctx(USDC, 0);
     let msg = json!({"action":"run","recipe_id":"DURA","run_id":"d1","inputs_hash":"ff".repeat(32)}).to_string();
     let _ = c.ft_on_transfer(acct("buyer.testnet"), U128(750_000), msg);
@@ -1407,7 +1424,7 @@ fn checkpoint_needs_active_runner() {
 fn setup_reserve() -> Contract {
     let mut c = setup();
     ctx("creator.testnet", 0);
-    c.publish_recipe("RSRV".into(), "Reserve".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 2500, None);
+    c.publish_recipe("RSRV".into(), "Reserve".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 2500, None, None);
     c
 }
 
@@ -1518,6 +1535,231 @@ fn recipe_fields_in_spec_order() {
             "id", "name", "creator", "sealed_hash", "runner_id", "parts", "price_per_run", "reserve_bps", "runs",
             "revenue", "listed", "failed", "aborted", "promised_total", "delivered_total", "compensated_total",
             "bond_available", "bond_locked", "settle_mode", "version", "pending_sealed_hash", "update_effective_ns",
+            "price_floor", "price_ceiling", "target_runs", "period_start_ns", "period_runs",
         ]
     );
+}
+
+// ------------------------------------------------------------- v6: market-driven pricing
+
+/// CLNP-like recipe "MKT": list price 1.00, band 0.50..2.00, target 2 runs per period.
+fn setup_market() -> Contract {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.publish_recipe(
+        "MKT".into(),
+        "Market priced".into(),
+        "sha256:mkt".into(),
+        acct("runner.testnet"),
+        all_parts(),
+        U128(1_000_000),
+        0,
+        None,
+        Some(PricingInput { price_floor: U128(500_000), price_ceiling: U128(2_000_000), target_runs: 2 }),
+    );
+    c
+}
+
+fn pay(c: &mut Contract, recipe: &str, run_id: &str, amount: u128, ts: u64, extra: serde_json::Value) -> serde_json::Value {
+    ctx(USDC, ts);
+    let mut msg = json!({"action":"run","recipe_id":recipe,"run_id":run_id,"inputs_hash":"ff".repeat(32)});
+    for (k, v) in extra.as_object().unwrap() {
+        msg[k] = v.clone();
+    }
+    let _ = c.ft_on_transfer(acct("bob.testnet"), U128(amount), msg.to_string());
+    last_event()
+}
+
+fn price(c: &Contract, id: &str) -> u128 {
+    c.get_recipe(id.into()).unwrap().price_per_run.0
+}
+
+#[test]
+fn next_price_follows_the_eip1559_rule() {
+    use crate::pricing::next_price;
+    // at target: unchanged; double the target: +12.5%; idle: -12.5%; clamped to the band
+    assert_eq!(next_price(1_000_000, 2, 2, 0, 10_000_000), Some(1_000_000));
+    assert_eq!(next_price(1_000_000, 4, 2, 0, 10_000_000), Some(1_125_000));
+    assert_eq!(next_price(1_000_000, 400, 2, 0, 10_000_000), Some(1_125_000), "capped at 2x target");
+    assert_eq!(next_price(1_000_000, 3, 2, 0, 10_000_000), Some(1_062_500));
+    assert_eq!(next_price(1_000_000, 0, 2, 0, 10_000_000), Some(875_000));
+    assert_eq!(next_price(1_000_000, 0, 2, 950_000, 10_000_000), Some(950_000));
+    assert_eq!(next_price(1_000_000, 4, 2, 0, 1_100_000), Some(1_100_000));
+    assert_eq!(next_price(1, 0, 0, 0, 2), None, "target 0 is rejected");
+}
+
+#[test]
+fn busy_recipe_price_rises_idle_recipe_price_falls() {
+    let mut c = setup_market();
+    for i in 0..4 {
+        pay(&mut c, "MKT", &format!("b{i}"), 1_000_000, 10 + i, json!({}));
+    }
+    assert_eq!(c.get_recipe("MKT".into()).unwrap().period_runs, 4);
+    // the view already shows the next period's price; storage catches up on the next payment
+    ctx("anyone.testnet", PERIOD);
+    assert_eq!(price(&c, "MKT"), 1_125_000);
+    let ev = pay(&mut c, "MKT", "b4", 1_125_000, PERIOD + 1, json!({}));
+    assert_eq!(ev["event"], "run_requested");
+    assert_eq!(c.get_run("b4".into()).unwrap().amount.0, 1_125_000, "charged the new list price");
+    // three idle periods: 1.125 * 0.875^... but the run in the current period counts for the first
+    ctx("anyone.testnet", 4 * PERIOD + 5);
+    let p = price(&c, "MKT");
+    assert!((500_000..1_125_000).contains(&p), "idle periods pull the price down, not below the floor: {p}");
+    // a long idle stretch ends at the floor
+    ctx("anyone.testnet", 200 * PERIOD);
+    assert_eq!(price(&c, "MKT"), 500_000);
+}
+
+#[test]
+fn price_updated_event_and_overpayment_refund() {
+    let mut c = setup_market();
+    for i in 0..4 {
+        pay(&mut c, "MKT", &format!("b{i}"), 1_000_000, 10 + i, json!({}));
+    }
+    ctx(USDC, PERIOD + 1);
+    let msg = json!({"action":"run","recipe_id":"MKT","run_id":"b9","inputs_hash":"ff".repeat(32)});
+    let _ = c.ft_on_transfer(acct("bob.testnet"), U128(1_200_000), msg.to_string());
+    let logs = near_sdk::test_utils::get_logs();
+    let pu: serde_json::Value = logs
+        .iter()
+        .filter_map(|l| l.strip_prefix("EVENT_JSON:"))
+        .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+        .find(|e| e["event"] == "price_updated")
+        .expect("price_updated emitted");
+    assert_eq!(
+        pu["data"][0],
+        json!({"recipe_id":"MKT","previous":"1000000","price":"1125000","periods":"1","runs":"4","target_runs":2})
+    );
+    assert_eq!(bal(&c, "bob.testnet"), 75_000, "overpayment credited");
+    let r = c.get_recipe("MKT".into()).unwrap();
+    assert_eq!((r.period_runs, r.period_start_ns.0), (1, PERIOD));
+}
+
+#[test]
+fn max_price_protects_the_buyer() {
+    let mut c = setup_market();
+    ctx(USDC, 0);
+    let msg = json!({"action":"run","recipe_id":"MKT","run_id":"m1","inputs_hash":"ff".repeat(32),"max_price":"900000","on_behalf_of":"bob.testnet"});
+    let _ = c.ft_on_transfer(acct("solver.testnet"), U128(1_000_000), msg.to_string());
+    let e = last_event();
+    assert_eq!(e["event"], "transfer_rejected");
+    assert_eq!(e["data"][0]["reason"], "price above max_price");
+    assert_eq!(bal(&c, "bob.testnet"), 1_000_000);
+    assert!(c.get_run("m1".into()).is_none());
+    // at or above the list price it goes through
+    let ev = pay(&mut c, "MKT", "m2", 1_000_000, 1, json!({"max_price":"1000000"}));
+    assert_eq!(ev["event"], "run_requested");
+}
+
+#[test]
+fn signed_quote_locks_its_price_within_the_band() {
+    let mut c = setup_market();
+    post_bond_to(&mut c, "MKT", 5_000_000);
+    let mut q = Q::new(1_000_000, 0);
+    q.sealed_hash = "sha256:mkt".into();
+    q.price = 1_300_000; // runner priced this job above the list price
+    let ev = pay(&mut c, "MKT", "q1", 1_300_000, 1, json!({"quote": q.json_for("MKT")}));
+    assert_eq!(ev["event"], "run_requested");
+    assert_eq!(c.get_run("q1".into()).unwrap().amount.0, 1_300_000);
+    // a quote below the floor is rejected (the floor keeps every run viable)
+    let mut low = q.clone();
+    low.price = 400_000;
+    low.job_hash = "ee".repeat(32);
+    ctx(USDC, 2);
+    let msg = json!({"action":"run","recipe_id":"MKT","run_id":"q2","inputs_hash":"ff".repeat(32),"quote":low.json_for("MKT"),"on_behalf_of":"bob.testnet"});
+    let _ = c.ft_on_transfer(acct("solver.testnet"), U128(1_300_000), msg.to_string());
+    assert_eq!(last_event()["data"][0]["reason"], "quoted price outside price_floor..price_ceiling");
+    // the signature covers the price: paying a tampered price fails verification
+    let mut j = q.json_for("MKT");
+    j["price"] = json!("500000");
+    j["job_hash"] = json!("dd".repeat(32));
+    ctx(USDC, 3);
+    let msg = json!({"action":"run","recipe_id":"MKT","run_id":"q3","inputs_hash":"ff".repeat(32),"quote":j,"on_behalf_of":"bob.testnet"});
+    let _ = c.ft_on_transfer(acct("solver.testnet"), U128(500_000), msg.to_string());
+    assert_eq!(last_event()["data"][0]["reason"], "invalid quote signature");
+}
+
+#[test]
+fn settlement_conserves_at_a_market_price() {
+    let mut c = setup_market();
+    pay(&mut c, "MKT", "s1", 1_000_000, 1, json!({}));
+    ctx("relayer.testnet", 2);
+    let parts = all_parts();
+    let payouts = c.report_run("s1".into(), "ok".into(), parts.clone(), "ab".repeat(32), U128(0), sign("s1", "MKT", "ok", &"ab".repeat(32), &parts));
+    let total: u128 = payouts.iter().map(|p| p.amount.0).sum();
+    assert_eq!(total, 1_000_000);
+}
+
+#[test]
+fn set_pricing_is_creator_only_and_validated() {
+    let mut c = setup_market();
+    ctx("creator.testnet", 1);
+    c.set_pricing("MKT".into(), PricingInput { price_floor: U128(600_000), price_ceiling: U128(800_000), target_runs: 5 });
+    let r = c.get_recipe("MKT".into()).unwrap();
+    assert_eq!((r.price_per_run.0, r.price_floor.0, r.price_ceiling.0, r.target_runs), (800_000, 600_000, 800_000, 5));
+    assert_eq!(last_event()["event"], "pricing_updated");
+}
+
+#[test]
+#[should_panic(expected = "creator only")]
+fn set_pricing_rejects_others() {
+    let mut c = setup_market();
+    ctx("bob.testnet", 1);
+    c.set_pricing("MKT".into(), PricingInput { price_floor: U128(600_000), price_ceiling: U128(800_000), target_runs: 5 });
+}
+
+#[test]
+#[should_panic(expected = "price_floor below minimum viable price")]
+fn set_pricing_keeps_the_floor_viable() {
+    let mut c = setup_market();
+    ctx("creator.testnet", 1);
+    c.set_pricing("MKT".into(), PricingInput { price_floor: U128(100_000), price_ceiling: U128(800_000), target_runs: 5 });
+}
+
+#[test]
+#[should_panic(expected = "price_per_run must be within price_floor and price_ceiling")]
+fn publish_rejects_a_start_price_outside_the_band() {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.publish_recipe(
+        "BAD".into(), "x".into(), "sha256:x".into(), acct("runner.testnet"), all_parts(), U128(3_000_000), 0, None,
+        Some(PricingInput { price_floor: U128(500_000), price_ceiling: U128(2_000_000), target_runs: 2 }),
+    );
+}
+
+#[test]
+fn conformance_pricing_matches_proved_model() {
+    let v: serde_json::Value =
+        serde_json::from_str(include_str!("../../test-vectors/conformance-money.json")).unwrap();
+    let cases = v["pricing"].as_array().unwrap();
+    assert!(cases.len() >= 200);
+    for (k, c) in cases.iter().enumerate() {
+        let got = crate::pricing::next_price(
+            n(&c["price"]),
+            c["runs"].as_u64().unwrap(),
+            c["target"].as_u64().unwrap() as u32,
+            n(&c["floor"]),
+            n(&c["ceiling"]),
+        );
+        match (&c["expected"], got) {
+            (serde_json::Value::Null, None) => {}
+            (e, Some(p)) if !e.is_null() => assert_eq!(p, n(e), "pricing case {k}"),
+            (e, g) => panic!("pricing case {k}: model {e}, Rust {g:?}"),
+        }
+    }
+}
+
+#[test]
+fn anyone_can_apply_ended_periods() {
+    let mut c = setup_market();
+    ctx("keeper.testnet", 3 * PERIOD);
+    let p = c.update_price("MKT".into());
+    assert_eq!(p.0, 669_922, "three idle periods: 1.0 -> 0.875 -> 0.765625 -> 0.669922 (each step rounds the decrease down)");
+    let e = last_event();
+    assert_eq!(e["event"], "price_updated");
+    assert_eq!(e["data"][0]["periods"], "3");
+    // nothing more to apply in the same period
+    let before = near_sdk::test_utils::get_logs().len();
+    c.update_price("MKT".into());
+    assert_eq!(near_sdk::test_utils::get_logs().len(), before);
 }

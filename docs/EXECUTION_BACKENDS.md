@@ -9,7 +9,7 @@ The contract does not change from one backend to another. It only checks these t
 | Contract expects | What it is |
 |---|---|
 | a registered runner: `signing_pk` (ed25519), `enc_pk_hex` (X25519), `codehash` | recipes and buyer inputs are sealed to `enc_pk_hex`; everything below is signed with `signing_pk` |
-| `frs-quote-v2` signatures | quotes from dry runs, bound to buyer, job, sealed inputs and recipe version |
+| `frs-quote-v3` signatures | quotes from dry runs, bound to buyer, job, sealed inputs, recipe version and price |
 | `frs-ckpt-v1` signatures | durable progress (and partial billing in checkpoint mode) |
 | `frs-run-v3` signatures | the final report: outcome, delivered value, parts used |
 

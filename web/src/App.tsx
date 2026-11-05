@@ -24,7 +24,7 @@ export const useApp = () => useContext(AppCtx);
 const STEPS = [
   null,
   { title: 'A creator chains parts into “Clean up and protect” and publishes it privately', body: 'Five parts from five authors, type-checked as they snap together. The recipe is sealed in the browser to the attested runner key and backed by a $25 guarantee deposit.' },
-  { title: 'A buyer posts a job, recipes compete, and the buyer pays per run through Intents', body: 'One short form, sealed once. Every recipe that does this job quotes from a sealed dry run. SWPR promises more USDC but routes publicly and also sweeps your wNEAR; Bob picks CLNP and pays from Arbitrum.' },
+  { title: 'A buyer posts a job, recipes compete, and the buyer pays per run through Intents', body: 'One short form, sealed once. Every recipe that does this job quotes from a sealed dry run, at its current market price. SWPR promises more USDC but routes publicly and also sweeps your wNEAR; Bob picks CLNP and pays from Arbitrum.' },
   { title: 'The workflow sweeps dust and swaps privately to a fresh address', body: 'The runner verifies the on-chain commitments, decrypts, quarantines scam airdrops with a signed private-AI verdict, then routes confidential 1Click swaps to a never-used address.' },
   { title: 'The creator and every part author are paid in the same settlement', body: 'One signed report, one receipt: protocol, runner, five part authors and the creator, with 10% of the creator’s cut topping up the recipe’s guarantee deposit. Delivery is checked against the signed promise.' },
 ];
@@ -77,7 +77,7 @@ export function App() {
       <div className="tape" aria-label="Recipe activity">
         {(tickers ?? []).map((t) => (
           <button key={t.ticker} onClick={() => go('recipes', t.ticker)}>
-            <b>{t.ticker}</b><span>${t.pricePerRun.toFixed(2)} per run</span><span className="muted">{t.runs} {t.runs === 1 ? 'run' : 'runs'}</span>{t.keptPromise != null && <span className={t.keptPromise >= 1 ? 'gain' : 'loss'}>{Math.round(t.keptPromise * 100)}% of promise</span>}<span className="muted">${t.deposit.available.toFixed(0)} deposit</span>
+            <b>{t.ticker}</b><span>${t.pricePerRun.toFixed(2)} per run</span>{(() => { const h = t.history ?? []; if (h.length < 2) return null; const a = h[h.length - 2].price, b = h[h.length - 1].price; return a === b ? null : <span className={b > a ? 'gain' : 'loss'}>{b > a ? '▲' : '▼'}{Math.abs((b - a) / a * 100).toFixed(1)}%</span>; })()}<span className="muted">{t.runs} {t.runs === 1 ? 'run' : 'runs'}</span>{t.keptPromise != null && <span className={t.keptPromise >= 1 ? 'gain' : 'loss'}>{Math.round(t.keptPromise * 100)}% of promise</span>}<span className="muted">${t.deposit.available.toFixed(0)} deposit</span>
           </button>
         ))}
         {!tickers?.some((t) => t.ticker === 'CLNP') && <span className="muted">CLNP not listed yet — compose it, or play the demo story</span>}

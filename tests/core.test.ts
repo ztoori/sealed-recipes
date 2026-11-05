@@ -8,7 +8,7 @@ import {
   settlementSplit, LocalLedger, checkpointMessage, RUN_TIMEOUT_NS, type Outcome, runReportMessage, quoteMessage, withdrawalRisk, labelsFromParts, jobHash, base64, seal, open, sealedHash,
   validateRecipe, compatibleSwaps, swapPart, publicListing, recoverSigner, signEip191, addressFromPublicKey,
   verifyChat, sha256Hex, OneClick, runPaymentQuoteRequest, USDC_NEAR, reportData, verifyRunnerAttestation,
-  bondLock, bondRelease, bondSettle, bondDeposit, creatorKeyFromSignature, creatorKeyMessage, demoWalletSign,
+  bondLock, bondRelease, bondSettle, bondDeposit, nextPrice, creatorKeyFromSignature, creatorKeyMessage, demoWalletSign,
   type Catalog, type Recipe, type RunnerAttestation,
 } from '../core/src/index.js';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
@@ -220,6 +220,9 @@ test('every mirror event has exactly the fields documented for the contract (doc
   L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 's', amount: '1', msg: JSON.stringify({ action: 'run', recipe_id: 'X', run_id: 'q', inputs_hash: '0'.repeat(64), on_behalf_of: 'b' }) }));
   L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'creator.testnet', amount: '100', msg: JSON.stringify({ action: 'bond', recipe_id: 'TEST' }) }));
   L.call('creator.testnet', (l) => l.withdraw_bond({ recipe_id: 'TEST', amount: '40' }));
+  L.call('creator.testnet', (l) => l.set_pricing({ id: 'TEST', pricing: { price_floor: '500000', price_ceiling: '1000000', target_runs: 1 } }));
+  advance(3n * L.pricePeriodNs);
+  L.call('keeper.testnet', (l) => l.update_price({ id: 'TEST' }));
   const seen = new Set<string>();
   for (const e of L.events) {
     const want = spec.get(e.event);
@@ -228,16 +231,17 @@ test('every mirror event has exactly the fields documented for the contract (doc
     seen.add(e.event);
   }
   const missed = [...spec.keys()].filter((k) => !seen.has(k));
-  assert.ok(seen.size >= 14, `covered ${seen.size} event types; not exercised: ${missed.join(', ')}`);
+  assert.ok(seen.has('price_updated') && seen.has('pricing_updated'), 'v6 pricing events exercised');
+  assert.ok(seen.size >= 16, `covered ${seen.size} event types; not exercised: ${missed.join(', ')}`);
   console.log(`   event parity: ${seen.size}/${spec.size} event types exercised; not here: ${missed.join(', ')}`);
 });
 
 const INPUTS_HASH = '0'.repeat(64);
-function quoted(o: { bond: string; promised: string; cover?: string; expected?: string; expiresIn?: bigint; signer?: nacl.SignKeyPair; buyer?: string; sealed?: string }) {
+function quoted(o: { price?: string; bond: string; promised: string; cover?: string; expected?: string; expiresIn?: bigint; signer?: nacl.SignKeyPair; buyer?: string; sealed?: string }) {
   const t = setupLedger();
   const { kp } = keyring();
   if (o.bond !== '0') t.L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'creator.testnet', amount: o.bond, msg: JSON.stringify({ action: 'bond', recipe_id: 'TEST' }) }));
-  const fields = { sealed_hash: o.sealed ?? 'aa', job_hash: jobHash({ wallet: 'bob.testnet' }, 'salt'), expected: o.expected ?? o.promised, promised: o.promised, cover: o.cover ?? '0', expires_ns: String(1_000_000_000n + (o.expiresIn ?? 600_000_000_000n)) };
+  const fields = { sealed_hash: o.sealed ?? 'aa', job_hash: jobHash({ wallet: 'bob.testnet' }, 'salt'), price: o.price ?? '750000', expected: o.expected ?? o.promised, promised: o.promised, cover: o.cover ?? '0', expires_ns: String(1_000_000_000n + (o.expiresIn ?? 600_000_000_000n)) };
   const signature = base64.enc(nacl.sign.detached(utf8ToBytes(quoteMessage('frs.testnet', 'TEST', INPUTS_HASH, o.buyer ?? 'bob.testnet', fields)), (o.signer ?? kp).secretKey));
   const quote = { ...fields, signature };
   const payQuoted = (runId: string, q: object = quote) => t.L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'bob.testnet', amount: '750000', msg: JSON.stringify({ action: 'run', recipe_id: 'TEST', run_id: runId, inputs_hash: INPUTS_HASH, quote: q }) }));
@@ -438,4 +442,73 @@ test('creator copies: only the creator can reopen a published recipe, from any d
   assert.throws(() => open(copy, other.secretKey));
   assert.notEqual(publicKeyHex, other.publicKeyHex);
   void secretKey;
+});
+
+
+// ---- v6: market-driven pricing ----
+function marketLedger() {
+  const t = setupLedger({ price: '1000000' });
+  // a second recipe with a band: list 1.00, floor 0.50, ceiling 2.00, target 2 runs per period
+  t.L.call('creator.testnet', (l) => l.publish_recipe({ id: 'MKT', name: 'Market', sealed_hash: 'mm', runner_id: 'runner.testnet', parts: t.parts, price_per_run: '1000000', pricing: { price_floor: '500000', price_ceiling: '2000000', target_runs: 2 } }));
+  const payMkt = (runId: string, amount: string, extra: Record<string, unknown> = {}) => t.L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'bob.testnet', amount, msg: JSON.stringify({ action: 'run', recipe_id: 'MKT', run_id: runId, inputs_hash: '0'.repeat(64), ...extra }) }));
+  return { ...t, payMkt };
+}
+
+test('pricing vectors: the mirror matches the model proved in verification/smt (shared with Rust)', () => {
+  const v = json('contracts/test-vectors/conformance-money.json');
+  v.pricing.forEach((c: any, k: number) => {
+    const got = nextPrice(BigInt(c.price), BigInt(Math.min(c.runs, 2 ** 53)), c.target, BigInt(c.floor), BigInt(c.ceiling));
+    assert.equal(got === null ? null : String(got), c.expected, `pricing ${k}`);
+  });
+  assert.ok(v.pricing.length >= 200);
+});
+
+test('market pricing: busy recipes get dearer, idle ones cheaper, always inside the band', () => {
+  const { L, payMkt, advance } = marketLedger();
+  for (let i = 0; i < 4; i++) payMkt(`b${i}`, '1000000');
+  assert.equal(L.recipes.get('MKT')!.period_runs, 4n);
+  advance(L.pricePeriodNs);
+  assert.equal(L.get_recipe('MKT')!.price_per_run, 1125000n, 'double the target: +12.5%');
+  payMkt('b4', '1200000');
+  assert.equal(L.runs.get('b4')!.amount, 1125000n, 'charged the new list price');
+  assert.equal(L.balance_of('bob.testnet'), 75000n, 'overpayment credited');
+  const pu = L.events.find((e) => e.event === 'price_updated')!;
+  assert.deepEqual(pu.data[0], { recipe_id: 'MKT', previous: '1000000', price: '1125000', periods: '1', runs: '4', target_runs: 2 });
+  advance(200n * L.pricePeriodNs);
+  assert.equal(L.get_recipe('MKT')!.price_per_run, 500000n, 'a long idle stretch ends at the floor');
+  // same three-idle-periods value as the Rust test
+  const t2 = marketLedger(); t2.advance(3n * t2.L.pricePeriodNs);
+  assert.equal(t2.L.call('k', (l) => l.update_price({ id: 'MKT' })), 669922n);
+});
+
+test('market pricing: max_price protects the buyer; a signed quote locks its price inside the band', () => {
+  const { L, payMkt } = marketLedger();
+  L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'solver', amount: '1000000', msg: JSON.stringify({ action: 'run', recipe_id: 'MKT', run_id: 'm1', inputs_hash: '0'.repeat(64), max_price: '900000', on_behalf_of: 'bob.testnet' }) }));
+  assert.equal((L.events.at(-1)!.data[0] as { reason: string }).reason, 'price above max_price');
+  assert.equal(L.balance_of('bob.testnet'), 1000000n);
+  payMkt('m2', '1000000', { max_price: '1000000' });
+  assert.equal(L.runs.get('m2')!.status, 'Pending');
+  // quotes: the price is signed, so it can't be changed, and must lie in the band
+  const { kp } = keyring();
+  const mk = (price: string, job = 'ab') => {
+    const fields = { sealed_hash: 'mm', job_hash: job.repeat(32), price, expected: '1', promised: '1', cover: '0', expires_ns: String(1_000_000_000n + 600_000_000_000n) };
+    return { ...fields, signature: base64.enc(nacl.sign.detached(utf8ToBytes(quoteMessage('frs.testnet', 'MKT', '0'.repeat(64), 'bob.testnet', fields)), kp.secretKey)) };
+  };
+  payMkt('q1', '1300000', { quote: mk('1300000') });
+  assert.equal(L.runs.get('q1')!.amount, 1300000n);
+  L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'solver', amount: '1300000', msg: JSON.stringify({ action: 'run', recipe_id: 'MKT', run_id: 'q2', inputs_hash: '0'.repeat(64), quote: mk('400000', 'ee'), on_behalf_of: 'bob.testnet' }) }));
+  assert.equal((L.events.at(-1)!.data[0] as { reason: string }).reason, 'quoted price outside price_floor..price_ceiling');
+  const tampered = { ...mk('1300000', 'dd'), price: '500000' };
+  L.call('usdc.testnet', (l) => l.ft_on_transfer({ sender_id: 'solver', amount: '500000', msg: JSON.stringify({ action: 'run', recipe_id: 'MKT', run_id: 'q3', inputs_hash: '0'.repeat(64), quote: tampered, on_behalf_of: 'bob.testnet' }) }));
+  assert.equal((L.events.at(-1)!.data[0] as { reason: string }).reason, 'invalid quote signature');
+});
+
+test('market pricing: the floor keeps every run viable; only the creator sets the band', () => {
+  const { L } = marketLedger();
+  assert.throws(() => L.call('creator.testnet', (l) => l.set_pricing({ id: 'MKT', pricing: { price_floor: '100000', price_ceiling: '800000', target_runs: 5 } })), /price_floor below minimum viable price/);
+  assert.throws(() => L.call('bob.testnet', (l) => l.set_pricing({ id: 'MKT', pricing: { price_floor: '600000', price_ceiling: '800000', target_runs: 5 } })), /creator only/);
+  L.call('creator.testnet', (l) => l.set_pricing({ id: 'MKT', pricing: { price_floor: '600000', price_ceiling: '800000', target_runs: 5 } }));
+  const r = L.get_recipe('MKT')!;
+  assert.deepEqual([r.price_per_run, r.price_floor, r.price_ceiling, r.target_runs], [800000n, 600000n, 800000n, 5]);
+  assert.throws(() => L.call('creator.testnet', (l) => l.publish_recipe({ id: 'BAD', name: 'x', sealed_hash: 'x', runner_id: 'runner.testnet', parts: ['b0@1.0.0'], price_per_run: '3000000', pricing: { price_floor: '500000', price_ceiling: '2000000', target_runs: 2 } })), /within price_floor and price_ceiling/);
 });

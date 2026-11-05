@@ -19,6 +19,9 @@ export function Run() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [freshKey, setFreshKey] = useState<{ account: string; sk: Uint8Array } | null>(null);
   const [payAsset, setPayAsset] = useState(PAY_ASSETS[0].id);
+  /** buyer's price cap in USD (blank = none): recipes listed above it aren't asked to quote, and the contract enforces it */
+  const [maxPrice, setMaxPrice] = useState('');
+  const maxUnits = () => (maxPrice.trim() && Number(maxPrice) > 0 ? String(Math.round(Number(maxPrice) * 1e6)) : undefined);
   const [quotes, setQuotes] = useState<any[] | null>(null);
   const [openDemand, setOpenDemand] = useState(false);
   const [sortBy, setSortBy] = useState<'net' | 'value' | 'price' | 'risk'>('net');
@@ -80,7 +83,8 @@ export function Run() {
       const sealed = seal({ inputs, salt, reply_to: hex(reply.current.publicKey) }, onchain.enc_pk_hex, 'inputs');
       jobRef.current = { sealed, job_hash };
       const { contract_id } = await api('/api/chain/config');
-      const r = await api('/api/jobs', { job_type: job.id, sealed_job: sealed, job_hash, buyer: acting, ...(onlyTicker ? { only: onlyTicker } : {}) });
+      const mp = maxUnits();
+      const r = await api('/api/jobs', { job_type: job.id, sealed_job: sealed, job_hash, buyer: acting, ...(onlyTicker ? { only: onlyTicker } : {}), ...(mp ? { max_price: mp } : {}) });
       // each quote arrives sealed to this browser; open it and check the runner's signature over the exact
       // message the contract will verify, so a tampered or misdirected quote is dropped before paying
       const ctx = { contractId: contract_id, signingPk: onchain.signing_pk, buyer: acting, inputsHash: sealedHash(sealed), jobHash: job_hash };
@@ -99,7 +103,10 @@ export function Run() {
     setBusy(true); setChosen({ ...q, guaranteed });
     try {
       const pa = PAY_ASSETS.find((p) => p.id === payAsset)!;
-      const r = await api('/api/runs/quote', { recipe_id: q.listing.ticker, buyer: acting, pay_asset: payAsset, refund_to: pa.refund, sealed_inputs: jobRef.current.sealed, ...(guaranteed ? { signed_quote: { sealed_hash: q.sealed_hash, job_hash: q.job_hash, expected: q.expected, promised: q.promised, cover: q.cover, expires_ns: q.expires_ns, signature: q.signature } } : {}) });
+      const r = await api('/api/runs/quote', { recipe_id: q.listing.ticker, buyer: acting, pay_asset: payAsset, refund_to: pa.refund, sealed_inputs: jobRef.current.sealed,
+        // with the quote, its signed price is locked; without it, the list price applies and the shown price is the cap
+        ...(guaranteed ? {} : { max_price: maxUnits() ?? String(q.price ?? q.listing.price_per_run) }),
+        ...(guaranteed ? { signed_quote: { sealed_hash: q.sealed_hash, job_hash: q.job_hash, price: q.price, expected: q.expected, promised: q.promised, cover: q.cover, expires_ns: q.expires_ns, signature: q.signature } } : {}) });
       runToken.current = r.run_token;
       setQuote(r); setRunId(r.run_id); setEvents([]); setShown(0);
     } catch (e) { toast((e as Error).message, true); } finally { setBusy(false); }
@@ -153,9 +160,10 @@ export function Run() {
   const settlement = completed?.data?.settlement;
   const settleEv = events.find((e) => e.type === 'frs_settlement')?.data;
   const reserve = settlement ? Number(settleEv?.reserve ?? 0) : 0;
-  const net = (q: any) => Number(q.expected) - Number(q.listing.price_per_run);
+  const priceOf = (q: any) => Number(q.price ?? q.listing.price_per_run); // the quote's signed price
+  const net = (q: any) => Number(q.expected) - priceOf(q);
   const RISK: Record<string, number> = { low: 0, medium: 1, high: 2 };
-  const sorted = [...(quotes ?? [])].sort((a, b) => (!a.ok ? 1 : !b.ok ? -1 : sortBy === 'price' ? Number(a.listing.price_per_run) - Number(b.listing.price_per_run) : sortBy === 'value' ? Number(b.expected) - Number(a.expected) : sortBy === 'risk' ? RISK[a.listing.risk] - RISK[b.listing.risk] || net(b) - net(a) : net(b) - net(a)));
+  const sorted = [...(quotes ?? [])].sort((a, b) => (!a.ok ? 1 : !b.ok ? -1 : sortBy === 'price' ? priceOf(a) - priceOf(b) : sortBy === 'value' ? Number(b.expected) - Number(a.expected) : sortBy === 'risk' ? RISK[a.listing.risk] - RISK[b.listing.risk] || net(b) - net(a) : net(b) - net(a)));
 
   return (
     <div className="grid runpage">
@@ -186,6 +194,9 @@ export function Run() {
                 {f.generator === 'fresh-implicit' && <span className="small muted">A new keypair made in this browser. Only the address goes into the sealed job; the key never leaves your device.</span>}
               </div>
             ))}
+            <div className="field"><label htmlFor="maxp">Max price per run (USD, optional)</label>
+              <input id="maxp" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value.replace(/[^0-9.]/g, ''))} inputMode="decimal" placeholder="no limit" />
+              <span className="small muted">Recipes priced above it aren't asked to quote, and the contract refuses to charge more.</span></div>
             <div className="field"><label htmlFor="pay">Pay with (NEAR Intents)</label>
               <select id="pay" value={payAsset} onChange={(e) => setPayAsset(e.target.value)}>{PAY_ASSETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</select></div>
             {onlyTicker && <div className="small">Only asking <b>{onlyTicker}</b>. <button className="btn ghost sm" onClick={() => setOnlyTicker('')}>Ask every recipe</button></div>}
@@ -201,7 +212,7 @@ export function Run() {
               <dl className="kv">
                 <dt>You send</dt><dd>{quote.quote.quote.amountInFormatted} {PAY_ASSETS.find((p) => p.id === payAsset)?.label}</dd>
                 <dt>Contract receives</dt><dd>{usd(quote.quote.quote.amountOut, 2)} USDC</dd>
-                <dt>Guarantee</dt><dd>{chosen.guaranteed ? <>{usd(chosen.promised, 2)} promised; the guarantee deposit covers a shortfall up to {usd(chosen.cover, 2)}<div className="small muted">The promise and the delivered value are written on-chain: that is what makes them enforceable.</div></> : <>none: no promise, no bond<div className="small muted">Nothing about your wallet's value is written on-chain for this run.</div></>}</dd>
+                <dt>Guarantee</dt><dd>{chosen.guaranteed ? <>{usd(chosen.promised, 2)} promised; the guarantee deposit covers a shortfall up to {usd(chosen.cover, 2)}<div className="small muted">The promise and the delivered value are written on-chain: that is what makes them enforceable.</div></> : <>none: no promise, no deposit cover<div className="small muted">Nothing about your wallet's value is written on-chain for this run.</div></>}</dd>
                 <dt>Deposit address</dt><dd className="hash">{short(quote.quote.quote.depositAddress, 10, 8)}</dd>
                 <dt>Run ticket</dt><dd className="hash">{quote.run_id}</dd>
               </dl>
@@ -232,11 +243,11 @@ export function Run() {
                       {q.ok ? <>
                         <td className="r">{job.metric ? usd(q.expected, 2) : '—'}</td>
                         <td className="r">{job.metric ? usd(q.promised, 2) : '—'}<div className="small muted">{job.metric ? (Number(q.cover) > 0 ? `deposit covers ${usd(q.cover, 2)}` : 'no guarantee') : 'no value metric'}</div></td>
-                        <td className="r">{usd(q.listing.price_per_run, 2)}</td>
+                        <td className="r">{usd(q.price, 2)}<div className="small muted" title="Market-driven list price: it follows demand inside the creator's band. The quote locks this price.">band {usd(q.listing.price_floor, 2)}–{usd(q.listing.price_ceiling, 2)}</div></td>
                         <td><span className={'pill ' + (q.listing.privacy === 'confidential' ? 'sealed' : '')}>{q.listing.privacy}</span></td>
                         <td><span className={'pill ' + (q.listing.risk === 'low' ? 'ok' : q.listing.risk === 'high' ? 'bad' : 'warn')} title={q.listing.disclosures.map((d: any) => `${d.part}: ${d.model.kind}${d.model.name ? ' ' + d.model.name : ''}, ${d.runtime}`).join('\n')}>{q.listing.risk}</span></td>
                         <td className="small">{t.runs} run{t.runs === 1 ? '' : 's'}{Number(t.failed) ? `, ${t.failed} failed` : ''}{Number(t.aborted) ? `, ${t.aborted} aborted` : ''}{quoted ? <div className="muted">delivered {(Number(t.delivered_total) / quoted * 100).toFixed(0)}% of promises</div> : <div className="muted">no quoted runs yet</div>}</td>
-                        <td><div className="grid" style={{ gap: 4 }}><button id={'choose-' + q.listing.ticker} className="btn sm" disabled={busy || !!runId && !completed && !failed} onClick={() => choose(q)} title="Pay with the signed quote: the promise is enforced by the bond">Choose</button>
+                        <td><div className="grid" style={{ gap: 4 }}><button id={'choose-' + q.listing.ticker} className="btn sm" disabled={busy || !!runId && !completed && !failed} onClick={() => choose(q)} title="Pay with the signed quote: its price is locked and its promise is backed by the guarantee deposit">Choose</button>
                           {job.metric && <button className="btn ghost sm" disabled={busy || !!runId && !completed && !failed} onClick={() => choose(q, false)} title="Pay without the quote: no guarantee, and no promised or delivered value written on-chain">No guarantee</button>}</div></td>
                       </> : <td colSpan={7} className="small muted">could not quote: {q.error}</td>}
                     </tr>
@@ -273,7 +284,7 @@ export function Run() {
             <header><h2>Settlement</h2><span className="small muted">tx {short(settlement.tx, 8, 6)} · block {settlement.height} · one receipt</span></header>
             <div className="body">
               {chosen?.guaranteed && settleEv && <p className="small" style={{ marginTop: 0 }}>Delivered <b>{usd(settleEv.delivered, 2)}</b> against a signed promise of {usd(chosen.promised, 2)}{Number(settleEv.compensation) > 0 ? <>: the guarantee deposit paid you <b>{usd(settleEv.compensation, 2)}</b>.</> : ': promise kept, the deposit is untouched.'}</p>}
-              <SettlementFlow price={Number(chosen?.listing.price_per_run ?? 0)} payouts={settlement.payouts} reserve={reserve} />
+              <SettlementFlow price={Number(settleEv?.price ?? chosen?.price ?? chosen?.listing.price_per_run ?? 0)} payouts={settlement.payouts} reserve={reserve} />
               <div className="row wrap"><button className="btn ghost sm" onClick={() => go('recipes', chosen?.listing.ticker)}>See {chosen?.listing.ticker}’s track record</button><button className="btn ghost sm" onClick={() => go('trust')}>Inspect the proofs</button></div>
             </div>
           </div>

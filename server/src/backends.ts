@@ -2,7 +2,7 @@
  * Execution backends: where a sealed recipe actually runs.
  *
  * The contract does not care which machine executes a recipe. It only needs a registered runner identity
- * (an attested ed25519 signing key + an X25519 key recipes are sealed to) that signs quotes (frs-quote-v2),
+ * (an attested ed25519 signing key + an X25519 key recipes are sealed to) that signs quotes (frs-quote-v3),
  * checkpoints (frs-ckpt-v1) and reports (frs-run-v3). Anything that can hold those keys inside attested hardware
  * and speak this interface can be a backend. The marketplace talks to backends only through this interface.
  *

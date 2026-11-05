@@ -26,6 +26,10 @@ What it does:
   (not already billed at a checkpoint) and the creator, and adds the reserve to the recipe's guarantee deposit
   (`bond_available`). A `fail` or `abort` report refunds the buyer. If no report arrives within 15 minutes, the
   buyer can call `reclaim_run`.
+- **Market-driven prices (v6, `src/pricing.rs`).** Each recipe's `price_per_run` is its current list price. It follows
+  paid runs per period inside a band the creator sets (`price_floor`, `price_ceiling`, `target_runs`), by the
+  EIP-1559 base-fee rule: at most ±12.5% a period. A signed quote (`frs-quote-v3`) locks a price inside the band;
+  a run msg's `max_price` caps what the buyer pays.
 - **No investment features (v5).** Recipes are products, not share classes: there are no shares, dividends,
   order books or auctions. Every payment is a fee for a service rendered (protocol, runner, part author, creator).
   The guarantee deposit (`bond_*` in code) belongs to the creator, backs quotes, pays shortfalls to buyers, and
@@ -44,7 +48,7 @@ protocol + runner_fee + sum(part_fees) + reserve + creator == price   (exact)
 ## Test
 
 ```bash
-cargo test          # 92 unit tests, including the shared vectors ../test-vectors/settlement.json and bonds.json and the bond conformance cases from verification/
+cargo test          # 105 unit tests, including the shared vectors ../test-vectors/settlement.json and bonds.json and the settlement, bond and pricing conformance cases from verification/
 cargo clippy --all-targets
 ```
 
@@ -76,7 +80,7 @@ export TOKEN=usdc.fakes.testnet
 near account create-account sponsor-by-faucet-service $CONTRACT autogenerate-new-keypair save-to-keychain network-config testnet create
 
 cargo near deploy build-non-reproducible-wasm $CONTRACT \
-  with-init-call new json-args "{\"owner\":\"$OWNER\",\"payment_token\":\"$TOKEN\",\"protocol_account\":\"$OWNER\",\"protocol_fee_bps\":200,\"update_delay_ns\":\"86400000000000\"}" \
+  with-init-call new json-args "{\"owner\":\"$OWNER\",\"payment_token\":\"$TOKEN\",\"protocol_account\":\"$OWNER\",\"protocol_fee_bps\":200,\"update_delay_ns\":\"86400000000000\",\"price_period_ns\":\"3600000000000\"}" \
   prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
   network-config testnet sign-with-keychain send
 
@@ -98,11 +102,13 @@ The contract pays for its own storage in v1, so there are no per-user storage de
 
 | Method | Kind | Args |
 |---|---|---|
-| `new` | init | `owner: AccountId, payment_token: AccountId, protocol_account: AccountId, protocol_fee_bps: u16` (≤1000), `update_delay_ns: U64` (notice before a new recipe version takes effect) |
+| `new` | init | `owner: AccountId, payment_token: AccountId, protocol_account: AccountId, protocol_fee_bps: u16` (≤1000), `update_delay_ns: U64` (notice before a new recipe version takes effect), `price_period_ns: U64` (pricing period, >0) |
 | `add_runner` | owner | `id: AccountId, signing_pk: String ("ed25519:…"), enc_pk_hex: String (64 hex), codehash: String, fee_per_run: U128` |
 | `set_runner_active` | owner | `id: AccountId, active: bool` |
 | `register_part` | call | `id: String, version: String, fee_per_call: U128, manifest_hash: String` |
-| `publish_recipe` | call | `id: String (^[A-Z0-9]{3,6}$), name: String, sealed_hash: String, runner_id: AccountId, parts: Vec<String>, price_per_run: U128, reserve_bps: u16 (≤10000), settle_mode: Option<String>` (`"final"` default, or `"checkpoint"`) |
+| `publish_recipe` | call | `id: String (^[A-Z0-9]{3,6}$), name: String, sealed_hash: String, runner_id: AccountId, parts: Vec<String>, price_per_run: U128, reserve_bps: u16 (≤10000), settle_mode: Option<String>` (`"final"` default, or `"checkpoint"`), `pricing: Option<{price_floor: U128, price_ceiling: U128, target_runs: u32}>` (omitted: fixed price) |
+| `set_pricing` | creator | `id: String, pricing: {price_floor, price_ceiling, target_runs}` (floor must cover the fees) |
+| `update_price` | anyone | `id: String` → `U128` (applies ended pricing periods; also done lazily by the next payment) |
 | `update_sealed` | creator | `id: String, sealed_hash: String` (64 hex): announces the next version, active after `update_delay_ns` |
 | `cancel_update` | creator | `id: String` |
 | `apply_update` | anyone, once due | `id: String` (also applied lazily by the next run payment) |
@@ -120,7 +126,8 @@ The contract pays for its own storage in v1, so there are no per-user storage de
 ```json
 {"action":"run","recipe_id":"CLNP","run_id":"r-123","inputs_hash":"<sha256 hex>","on_behalf_of":"bob.testnet"}
 {"action":"run","recipe_id":"CLNP","run_id":"r-124","inputs_hash":"<sha256 hex>","on_behalf_of":"bob.testnet",
- "quote":{"sealed_hash":"<recipe sealed_hash>","job_hash":"<sha256 hex>","expected":"28000000","promised":"27500000",
+ "max_price":"800000",
+ "quote":{"sealed_hash":"<recipe sealed_hash>","job_hash":"<sha256 hex>","price":"750000","expected":"28000000","promised":"27500000",
           "cover":"25000000","expires_ns":"1793500000000000000","signature":"<base64>"}}
 {"action":"bond","recipe_id":"CLNP"}
 ```
@@ -168,3 +175,10 @@ Removed: shares, dividends, order books, batch auctions (`transfer_shares`, `cla
 `cancel_order`, `clear_batch`, the `bid` action, their views and events, and the `batch_interval_ns` init
 param). `royalty_bps`, `total_shares` and `acc_per_share` are replaced by `reserve_bps`. See
 `docs/CONTRACT_SPEC.md` ("v5 changes").
+
+## v6: market-driven pricing
+
+`new` takes `price_period_ns`; `publish_recipe` takes `pricing`; new `set_pricing` and `update_price`; quotes are
+`frs-quote-v3` and carry `price`; run msgs accept `max_price`; events `price_updated` and `pricing_updated`. Recipe
+fields `price_floor, price_ceiling, target_runs, period_start_ns, period_runs` are appended. Views return the price with
+ended periods applied. See `docs/CONTRACT_SPEC.md` ("v6 changes").

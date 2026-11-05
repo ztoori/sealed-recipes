@@ -14,7 +14,7 @@ from __future__ import annotations
 import z3
 
 from common import BPS, U128, Ctx, Report, Theorem, u128
-from models import bond_deposit, bond_lock, bond_release, bond_settle, settlement
+from models import MAX_PRICE, MAX_TARGET_RUNS, bond_deposit, bond_lock, bond_release, bond_settle, next_price, settlement
 
 
 def settlement_inputs(n_parts: int, cs: list):
@@ -128,11 +128,58 @@ def prove_bonds(R: Report):
                 cs + inv + pre, post, ctx=c)
 
 
+def prove_pricing(R: Report):
+    """Market-driven list prices (contract v6): the demand rule stays in the band, moves at most 12.5% a period,
+    moves the right way, never overflows, and every price in the band settles (the floor is viable)."""
+    def inputs(cs):
+        price, floor, ceiling = u128("price", cs), u128("floor", cs), u128("ceiling", cs)
+        runs = z3.Int("runs"); cs += [runs >= 0, runs < 2**64]
+        t = z3.Int("target"); cs += [t >= 1, t <= MAX_TARGET_RUNS]
+        cs += [floor <= ceiling, ceiling <= MAX_PRICE]
+        return price, runs, t, floor, ceiling
+    m = "pricing"
+    cs: list = []
+    price, runs, t, floor, ceiling = inputs(cs)
+    c = Ctx(True)
+    s = next_price(c, price, runs, t, floor, ceiling)
+    band = [floor <= price, price <= ceiling]
+    R.check(Theorem(m, "never-overflows", "with ceiling <= 1e30 and target <= 1e6 every checked operation fits in u128"),
+            cs + [price <= MAX_PRICE], z3.And(*s["conds"]), ctx=c)
+    R.check(Theorem(m, "stays-in-band", "floor <= next price <= ceiling, from any starting price"),
+            cs + s["conds"], z3.And(floor <= s["price"], s["price"] <= ceiling), ctx=c)
+    R.check(Theorem(m, "step-at-most-12.5%", "from a price in the band, one period moves it by at most 1/8 either way"),
+            cs + s["conds"] + band, z3.And(8 * s["price"] <= 9 * price, 8 * s["price"] >= 7 * price), ctx=c)
+    # both branches must be reachable under the hypotheses, or the claims above would hold only at runs == target
+    R.check(Theorem(m, "branch-reachable: rising", "witness exists with runs > target (expected counterexample to 'runs <= target')",
+                    expect="counterexample"), cs + s["conds"] + band, runs <= t, ctx=c)
+    R.check(Theorem(m, "branch-reachable: falling", "witness exists with runs < target (expected counterexample to 'runs >= target')",
+                    expect="counterexample"), cs + s["conds"] + band, runs >= t, ctx=c)
+    R.check(Theorem(m, "demand-direction", "runs >= target never lowers the price; runs <= target never raises it"),
+            cs + s["conds"] + band, z3.And(z3.Implies(runs >= t, s["price"] >= price), z3.Implies(runs <= t, s["price"] <= price)), ctx=c)
+    cs2: list = []
+    price, runs, t, floor, ceiling = inputs(cs2)
+    runs2 = z3.Int("runs2"); cs2 += [runs2 >= runs, runs2 < 2**64]
+    c = Ctx(True)
+    a = next_price(c, price, runs, t, floor, ceiling)
+    b = next_price(c, price, runs2, t, floor, ceiling)
+    R.check(Theorem(m, "monotone-in-demand", "more paid runs in a period never give a lower next price"),
+            cs2 + a["conds"] + b["conds"], a["price"] <= b["price"], ctx=c)
+    # viability: publish/set_pricing require floor >= protocol(floor) + fees; then every price >= floor settles
+    cs3: list = []
+    P, fl, fees = u128("P", cs3), u128("floor", cs3), u128("fees", cs3)
+    bps = z3.Int("bps"); cs3 += [bps >= 0, bps <= 1000]
+    c = Ctx(True)
+    hyp = cs3 + [fl - c.div(fl * bps, BPS) - fees >= 0, P >= fl, P * bps < U128, fl * bps < U128]
+    R.check(Theorem(m, "every-band-price-is-viable", "floor covers its fees => any price >= floor covers protocol + runner + parts"),
+            hyp, P - c.div(P * bps, BPS) - fees >= 0, ctx=c)
+
+
 def main():
     R = Report()
     print("settlement"); prove_settlement(R)
     print("partial billing"); prove_partial_billing(R)
     print("bonds"); prove_bonds(R)
+    print("pricing"); prove_pricing(R)
     return R
 
 

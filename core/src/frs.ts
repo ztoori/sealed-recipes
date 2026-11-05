@@ -91,7 +91,7 @@ export interface Recipe {
   output: string; // "<node>.<port>"
   /** job type this recipe competes for (recipe intents); its form must match the job's inputs */
   implements?: string;
-  listing: { price_per_run: string; /** share of the creator's cut kept as the recipe's guarantee deposit (0..10000) */ reserve_bps?: number; bond?: string; settle_mode?: 'final' | 'checkpoint' };
+  listing: { price_per_run: string; /** v6: market-driven band; omitted = fixed price */ pricing?: { price_floor: string; price_ceiling: string; target_runs: number }; /** share of the creator's cut kept as the recipe's guarantee deposit (0..10000) */ reserve_bps?: number; bond?: string; settle_mode?: 'final' | 'checkpoint' };
 }
 
 export type Severity = 'error' | 'warning';
@@ -267,6 +267,7 @@ export interface PublicListing {
   capabilities: string[];
   output_type: string;
   price_per_run: string;
+  pricing: { price_floor: string; price_ceiling: string; target_runs: number } | null;
   reserve_bps: number;
   interface_hash: string;
   implements: string | null;
@@ -308,6 +309,7 @@ export function publicListing(recipe: Recipe, catalog: Catalog): PublicListing {
     capabilities: v.capabilities,
     output_type: v.outputType!,
     price_per_run: recipe.listing.price_per_run,
+    pricing: recipe.listing.pricing ?? null,
     reserve_bps: recipe.listing.reserve_bps ?? 0,
     interface_hash: hashObject(iface),
     implements: recipe.implements ?? null,

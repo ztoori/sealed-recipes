@@ -12,6 +12,7 @@ import bs58 from 'bs58';
 import { utf8ToBytes } from '@noble/hashes/utils.js';
 import { sha256Hex } from './canonical.js';
 import { base64 } from './seal.js';
+import { rollPrice, MAX_PRICE, MAX_TARGET_RUNS } from './pricing.js';
 import { settlementSplit, minimumPrice, bondLock, bondRelease, bondSettle, bondWithdraw, bondDeposit, type Bond } from './settlement.js';
 
 export const RUN_TIMEOUT_NS = 15n * 60n * 1_000_000_000n;
@@ -27,6 +28,8 @@ export interface LedgerRecipe {
   failed: bigint; aborted: bigint; promised_total: bigint; delivered_total: bigint; compensated_total: bigint; bond_available: bigint; bond_locked: bigint;
   /** v4: durable runs and versions with notice */
   settle_mode: SettleMode; version: number; pending_sealed_hash: string; update_effective_ns: bigint;
+  /** v6: market-driven pricing; `price_per_run` is the current list price */
+  price_floor: bigint; price_ceiling: bigint; target_runs: number; period_start_ns: bigint; period_runs: bigint;
 }
 export type SettleMode = 'final' | 'checkpoint';
 export type RunStatus = 'Pending' | 'Settled' | 'Refunded';
@@ -41,7 +44,8 @@ export function runReportMessage(contractId: string, runId: string, recipeId: st
   return ['frs-run-v3', contractId, runId, recipeId, outcome, outputHash, delivered, partsUsed.join(',')].join('|');
 }
 /** what a runner signs when a recipe quotes for a job: bound to the recipe version, the sealed job, the buyer and the cover */
-export interface QuoteFields { sealed_hash: string; job_hash: string; expected: string; promised: string; cover: string; expires_ns: string }
+export interface PricingInput { price_floor: string; price_ceiling: string; target_runs: number }
+export interface QuoteFields { sealed_hash: string; job_hash: string; price: string; expected: string; promised: string; cover: string; expires_ns: string }
 export interface SignedQuote extends QuoteFields { signature: string }
 /** what a runner signs at a checkpoint (v4): progress, the sealed state's hash, and parts to bill now */
 export function checkpointMessage(contractId: string, runId: string, recipeId: string, seq: number, stateHash: string, partsDone: string[]): string {
@@ -54,7 +58,7 @@ export function subtractMultiset(pool: string[], sub: string[]): string[] | null
   return rest;
 }
 export function quoteMessage(contractId: string, recipeId: string, inputsHash: string, buyer: string, q: QuoteFields): string {
-  return ['frs-quote-v2', contractId, recipeId, q.sealed_hash, q.job_hash, inputsHash, buyer, q.expected, q.promised, q.cover, q.expires_ns].join('|');
+  return ['frs-quote-v3', contractId, recipeId, q.sealed_hash, q.job_hash, inputsHash, buyer, q.price, q.expected, q.promised, q.cover, q.expires_ns].join('|');
 }
 
 function assert(cond: unknown, msg: string): asserts cond {
@@ -85,12 +89,15 @@ export class LocalLedger {
   private txCounter = 0;
 
   readonly updateDelayNs: bigint;
-  constructor(o: { contractId: string; owner: string; paymentToken: string; protocolAccount: string; protocolFeeBps: number; updateDelayNs?: bigint; clock?: () => bigint }) {
+  readonly pricePeriodNs: bigint;
+  constructor(o: { contractId: string; owner: string; paymentToken: string; protocolAccount: string; protocolFeeBps: number; updateDelayNs?: bigint; pricePeriodNs?: bigint; clock?: () => bigint }) {
     assert(o.protocolFeeBps <= 1000, 'protocol fee too high');
     this.contractId = o.contractId; this.owner = o.owner; this.paymentToken = o.paymentToken;
     this.protocolAccount = o.protocolAccount; this.protocolFeeBps = o.protocolFeeBps;
     this.clock = o.clock ?? (() => BigInt(Date.now()) * 1_000_000n);
     this.updateDelayNs = o.updateDelayNs ?? 24n * 3600n * 1_000_000_000n;
+    this.pricePeriodNs = o.pricePeriodNs ?? 3600n * 1_000_000_000n;
+    assert(this.pricePeriodNs > 0n, 'price_period_ns must be > 0');
   }
 
   /** Execute a call "as" a NEAR account; mirrors one transaction/receipt. */
@@ -142,7 +149,7 @@ export class LocalLedger {
     this.emit('part_registered', { ...b });
   }
 
-  publish_recipe(a: { id: string; name: string; sealed_hash: string; runner_id: string; parts: string[]; price_per_run: string; reserve_bps?: number; settle_mode?: string | null }) {
+  publish_recipe(a: { id: string; name: string; sealed_hash: string; runner_id: string; parts: string[]; price_per_run: string; reserve_bps?: number; settle_mode?: string | null; pricing?: PricingInput | null }) {
     const creator = this.caller();
     assert(/^[A-Z0-9]{3,6}$/.test(a.id), 'invalid ticker');
     assert(!this.recipes.has(a.id), 'ticker taken');
@@ -152,16 +159,59 @@ export class LocalLedger {
     assert(a.parts.length > 0, 'recipe needs at least one part');
     const fees = a.parts.map((b) => { const blk = this.parts.get(b); assert(blk?.active, `unknown part ${b}`); return blk.fee_per_call; });
     const price = BigInt(a.price_per_run);
-    assert(minimumPrice(price, this.protocolFeeBps, runner.fee_per_run, fees), 'price below minimum viable price');
+    const band = this.checkPricing(a.pricing ?? { price_floor: a.price_per_run, price_ceiling: a.price_per_run, target_runs: 1 }, runner.fee_per_run, fees);
+    assert(band.floor <= price && price <= band.ceiling, 'price_per_run must be within price_floor and price_ceiling');
     const mode = a.settle_mode ?? 'final';
     assert(mode === 'final' || mode === 'checkpoint', 'settle_mode must be "final" or "checkpoint"');
     const r: LedgerRecipe = { id: a.id, name: a.name, creator, sealed_hash: a.sealed_hash, runner_id: a.runner_id, parts: a.parts, price_per_run: price, reserve_bps: reserveBps, runs: 0n, revenue: 0n, listed: true, created_ns: this.now(),
       failed: 0n, aborted: 0n, promised_total: 0n, delivered_total: 0n, compensated_total: 0n, bond_available: 0n, bond_locked: 0n,
-      settle_mode: mode as SettleMode, version: 1, pending_sealed_hash: '', update_effective_ns: 0n };
+      settle_mode: mode as SettleMode, version: 1, pending_sealed_hash: '', update_effective_ns: 0n,
+      price_floor: band.floor, price_ceiling: band.ceiling, target_runs: band.target, period_start_ns: this.now(), period_runs: 0n };
     this.recipes.set(a.id, r);
     const { created_ns: _c, ...pub } = r;
     this.emit('recipe_published', { ...pub, runs: 0 });
   }
+
+  // ---------- market-driven pricing (v6) ----------
+  private checkPricing(p: PricingInput, runnerFee: bigint, partFees: bigint[]) {
+    const t = p.target_runs, floor = BigInt(p.price_floor), ceiling = BigInt(p.price_ceiling);
+    assert(Number.isInteger(t) && t >= 1 && t <= MAX_TARGET_RUNS, 'target_runs must be 1..=1000000');
+    assert(floor <= ceiling, 'price_floor must be <= price_ceiling');
+    assert(ceiling <= MAX_PRICE, 'price_ceiling too high');
+    const fixed = (floor * BigInt(this.protocolFeeBps)) / 10000n + runnerFee + partFees.reduce((x, y) => x + y, 0n);
+    assert(floor >= fixed, `price_floor below minimum viable price ${fixed} (protocol + runner + part fees)`);
+    return { floor, ceiling, target: t };
+  }
+  /** the recipe with every ended pricing period applied (pure; what the contract's views return) */
+  private rolled(r: LedgerRecipe): { next: LedgerRecipe; ended: bigint } {
+    const x = rollPrice({ price: r.price_per_run, periodRuns: r.period_runs, periodStartNs: r.period_start_ns, periodNs: this.pricePeriodNs, now: this.now(), target: r.target_runs, floor: r.price_floor, ceiling: r.price_ceiling });
+    if (x.ended === 0n) return { next: r, ended: 0n };
+    return { next: { ...r, price_per_run: x.price, period_start_ns: x.periodStartNs, period_runs: 0n }, ended: x.ended };
+  }
+  /** applies ended periods to storage; emits price_updated when the price moved */
+  private rollPrice(r: LedgerRecipe) {
+    const { next, ended } = this.rolled(r);
+    if (ended === 0n) return;
+    if (next.price_per_run !== r.price_per_run) this.emit('price_updated', { recipe_id: r.id, previous: r.price_per_run, price: next.price_per_run, periods: ended, runs: r.period_runs, target_runs: r.target_runs });
+    Object.assign(r, { price_per_run: next.price_per_run, period_start_ns: next.period_start_ns, period_runs: 0n });
+  }
+  set_pricing(a: { id: string; pricing: PricingInput }) {
+    const r = this.recipes.get(a.id); assert(r, 'unknown recipe'); assert(r.creator === this.caller(), 'creator only');
+    const band = this.checkPricing(a.pricing, this.runners.get(r.runner_id)!.fee_per_run, r.parts.map((b) => this.parts.get(b)?.fee_per_call ?? 0n));
+    this.rollPrice(r);
+    r.price_floor = band.floor; r.price_ceiling = band.ceiling; r.target_runs = band.target;
+    r.price_per_run = r.price_per_run < band.floor ? band.floor : r.price_per_run > band.ceiling ? band.ceiling : r.price_per_run;
+    this.emit('pricing_updated', { recipe_id: r.id, price_floor: r.price_floor, price_ceiling: r.price_ceiling, target_runs: r.target_runs, price: r.price_per_run });
+  }
+  /** anyone may apply ended pricing periods (keeper); returns the current list price */
+  update_price(a: { id: string }): bigint {
+    const r = this.recipes.get(a.id); assert(r, 'unknown recipe');
+    this.rollPrice(r);
+    return r.price_per_run;
+  }
+  /** view: the recipe as of now (ended pricing periods applied), like the contract's get_recipe */
+  get_recipe(id: string): LedgerRecipe | undefined { const r = this.recipes.get(id); return r && this.rolled(r).next; }
+  list_recipes(): LedgerRecipe[] { return [...this.recipes.values()].map((r) => this.rolled(r).next); }
 
   // ---------- versions with notice (v4) ----------
   /** activates a due pending update (the contract does this lazily too) */
@@ -207,14 +257,21 @@ export class LocalLedger {
       return '0';
     };
     if (m.action === 'run') {
-      { const due = this.recipes.get(m.recipe_id); if (due) this.activate(due); } // a due update takes effect before the run checks
+      { const due = this.recipes.get(m.recipe_id); if (due) { this.activate(due); this.rollPrice(due); } } // due update + ended pricing periods first
       if (!/^[A-Za-z0-9_-]{1,64}$/.test(m.run_id ?? '')) return reject('run_id must match ^[A-Za-z0-9_-]{1,64}$');
       if (!/^[0-9a-f]{64}$/.test(m.inputs_hash ?? '')) return reject('inputs_hash must be 64 lowercase hex');
       if (this.runs.has(m.run_id)) return reject('run exists');
       const r = this.recipes.get(m.recipe_id);
       if (!r) return reject('unknown recipe');
       if (!r.listed) return reject('recipe not listed');
-      if (amount < r.price_per_run) return reject('payment below price_per_run');
+      // a signed quote locks its price (within the band); otherwise the current list price applies
+      const qp = m.quote as SignedQuote | undefined;
+      if (qp && !(typeof qp.price === 'string' && /^\d+$/.test(qp.price))) throw new LedgerError('invalid msg');
+      if (m.max_price !== undefined && !(typeof m.max_price === 'string' && /^\d+$/.test(m.max_price))) throw new LedgerError('invalid msg');
+      const price = qp ? BigInt(qp.price) : r.price_per_run;
+      if (price < r.price_floor || price > r.price_ceiling) return reject('quoted price outside price_floor..price_ceiling');
+      if (m.max_price !== undefined && price > BigInt(m.max_price)) return reject('price above max_price');
+      if (amount < price) return reject('payment below price');
       let job_hash = '', expected = 0n, promised = 0n, covered = 0n, quoteKey = '';
       if (m.quote) {
         const q = m.quote as SignedQuote;
@@ -222,7 +279,7 @@ export class LocalLedger {
         // malformed quote objects make the msg unparseable, like the contract (panic → token refunds the sender)
         if (![q.expected, q.promised, q.cover, q.expires_ns].every(dec) || typeof q.signature !== 'string' || typeof q.sealed_hash !== 'string' || typeof q.job_hash !== 'string') throw new LedgerError('invalid msg');
         let sig: Uint8Array; try { sig = base64.dec(q.signature); } catch { throw new LedgerError('invalid msg'); }
-        const norm = { sealed_hash: q.sealed_hash, job_hash: q.job_hash, expected: BigInt(q.expected).toString(), promised: BigInt(q.promised).toString(), cover: BigInt(q.cover).toString(), expires_ns: BigInt(q.expires_ns).toString() };
+        const norm = { sealed_hash: q.sealed_hash, job_hash: q.job_hash, price: BigInt(q.price).toString(), expected: BigInt(q.expected).toString(), promised: BigInt(q.promised).toString(), cover: BigInt(q.cover).toString(), expires_ns: BigInt(q.expires_ns).toString() };
         if (!/^[0-9a-f]{64}$/.test(q.job_hash)) return reject('job_hash must be 64 lowercase hex');
         if (q.sealed_hash !== r.sealed_hash) return reject('quote for an outdated recipe version');
         const runner = this.runners.get(r.runner_id)!;
@@ -239,9 +296,10 @@ export class LocalLedger {
         job_hash = q.job_hash; expected = BigInt(norm.expected); promised = BigInt(norm.promised); covered = BigInt(norm.cover);
       }
       if (quoteKey) this.usedQuotes.add(quoteKey);
-      this.credit(owner, amount - r.price_per_run);
+      this.credit(owner, amount - price);
       this.setBond(r, bondLock(this.bondOf(r), covered)!);
-      const run: LedgerRun = { run_id: m.run_id, recipe_id: r.id, buyer: owner, amount: r.price_per_run, inputs_hash: m.inputs_hash, sealed_hash: r.sealed_hash, job_hash, expected, promised, covered, status: 'Pending', created_ns: this.now(),
+      r.period_runs += 1n; // demand counted at payment
+      const run: LedgerRun = { run_id: m.run_id, recipe_id: r.id, buyer: owner, amount: price, inputs_hash: m.inputs_hash, sealed_hash: r.sealed_hash, job_hash, expected, promised, covered, status: 'Pending', created_ns: this.now(),
         checkpoint_seq: 0, state_hash: '', parts_billed: [], billed: 0n, last_progress_ns: this.now() };
       this.runs.set(m.run_id, run);
       this.emit('run_requested', { ...run });
@@ -356,7 +414,7 @@ export class LocalLedger {
 
   balance_of(account: string): bigint { return this.balances.get(account) ?? 0n; }
   quote_settlement(recipe_id: string, parts_used: string[]) {
-    const r = this.recipes.get(recipe_id); assert(r, 'no recipe');
+    const r = this.get_recipe(recipe_id); assert(r, 'no recipe');
     const runner = this.runners.get(r.runner_id)!;
     return { price: r.price_per_run, ...settlementSplit({ price: r.price_per_run, protocolFeeBps: this.protocolFeeBps, runnerFee: runner.fee_per_run, partFees: parts_used.map((b) => this.parts.get(b)!.fee_per_call), reserveBps: r.reserve_bps }) };
   }

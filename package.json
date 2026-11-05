@@ -32,7 +32,9 @@
     "test:versions": "node scripts/demo.mjs --no-open --versions --exit",
     "versions-demo": "tsx scripts/versions-demo.ts",
     "test:atomic": "node scripts/demo.mjs --no-open --atomic --exit",
-    "atomic-demo": "tsx scripts/atomic-demo.ts"
+    "atomic-demo": "tsx scripts/atomic-demo.ts",
+    "test:pricing": "node scripts/demo.mjs --no-open --pricing --exit",
+    "pricing-demo": "tsx scripts/pricing-demo.ts"
   },
   "dependencies": {
     "@noble/curves": "^2.4.0",

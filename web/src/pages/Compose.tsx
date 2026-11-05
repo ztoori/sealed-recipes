@@ -16,7 +16,7 @@ const CAT_ORDER = ['source', 'guard', 'transform', 'action', 'sink'];
 const CAT_LABEL: Record<string, string> = { source: 'Sources', guard: 'Guards', transform: 'Transforms', action: 'Actions', sink: 'Outputs' };
 
 function blank(): Recipe {
-  return { frs: '1.0', kind: 'recipe', meta: { ticker: '', name: 'Untitled recipe', creator: 'chef.testnet', description: '' }, form: [], nodes: [], output: '', listing: { price_per_run: '500000', reserve_bps: 1000 } };
+  return { frs: '1.0', kind: 'recipe', meta: { ticker: '', name: 'Untitled recipe', creator: 'chef.testnet', description: '' }, form: [], nodes: [], output: '', listing: { price_per_run: '500000', reserve_bps: 1000, pricing: { price_floor: '300000', price_ceiling: '1000000', target_runs: 2 } } };
 }
 
 type PartData = { manifest: PartManifest; label: string; errors: number };
@@ -163,11 +163,20 @@ function ComposeInner() {
   const price = BigInt(recipe.listing.price_per_run || '0');
   const protocol = (price * PROTOCOL_BPS) / 10000n;
   const left = price - fees - RUNNER_FEE - protocol > 0n ? price - fees - RUNNER_FEE - protocol : 0n;
-  const minOk = price >= fees + RUNNER_FEE + protocol;
+  // v6: the floor must cover the fees on its own (then every price in the band does); a fixed price is floor = ceiling
+  const band = recipe.listing.pricing;
+  const floor = band ? BigInt(band.price_floor || '0') : price;
+  const ceiling = band ? BigInt(band.price_ceiling || '0') : price;
+  const floorNeed = fees + RUNNER_FEE + (floor * PROTOCOL_BPS) / 10000n;
+  const bandOk = floor <= price && price <= ceiling && (!band || (band.target_runs >= 1 && band.target_runs <= 1_000_000));
+  const minOk = floor >= floorNeed && bandOk;
   const canPublish = !!v?.ok && minOk && /^[A-Z0-9]{3,6}$/.test(recipe.meta.ticker);
 
   const setMeta = (k: keyof Recipe['meta'], val: string) => setRecipe((r) => ({ ...r, meta: { ...r.meta, [k]: val } }));
   const setListing = (k: keyof Recipe['listing'], val: string | number) => setRecipe((r) => ({ ...r, listing: { ...r.listing, [k]: val } }));
+  const setBand = (k: 'price_floor' | 'price_ceiling' | 'target_runs', val: string | number) =>
+    setRecipe((r) => ({ ...r, listing: { ...r.listing, pricing: { ...(r.listing.pricing ?? { price_floor: r.listing.price_per_run, price_ceiling: r.listing.price_per_run, target_runs: 2 }), [k]: val } } }));
+  const toUnits = (x: string) => String(Math.round(Number(x) * 1e6));
   const setParam = (k: string, val: unknown) => setRecipe((r) => ({ ...r, nodes: r.nodes.map((n) => (n.id === sel ? { ...n, params: { ...n.params, [k]: val } } : n)) }));
 
   return (
@@ -237,8 +246,17 @@ function ComposeInner() {
           <header><h2>Listing</h2></header>
           <div className="body grid" style={{ gap: 8, gridTemplateColumns: '1fr 1fr' }}>
             <div className="field"><label htmlFor="tk">Short code</label><input id="tk" value={recipe.meta.ticker} onChange={(e) => setMeta('ticker', e.target.value.toUpperCase())} maxLength={6} /></div>
-            <div className="field"><label htmlFor="pr">Price per run (USDC)</label><input id="pr" value={Number(recipe.listing.price_per_run) / 1e6} onChange={(e) => setListing('price_per_run', String(Math.round(Number(e.target.value) * 1e6)))} inputMode="decimal" /></div>
+            <div className="field"><label htmlFor="pr">{band ? 'Starting price per run (USDC)' : 'Price per run (USDC)'}</label><input id="pr" value={Number(recipe.listing.price_per_run) / 1e6} onChange={(e) => setListing('price_per_run', String(Math.round(Number(e.target.value) * 1e6)))} inputMode="decimal" /></div>
             <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="nm">Name</label><input id="nm" value={recipe.meta.name} onChange={(e) => setMeta('name', e.target.value)} /></div>
+            <label className="small" style={{ gridColumn: '1 / 3', display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input type="checkbox" checked={!!band} onChange={(e) => setRecipe((r) => ({ ...r, listing: { ...r.listing, pricing: e.target.checked ? { price_floor: String((BigInt(r.listing.price_per_run || '0') * 6n) / 10n), price_ceiling: String(BigInt(r.listing.price_per_run || '0') * 2n), target_runs: 2 } : undefined } }))} />
+              Market price: follows demand inside a band you set</label>
+            {band && <>
+              <div className="field"><label htmlFor="pf">Floor (USDC)</label><input id="pf" value={Number(band.price_floor) / 1e6} onChange={(e) => setBand('price_floor', toUnits(e.target.value))} inputMode="decimal" /></div>
+              <div className="field"><label htmlFor="pc">Ceiling (USDC)</label><input id="pc" value={Number(band.price_ceiling) / 1e6} onChange={(e) => setBand('price_ceiling', toUnits(e.target.value))} inputMode="decimal" /></div>
+              <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="pt">Target paid runs per period</label><input id="pt" value={band.target_runs} onChange={(e) => setBand('target_runs', Math.max(0, Math.round(Number(e.target.value) || 0)))} inputMode="numeric" /></div>
+              <div className="small muted" style={{ gridColumn: '1 / 3' }}>Each period, more paid runs than the target raise the price by up to 12.5%; fewer lower it by up to 12.5%. It never leaves the band. A quote locks the price for the job it was made for.</div>
+            </>}
             <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="rs">Keep in the guarantee deposit (% of your cut per run)</label><input id="rs" value={(recipe.listing.reserve_bps ?? 0) / 100} onChange={(e) => setListing('reserve_bps', Math.max(0, Math.min(10000, Math.round(Number(e.target.value) * 100))))} inputMode="decimal" /></div>
             <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="jb">Competes for job</label>
               <select id="jb" value={recipe.implements ?? ''} onChange={(e) => setRecipe((r) => ({ ...r, implements: e.target.value || undefined }))}>
@@ -254,7 +272,8 @@ function ComposeInner() {
           <header><h2>Checks</h2>{v && <span className={'pill ' + (v.ok && minOk ? 'ok' : 'bad')}>{v.ok && minOk ? 'ready to publish' : 'needs fixes'}</span>}{v && <RiskPill risk={v.risk} label />}</header>
           <div className="body">
             {v?.diagnostics.map((d, i) => <div key={i} className={'diag ' + d.severity}>{d.node ? `${d.node}: ` : ''}{d.message}</div>)}
-            {!minOk && <div className="diag error">Price per run must cover fees: at least {usd(fees + RUNNER_FEE + protocol)}</div>}
+            {floor < floorNeed && <div className="diag error">{band ? 'The floor' : 'Price per run'} must cover fees: at least {usd(floorNeed)}</div>}
+            {!bandOk && <div className="diag error">The starting price must lie between the floor and the ceiling, and the target must be at least 1 run</div>}
             <dl className="kv" style={{ marginTop: 8 }}>
               <dt>Part fees</dt><dd>{usd(fees)}</dd>
               <dt>TEE runner</dt><dd>{usd(RUNNER_FEE)}</dd>

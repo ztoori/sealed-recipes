@@ -17,7 +17,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.008,
+   "seconds": 0.011,
    "detail": ""
   },
   {
@@ -37,7 +37,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.007,
+   "seconds": 0.008,
    "detail": ""
   },
   {
@@ -67,7 +67,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.012,
+   "seconds": 0.009,
    "detail": ""
   },
   {
@@ -87,7 +87,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.012,
+   "seconds": 0.013,
    "detail": ""
   },
   {
@@ -107,7 +107,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.007,
+   "seconds": 0.008,
    "detail": ""
   },
   {
@@ -124,6 +124,26 @@
    "module": "settlement[2p]",
    "theorem": "caps",
    "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.014,
+   "detail": ""
+  },
+  {
+   "module": "settlement[3p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[3p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
@@ -132,26 +152,6 @@
   },
   {
    "module": "settlement[3p]",
-   "theorem": "conservation",
-   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[3p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout and the reserve are >= 0",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.009,
-   "detail": ""
-  },
-  {
-   "module": "settlement[3p]",
    "theorem": "creator-keeps-remainder",
    "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
    "outcome": "proved",
@@ -167,7 +167,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.009,
+   "seconds": 0.01,
    "detail": ""
   },
   {
@@ -197,7 +197,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.008,
+   "seconds": 0.009,
    "detail": ""
   },
   {
@@ -217,7 +217,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.008,
+   "seconds": 0.009,
    "detail": ""
   },
   {
@@ -252,86 +252,6 @@
   },
   {
    "module": "settlement[5p]",
-   "theorem": "caps",
-   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.01,
-   "detail": ""
-  },
-  {
-   "module": "settlement[6p]",
-   "theorem": "conservation",
-   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[6p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout and the reserve are >= 0",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.009,
-   "detail": ""
-  },
-  {
-   "module": "settlement[6p]",
-   "theorem": "creator-keeps-remainder",
-   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[6p]",
-   "theorem": "caps",
-   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.01,
-   "detail": ""
-  },
-  {
-   "module": "settlement[7p]",
-   "theorem": "conservation",
-   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[7p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout and the reserve are >= 0",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.009,
-   "detail": ""
-  },
-  {
-   "module": "settlement[7p]",
-   "theorem": "creator-keeps-remainder",
-   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[7p]",
    "theorem": "caps",
    "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
    "outcome": "proved",
@@ -341,6 +261,86 @@
    "detail": ""
   },
   {
+   "module": "settlement[6p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[6p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.009,
+   "detail": ""
+  },
+  {
+   "module": "settlement[6p]",
+   "theorem": "creator-keeps-remainder",
+   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[6p]",
+   "theorem": "caps",
+   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.011,
+   "detail": ""
+  },
+  {
+   "module": "settlement[7p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[7p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.01,
+   "detail": ""
+  },
+  {
+   "module": "settlement[7p]",
+   "theorem": "creator-keeps-remainder",
+   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[7p]",
+   "theorem": "caps",
+   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.012,
+   "detail": ""
+  },
+  {
    "module": "settlement[8p]",
    "theorem": "conservation",
    "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
@@ -357,7 +357,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.007,
+   "seconds": 0.008,
    "detail": ""
   },
   {
@@ -477,7 +477,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.002,
+   "seconds": 0.003,
    "detail": ""
   },
   {
@@ -578,6 +578,86 @@
    "expected": "proved",
    "ok": true,
    "seconds": 0.002,
+   "detail": ""
+  },
+  {
+   "module": "pricing",
+   "theorem": "never-overflows",
+   "statement": "with ceiling <= 1e30 and target <= 1e6 every checked operation fits in u128",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.007,
+   "detail": ""
+  },
+  {
+   "module": "pricing",
+   "theorem": "stays-in-band",
+   "statement": "floor <= next price <= ceiling, from any starting price",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.003,
+   "detail": ""
+  },
+  {
+   "module": "pricing",
+   "theorem": "step-at-most-12.5%",
+   "statement": "from a price in the band, one period moves it by at most 1/8 either way",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.015,
+   "detail": ""
+  },
+  {
+   "module": "pricing",
+   "theorem": "branch-reachable: rising",
+   "statement": "witness exists with runs > target (expected counterexample to 'runs <= target')",
+   "outcome": "counterexample",
+   "expected": "counterexample",
+   "ok": true,
+   "seconds": 0.008,
+   "detail": ""
+  },
+  {
+   "module": "pricing",
+   "theorem": "branch-reachable: falling",
+   "statement": "witness exists with runs < target (expected counterexample to 'runs >= target')",
+   "outcome": "counterexample",
+   "expected": "counterexample",
+   "ok": true,
+   "seconds": 0.007,
+   "detail": ""
+  },
+  {
+   "module": "pricing",
+   "theorem": "demand-direction",
+   "statement": "runs >= target never lowers the price; runs <= target never raises it",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.004,
+   "detail": ""
+  },
+  {
+   "module": "pricing",
+   "theorem": "monotone-in-demand",
+   "statement": "more paid runs in a period never give a lower next price",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.049,
+   "detail": ""
+  },
+  {
+   "module": "pricing",
+   "theorem": "every-band-price-is-viable",
+   "statement": "floor covers its fees => any price >= floor covers protocol + runner + parts",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.005,
    "detail": ""
   }
  ],

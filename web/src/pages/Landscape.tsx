@@ -27,6 +27,7 @@ const VALUE = [
   ['Guaranteed outcomes', 'The creator’s guarantee deposit pays any shortfall up to the quoted cover. Deposit safety is model-checked (TLA+) and its arithmetic proved (Z3), on models tied to the code by conformance tests.'],
   ['One receipt, every contributor', 'Part authors, runner and creator paid in the same settlement, with conservation proved.'],
   ['FRS-1 typed parts', 'Swappable parts with typed ports, capability and resource limits, and model/harness disclosure with a withdrawal-risk label.'],
+  ['Market-driven prices', 'Each recipe’s price per run follows its own demand inside a creator-set band (EIP-1559 rule, proved); quotes lock the price.'],
   ['No investment features', 'Buyers pay for a service, creators post collateral. No shares, dividends or trading, so any wallet anywhere can use it.'],
   ['Durable runs, partial settlement', 'Runs survive runner crashes with exactly-once deposits; in checkpoint mode each part is paid when it finishes.'],
   ['Versions with notice', 'Updates take effect after an on-chain notice period; each run executes the version it paid for.'],

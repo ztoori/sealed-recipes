@@ -284,7 +284,7 @@ app.post('/quotes', auth, async (req, res) => {
   const fail = (error: string) => res.json({ recipe_id, ok: false, error });
   try {
     if (typeof buyer !== 'string' || !buyer) return fail('buyer required: quotes are bound to the account that will pay');
-    const onChain = await chainView<{ sealed_hash: string; runner_id: string; parts: string[]; bond_available?: string }>(`recipes/${recipe_id}`);
+    const onChain = await chainView<{ sealed_hash: string; runner_id: string; parts: string[]; bond_available?: string; price_per_run: string }>(`recipes/${recipe_id}`);
     if (onChain.runner_id !== RUNNER_ID) return fail('recipe is assigned to a different runner');
     if (sealedHash(sealed_recipe) !== onChain.sealed_hash) return fail('sealed recipe does not match the on-chain commitment');
     let recipe: Recipe | undefined = open<Recipe>(sealed_recipe, keys.box.secretKey);
@@ -301,8 +301,10 @@ app.post('/quotes', auth, async (req, res) => {
     const m = measure(jobType, dry.output, await fetchPrices(ONECLICK));
     // the bond backs the promise up to what is free right now; the contract re-checks bond >= cover at payment
     const free = BigInt(onChain.bond_available ?? '0');
+    // v6: the quote locks the recipe's current list price (market-driven, inside the creator's band); the contract
+    // accepts any signed price within the band, so a creator's pricing strategy can live here
     const fields = {
-      sealed_hash: onChain.sealed_hash, job_hash, expected: m.expected.toString(), promised: m.promised.toString(),
+      sealed_hash: onChain.sealed_hash, job_hash, price: BigInt(onChain.price_per_run).toString(), expected: m.expected.toString(), promised: m.promised.toString(),
       cover: (m.promised < free ? m.promised : free).toString(), expires_ns: (BigInt(Date.now()) * 1_000_000n + QUOTE_TTL_NS).toString(),
     };
     const inputs_hash = sealedHash(sealed_job); // the buyer pays with this same envelope as sealed_inputs

@@ -11,7 +11,57 @@ on mainnet; any NEP-141 on testnet). JSON amounts are strings (`U128`).
 
 ## Changelog
 
-The body of this file (from **Roles** on) describes the current contract (v5). The changelog below records how it got there, newest first; its older entries mention removed features.
+The body of this file (from **Roles** on) describes the current contract (v6). The changelog below records how it got there, newest first; its older entries mention removed features.
+
+### v6 changes (market-driven pricing)
+
+Each recipe's `price_per_run` is now its **current list price**, which follows demand inside a band the creator sets.
+Source: `src/pricing.rs` (mirror `core/src/pricing.ts`), proofs in `verification/smt/prove_money.py :: prove_pricing`.
+
+**Init.** `new(owner, payment_token, protocol_account, protocol_fee_bps, update_delay_ns, price_period_ns: U64)`;
+`price_period_ns > 0` (`price_period_ns must be > 0`). `get_config` returns it. 1 hour suggested on mainnet.
+
+**Recipe gains** (appended after `update_effective_ns`, in this order, also in `recipe_published`):
+`price_floor: U128, price_ceiling: U128, target_runs: u32, period_start_ns: U64 (publish time), period_runs: u64`.
+
+**Publish.** `publish_recipe(..., settle_mode: Option<String>, pricing: Option<PricingInput>)` with
+`PricingInput { price_floor: U128, price_ceiling: U128, target_runs: u32 }`. Omitted: a fixed price
+(`floor = ceiling = price_per_run`, target 1). Checks, in order: `target_runs must be 1..=1000000`,
+`price_floor must be <= price_ceiling`, `price_ceiling too high` (above `MAX_PRICE = 10^30`),
+`price_floor below minimum viable price <n> (protocol + runner + part fees)` (the floor must cover the protocol fee on
+itself plus the runner and part fees; the protocol fee only grows with the price, so every price in the band is viable),
+then `price_per_run must be within price_floor and price_ceiling`.
+
+**Demand rule.** Time is cut into periods of `price_period_ns` starting at publish. At the end of a period with `runs`
+paid runs (counted at payment) against `target`:
+```
+used   = min(runs, 2 * target)
+price' = price + floor(price * (used - target) / (8 * target))   if used >= target
+price' = price - floor(price * (target - used) / (8 * target))   otherwise
+price' = clamp(price', price_floor, price_ceiling)
+```
+Ended periods are applied lazily (first with its runs, then idle ones, at most 64 per call), at the start of every
+`ft_on_transfer` run, by `set_pricing`, and by `update_price(id) -> U128`, which anyone may call (keeper). Views
+(`get_recipe`, `list_recipes`, `quote_settlement`) return the price with ended periods applied, so `price_per_run`
+always shows what a payment made now would be charged. Event `price_updated {recipe_id, previous, price, periods, runs,
+target_runs}` when the price moved.
+
+**Quotes lock a price.** The quote message is now
+`frs-quote-v3|<contract>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<price>|<expected>|<promised>|<cover>|<expires_ns>`
+and `QuoteMsg` gains `price: U128`. A quoted run is charged the signed `price`; an unquoted run the current list price.
+
+**Buyer cap.** The `run` msg accepts `"max_price": U128`. Checks after `recipe not listed`, before the quote checks:
+`quoted price outside price_floor..price_ceiling` (price not in the band), `price above max_price`, then
+`payment below price` (replaces `payment below price_per_run`). `run_requested.amount` is the price charged.
+
+**Creator.** `set_pricing(id, pricing: PricingInput)` — creator only, same checks as publish; applies ended periods,
+then clamps the list price into the new band. Event `pricing_updated {recipe_id, price_floor, price_ceiling,
+target_runs, price}`.
+
+**Proved** (Z3, every input): the next price stays in the band; from inside the band it moves at most 1/8 either way;
+`runs >= target` never lowers it and `runs <= target` never raises it; more runs never give a lower price; no
+operation overflows with `ceiling <= 10^30` and `target <= 10^6`; any price `>= floor` covers protocol + runner + part
+fees. Vectors: `conformance-money.json :: pricing` (300 cases, including out-of-range inputs that must return `None`).
 
 ### v5 changes (no investment features: revenue shares removed)
 
@@ -234,9 +284,10 @@ There is no holder or investor role: nothing can be bought except a run.
 ```
 Part    { id, version, author, fee_per_call, manifest_hash, active }
 Runner  { id, signing_pk: ed25519 (base58 "ed25519:..."), enc_pk_hex (x25519), codehash, fee_per_run, active }
-Recipe  { id (^[A-Z0-9]{3,6}$), name, creator, sealed_hash, runner_id, parts: [part_id], price_per_run, reserve_bps,
-          runs, revenue, listed, failed, aborted, promised_total, delivered_total, compensated_total,
-          bond_available, bond_locked, settle_mode, version, pending_sealed_hash, update_effective_ns }
+Recipe  { id (^[A-Z0-9]{3,6}$), name, creator, sealed_hash, runner_id, parts: [part_id], price_per_run (current list price),
+          reserve_bps, runs, revenue, listed, failed, aborted, promised_total, delivered_total, compensated_total,
+          bond_available, bond_locked, settle_mode, version, pending_sealed_hash, update_effective_ns,
+          price_floor, price_ceiling, target_runs, period_start_ns, period_runs }
 Run     { run_id, recipe_id, buyer, amount, inputs_hash, sealed_hash (snapshot at payment), status: Pending|Settled|Refunded,
           created_ns, job_hash ("" if unquoted), expected, promised, covered,
           checkpoint_seq, state_hash, parts_billed, billed, last_progress_ns }
@@ -245,20 +296,21 @@ Run     { run_id, recipe_id, buyer, amount, inputs_hash, sealed_hash (snapshot a
 ## Methods
 
 ### Admin
-- `new(owner, payment_token, protocol_account, protocol_fee_bps, update_delay_ns)` — `#[init]`. `protocol_fee_bps <= 1000`.
+- `new(owner, payment_token, protocol_account, protocol_fee_bps, update_delay_ns, price_period_ns)` — `#[init]`. `protocol_fee_bps <= 1000`, `price_period_ns > 0`.
 - `add_runner(id, signing_pk, enc_pk_hex, codehash, fee_per_run)` — owner only.
 - `set_runner_active(id, active)` — owner only.
 
 ### Builders & creators
 - `register_part(id, version, fee_per_call, manifest_hash)` — author = predecessor. Id unique and must match `^[a-z0-9._@-]{1,64}$` (no `,` or `|`, which delimit the signed report).
-- `publish_recipe(id, name, sealed_hash, runner_id, parts, price_per_run, reserve_bps, settle_mode?)`
-  - creator = predecessor.
-  - rejects if `price_per_run < protocol_fee(price) + runner.fee_per_run + Σ part.fee_per_call` (minimum viable price).
+- `publish_recipe(id, name, sealed_hash, runner_id, parts, price_per_run, reserve_bps, settle_mode?, pricing?)`
+  - creator = predecessor. `price_per_run` is the starting list price; `pricing` sets the band (see v6), omitted = fixed price.
+  - rejects if `price_floor < protocol_fee(price_floor) + runner.fee_per_run + Σ part.fee_per_call` (minimum viable price).
   - `parts` must be non-empty; every part exists & active; runner active.
   - `reserve_bps <= 10000` (`reserve_bps must be <= 10000`): the share of the creator's cut kept in the guarantee deposit.
   - `settle_mode` is `"final"` (default) or `"checkpoint"` (see v4).
 - `withdraw_bond(recipe_id, amount)` — creator only, `amount <= bond_available`; credited to the creator's balance. Locked cover cannot be withdrawn.
 - `update_sealed(id, sealed_hash)`, `cancel_update(id)`, `apply_update(id)` — versions with a notice period (see v4).
+- `set_pricing(id, pricing)` (creator) and `update_price(id)` (anyone) — market-driven pricing (see v6).
 
 ### Pay-per-run (NEAR Intents)
 The buyer's 1Click quote targets the payment token on NEAR with
@@ -266,11 +318,11 @@ The buyer's 1Click quote targets the payment token on NEAR with
 delivery arrives as `ft_transfer_call` → `ft_on_transfer(sender_id, amount, msg)`.
 
 `msg` is JSON:
-- `{"action":"run","recipe_id":"CLNP","run_id":"r-…","inputs_hash":"<hex sha256>","quote":{…}?}`
-  - optional `quote` = `{sealed_hash, job_hash, expected, promised, cover, expires_ns, signature}` (numbers are
+- `{"action":"run","recipe_id":"CLNP","run_id":"r-…","inputs_hash":"<hex sha256>","quote":{…}?,"max_price":"<U128>"?}`
+  - optional `quote` = `{sealed_hash, job_hash, price, expected, promised, cover, expires_ns, signature}` (numbers are
     decimal strings; a malformed quote object makes the msg unparseable → panic), signed by the recipe's runner over
     ```
-    frs-quote-v2|<contract>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<expected>|<promised>|<cover>|<expires_ns>
+    frs-quote-v3|<contract>|<recipe_id>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<price>|<expected>|<promised>|<cover>|<expires_ns>
     ```
     where `buyer` = `on_behalf_of`, else `sender_id`, and `inputs_hash` is this msg's `inputs_hash`. Checked after
     the run checks below, in order: `job_hash must be 64 lowercase hex`, `quote for an outdated recipe version`
@@ -280,7 +332,9 @@ delivery arrives as `ft_transfer_call` → `ft_on_transfer(sender_id, amount, ms
     `covered = cover` moves from `bond_available` to `bond_locked`; the run stores `job_hash, expected, promised, covered`.
   - `run_id` must match `^[A-Za-z0-9_-]{1,64}$`; `inputs_hash` must be 64 lowercase hex.
   - the run records the recipe's current `sealed_hash`; a later `update_sealed` only affects new runs.
-  - `amount` must be `>= price_per_run`; excess is credited to the owner's (`on_behalf_of` or sender) withdrawable balance.
+  - the price charged is the quote's signed `price`, else the current list price (after applying ended pricing periods);
+    it must lie in `price_floor..price_ceiling` and at most `max_price` when given (see v6).
+  - `amount` must be `>= price`; excess is credited to the owner's (`on_behalf_of` or sender) withdrawable balance.
   - creates `Run{status:Pending}`. Returns `"0"` (nothing refunded to the token contract).
 - `{"action":"bond","recipe_id":"CLNP"}` — adds `amount` to the recipe's `bond_available` (`unknown recipe` otherwise). Event `bond_posted`.
 - Both accept an optional `"on_behalf_of":"<account>"`. With NEAR Intents the
@@ -338,4 +392,4 @@ and a single NEP-297 event `frs_settlement` lists every payout.
 ### Events (NEP-297, standard `fungible-recipes`, version `1.0.0`)
 Exact field shapes: [CONTRACT_EVENTS.md](CONTRACT_EVENTS.md).
 `runner_added`, `part_registered`, `recipe_published`, `recipe_updated`, `run_requested`, `frs_settlement`, `run_refunded`,
-`recipe_update_scheduled`, `recipe_update_cancelled`, `run_checkpoint`, `withdrawn`, `withdraw_failed`, `transfer_rejected`, `bond_posted`, `bond_withdrawn`.
+`recipe_update_scheduled`, `recipe_update_cancelled`, `run_checkpoint`, `price_updated`, `pricing_updated`, `withdrawn`, `withdraw_failed`, `transfer_rejected`, `bond_posted`, `bond_withdrawn`.
