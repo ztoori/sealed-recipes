@@ -74,17 +74,7 @@ await waitFor(`${base}/api/mode`);
 const seed = spawnSync(node, [...tsx, 'scripts/seed.ts'], { cwd: root, stdio: 'inherit', env: { ...process.env, SRS_URL: base } });
 if (seed.status) shutdown(seed.status);
 
-// demo builder agents on the offline Agent Market mock: they bid on Sealed Recipes bounties and deliver sealed recipes
-if (!args.has('--no-builders') && !process.env.AGENT_MARKET_URL) {
-  for (const [handle, extra] of [['dropsmith', ['--bid-pct', '70']], ['swapsmith', ['--bid-pct', '55', '--deliver-wrong', 'SWPR']]]) {
-    const c = spawn(node, [...tsx, 'scripts/builder-agent.ts', '--handle', handle, ...extra], { cwd: root, stdio: ['ignore', 'inherit', 'inherit'], env: { ...process.env, SRS_URL: base } });
-    children.push(c);
-  }
-}
-
-console.log(`\n  Sealed Recipes is running →  ${base}\n  (local mode: offline mocks for FastNEAR / RPC / 1Click / NEAR AI Cloud; see README "What is real")\n  Ctrl+C to stop.\n`);
-
-for (const [flag, script] of [['--crash-test', 'scripts/crash-test.ts'], ['--versions', 'scripts/versions-demo.ts'], ['--atomic', 'scripts/atomic-demo.ts'], ['--pricing', 'scripts/pricing-demo.ts'], ['--bounty', 'scripts/bounty-demo.ts'], ['--recipes', 'scripts/recipes-demo.ts']]) {
+for (const [flag, script] of [['--crash-test', 'scripts/crash-test.ts'], ['--versions', 'scripts/versions-demo.ts'], ['--atomic', 'scripts/atomic-demo.ts'], ['--pricing', 'scripts/pricing-demo.ts'], ['--recipes', 'scripts/recipes-demo.ts']]) {
   if (!args.has(flag)) continue;
   // async (not spawnSync): the launcher must stay responsive to restart the runner while the script runs
   const status = await new Promise((done) => spawn(node, [...tsx, script], { cwd: root, stdio: 'inherit', env: { ...process.env, SRS_URL: base } }).on('exit', (c) => done(c ?? 1)));

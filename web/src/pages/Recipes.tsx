@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { nextPrice } from '../../../core/src/pricing';
 import { api, money, short, usd, usePoll } from '../api';
 import { useApp, useStoryOnce } from '../App';
-import { Bounties } from '../components/Bounties';
+import { CAT, Icon, jobLook } from '../icons';
+import { Empty, Head, Seal, Stat, Tip } from '../ui';
 
 /**
  * Recipes: find a recipe (search, favorites), see its market-driven price, public track record and the guarantee
@@ -24,7 +25,7 @@ export function Recipes({ ticker: wanted }: { ticker?: string }) {
   const { go, story } = useApp();
   const once = useStoryOnce();
   const [listings] = usePoll<any[]>('/api/listings', 2500);
-  const [jobs] = usePoll<any[]>('/api/jobs', 5000);
+  const [jobs] = usePoll<any[]>('/api/jobs', 15000);
   const [q, setQ] = useState('');
   const [fav, toggleFav] = useFavorites();
   const jobName = (id?: string | null) => jobs?.find((j) => j.id === id)?.name ?? '';
@@ -49,71 +50,45 @@ export function Recipes({ ticker: wanted }: { ticker?: string }) {
   }, [story.step, story.run, !!listings?.some((l) => l.ticker === 'CLNP')]);
 
   const row = (l: any) => (
-    <li key={l.ticker} className={'rcp' + (l.ticker === ticker ? ' sel' : '')}>
-      <button className="star" aria-pressed={fav.has(l.ticker)} aria-label={(fav.has(l.ticker) ? 'Remove ' : 'Add ') + l.ticker + ' to favorites'} onClick={() => toggleFav(l.ticker)}>{fav.has(l.ticker) ? '★' : '☆'}</button>
+    <li key={l.ticker} className={'rcp' + (l.ticker === ticker ? ' sel' : '') + (fav.has(l.ticker) ? ' fav' : '')}>
       <button className="pick" onClick={() => select(l.ticker)} aria-current={l.ticker === ticker ? 'true' : undefined}>
-        <span className="nm"><b>{l.name}</b><span className="tk">{l.ticker}</span></span>
-        <span className="small muted">{jobName(l.implements) || 'direct runs only'}</span>
-        <span className="meta small"><span>{money(l.record.pricePerRun)} per run</span><Trend h={l.record.history} />{l.record.keptPromise != null && <span className={l.record.keptPromise >= 1 ? 'gain' : 'loss'}>{Math.round(l.record.keptPromise * 100)}% of promise</span>}<span className="muted">{l.record.runs} {l.record.runs === 1 ? 'run' : 'runs'}</span></span>
+        <Seal job={l.implements} size={38} />
+        <span className="nm">
+          <b>{l.name}</b>
+          <span className="sub"><span className="tk">{l.ticker}</span>{jobName(l.implements) || 'direct runs only'}</span>
+        </span>
+        <span className="px">
+          <b>{money(l.record.pricePerRun)}</b>
+          <Trend h={l.record.history} />
+        </span>
       </button>
+      <button className="star" aria-pressed={fav.has(l.ticker)} aria-label={(fav.has(l.ticker) ? 'Remove ' : 'Add ') + l.ticker + ' to favorites'} onClick={() => toggleFav(l.ticker)}><Icon name="star" size={15} fill={fav.has(l.ticker)} /></button>
     </li>
   );
 
   return (
     <div className="grid ex">
-      <section className="grid" style={{ alignContent: 'start' }}>
-        <div className="panel" aria-label="Find a recipe">
-          <div className="body" style={{ paddingBottom: 6 }}>
-            <input className="search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search recipes, jobs, parts, creators" aria-label="Search recipes" />
-          </div>
-          {favs.length > 0 && <><div className="listhead">Favorites</div><ul className="rlist">{favs.map(row)}</ul></>}
-          <div className="listhead">{q ? `${shown.length} matching` : 'All recipes'}<span className="muted"> · {listings?.length ?? 0} listed</span></div>
+      <section className="rail" aria-label="Find a recipe">
+        <label className="search-wrap"><Icon name="search" size={16} /><input className="search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search recipes, jobs, parts" aria-label="Search recipes" /></label>
+        <div className="rail-scroll">
+          {favs.length > 0 && <><div className="listhead"><Icon name="star" size={13} fill />Favorites</div><ul className="rlist">{favs.map(row)}</ul></>}
+          <div className="listhead">{q ? `${shown.length} matching` : 'All recipes'}<span className="count">{listings?.length ?? 0}</span></div>
           <ul className="rlist">{rest.map(row)}</ul>
-          {listings && !shown.length && <div className="body small muted">No recipe matches “{q}”. If nobody offers what you need, request it below.</div>}
-          {listings && !listings.some((l) => l.ticker === 'CLNP') && !q && <div className="body small muted" style={{ borderTop: '1px solid var(--rule-soft)' }}>One more is not listed yet: “Clean up and protect” (CLNP). Play the demo story to watch a creator compose and publish it, or build it yourself in Compose.</div>}
+          {listings && !shown.length && <Empty icon="search">Nothing matches “{q}”.</Empty>}
+          {listings && !listings.some((l) => l.ticker === 'CLNP') && !q && (
+            <div className="ghost-row" title="Play the demo to watch a creator compose and publish it"><Seal job="job.wallet-cleanup" size={38} className="dim" /><span className="nm"><b>Clean up and protect</b><span className="sub"><span className="tk">CLNP</span>published in the demo</span></span><Icon name="lock" size={15} /></div>
+          )}
         </div>
-        <RequestRecipe jobs={jobs} />
       </section>
 
-      <section className="grid" style={{ minWidth: 0 }}>
+      <section className="grid detail" style={{ minWidth: 0 }}>
         {ticker && <RecipeDetail key={ticker} ticker={ticker} listings={listings ?? []} jobName={jobName} />}
       </section>
     </div>
   );
 }
 
-/** Job types nobody serves yet: request one (open demand), and put a bounty on it for builders. */
-function RequestRecipe({ jobs }: { jobs?: any[] }) {
-  const { toast } = useApp();
-  const unserved = (jobs ?? []).filter((j) => !j.recipes.length);
-  const [open, setOpen] = useState<string | null>(null);
-  const [demand, refresh] = usePoll<{ job_type: string }[]>('/api/demand', 5000);
-  if (!unserved.length) return null;
-  const request = async (id: string) => {
-    try { await api('/api/demand', { job_type: id }); refresh(); setOpen(id); toast('Request recorded: builders see it as open demand'); } catch (e) { toast((e as Error).message, true); }
-  };
-  return (
-    <div className="panel">
-      <header><h2>Need something nobody offers?</h2></header>
-      <div className="body grid" style={{ gap: 8 }}>
-        <div className="small muted">These jobs have no recipe yet. Requesting one tells builders there is demand; a bounty pays an agent on NEAR AI Agent Market to build it.</div>
-        {unserved.map((j) => {
-          const n = (demand ?? []).filter((d) => d.job_type === j.id).length;
-          return (
-            <div key={j.id} className="jobreq">
-              <div><b>{j.name}</b><div className="small muted">{j.description}</div>{n > 0 && <div className="small">{n} request{n > 1 ? 's' : ''} so far</div>}</div>
-              <div className="row" style={{ gap: 6 }}>
-                <button className="btn ghost sm" onClick={() => request(j.id)}>Request it</button>
-                <button className="btn ghost sm" aria-expanded={open === j.id} onClick={() => setOpen(open === j.id ? null : j.id)}>{open === j.id ? 'Hide bounty' : 'Bounty'}</button>
-              </div>
-              {open === j.id && <div style={{ gridColumn: '1 / -1' }}><Bounties jobType={j.id} served={false} /></div>}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+const RISK_TIP = 'Withdrawal risk: could this recipe be rebuilt if a part’s model or service disappeared? Open weights or bundled code: low. Remote services: medium. Closed models: high (SRS-1 §2.1).';
 
 function RecipeDetail({ ticker, listings, jobName }: { ticker: string; listings: any[]; jobName: (id?: string | null) => string }) {
   const { go } = useApp();
@@ -121,85 +96,129 @@ function RecipeDetail({ ticker, listings, jobName }: { ticker: string; listings:
   const rec = m?.record;
   const l = listings.find((x) => x.ticker === ticker);
   const rivals = listings.filter((x) => x.ticker !== ticker && l?.implements && x.implements === l.implements);
-  if (!rec || !m.listing) return <div className="panel body muted">Loading {ticker}…</div>;
+  if (!rec || !m.listing) return <div className="panel body muted loading"><span className="spinner" />Loading {ticker}</div>;
+  const kept = rec.keptPromise;
   return (
     <>
-      <div className="panel">
-        <div className="body">
-          <div className="row between wrap" style={{ alignItems: 'flex-start' }}>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="small muted">{ticker} · by {m.listing.creator} · v{m.onchain?.version ?? 1}</div>
-              <h1 className="listing-name">{m.listing.name}</h1>
-              <p className="muted" style={{ maxWidth: 640, margin: '6px 0 0' }}>{m.listing.description}</p>
-              {l?.implements && <div className="row wrap small" style={{ gap: 6, marginTop: 8 }}>
-                <span className="pill">does: {jobName(l.implements)}</span>
-                <span className={'pill ' + (m.listing.risk === 'low' ? 'ok' : m.listing.risk === 'high' ? 'bad' : 'warn')} title="How likely a part's model or service is withdrawn or changed (SRS-1 §2.1)">{m.listing.risk} withdrawal risk</span>
-                {m.listing.privacy === 'confidential' && <span className="pill sealed">confidential swaps</span>}
-              </div>}
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div className="bigpx">{money(rec.pricePerRun)} <span className="small muted">per run now</span></div>
-              <div className="small muted">{rec.pricing.fixed ? 'fixed price' : `band ${money(rec.pricing.floor)}–${money(rec.pricing.ceiling)}`}</div>
-              <div className="small muted">{rec.runs} paid {rec.runs === 1 ? 'run' : 'runs'} · {money(rec.revenue)} billed</div>
-              <button id="get-quote" className="btn" style={{ marginTop: 8 }} onClick={() => go({ page: 'quote', ticker })}>Get a quote</button>
-            </div>
+      <div className="panel hero">
+        <div className="hero-main">
+          <Seal job={l?.implements} ticker={ticker} size={112} className="hero-seal" />
+          <div className="hero-tx">
+            <div className="hero-meta"><span className="tk lg">{ticker}</span><span>by <b>{m.listing.creator}</b></span><span className="ver">v{m.onchain?.version ?? 1}</span></div>
+            <h1 className="listing-name">{m.listing.name}</h1>
+            <p className="lede">{m.listing.description}</p>
+            {l?.implements && <div className="tags">
+              <span className="tag"><Icon name={jobLook(l.implements).icon} size={13} />{jobName(l.implements)}</span>
+              <span className={'tag risk-' + m.listing.risk}><i className="dot" />{m.listing.risk} risk<Tip>{RISK_TIP}</Tip></span>
+              {m.listing.privacy === 'confidential' && <span className="tag sealed"><Icon name="lock" size={13} />Confidential swaps</span>}
+            </div>}
           </div>
-          {rivals.length > 0 && <div className="small" style={{ marginTop: 10 }}>
-            <span className="muted">Also does this job: </span>
-            {rivals.map((r) => <button key={r.ticker} className="chip" onClick={() => go({ page: 'recipes', ticker: r.ticker })}>{r.ticker} · {money(r.record.pricePerRun)}{r.record.keptPromise != null ? ` · ${Math.round(r.record.keptPromise * 100)}% of promise` : ''}</button>)}
-          </div>}
+          <div className="hero-buy">
+            <div className="bigpx">{money(rec.pricePerRun)}</div>
+            <div className="per">per run <Tip>{rec.pricing.fixed ? 'Fixed by the creator.' : `Follows demand inside ${money(rec.pricing.floor)}–${money(rec.pricing.ceiling)}. A quote locks it.`}</Tip></div>
+            <button id="get-quote" className="btn primary lg" onClick={() => go({ page: 'quote', ticker })}><Icon name="lock" size={16} />Get a quote</button>
+          </div>
         </div>
+        <div className="stats">
+          <Stat icon="check" value={rec.runs} label={rec.runs === 1 ? 'paid run' : 'paid runs'} />
+          <Stat icon="target" value={kept == null ? 'n/a' : `${Math.round(kept * 100)}%`} label="of promise kept" tone={kept == null ? undefined : kept >= 1 ? 'gain' : 'loss'} tip="Value delivered against the value promised in signed quotes, across all quoted runs." />
+          <Stat icon="shield" value={money(rec.deposit.available, 0)} label="guarantee" tone="wax" tip="The creator’s collateral. If a run delivers less than its signed promise, the buyer is paid the shortfall from it, in the same settlement." />
+          <Stat icon="receipt" value={money(rec.revenue)} label="billed" />
+        </div>
+        {rivals.length > 0 && <div className="rivals">
+          <span className="muted">Rivals</span>
+          {rivals.map((r) => <button key={r.ticker} className="chip" onClick={() => go({ page: 'recipes', ticker: r.ticker })}><b>{r.ticker}</b>{money(r.record.pricePerRun)}{r.record.keptPromise != null && <span className={r.record.keptPromise >= 1 ? 'gain' : 'loss'}>{Math.round(r.record.keptPromise * 100)}%</span>}</button>)}
+        </div>}
+      </div>
+
+      <div className="panel">
+        <Head icon="trend" title="Price and demand" tip="Line: price per run. Bars: paid runs per period; dashed line: the target. More runs than the target raise the price up to 12.5% a period, fewer lower it. It’s Ethereum’s base-fee rule, applied on-chain and proved to stay in the band.">
+          <span className="spacer" /><span className="small muted">{money(rec.pricing.floor)}–{money(rec.pricing.ceiling)}</span>
+        </Head>
         <PriceHistory rec={rec} />
       </div>
-      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', alignItems: 'start' }}>
+
+      <div className="panel">
+        <Head icon="box" title="Inside" tip="Everyone sees which parts a recipe uses and what the buyer fills in. How they are wired, their settings and prompts are sealed to the runner.">
+          <span className="spacer" /><span className="pill sealed"><Icon name="lock" size={12} />wiring sealed</span>
+        </Head>
+        <div className="body grid" style={{ gap: 12 }}>
+          <div className="pipeline">
+            <span className="pipe-form" title={'Buyer fills in: ' + m.listing.form.map((f: any) => f.label).join(', ')}><Icon name="user" size={15} />{m.listing.form.length} input{m.listing.form.length === 1 ? '' : 's'}</span>
+            {m.listing.parts.map((b: string, i: number) => {
+              const c = CAT[partCat(b)] ?? CAT.transform;
+              return <button key={b + i} className="blk" style={{ ['--cc' as any]: c.color }} title={`${c.label} · ${b}. Click to open its code`} onClick={() => go({ page: 'compose', sub: 'part', part: b })}><Icon name={c.icon} size={15} /><span>{prettyPart(b)}</span></button>;
+            })}
+            <span className="pipe-out" title="Result for the buyer"><Icon name="check" size={15} /></span>
+          </div>
+          <div className="sealed-box"><Icon name="lock" size={14} /><span>On-chain commitment</span><span className="hash">{short(m.onchain?.sealed_hash ?? '', 14, 8)}</span></div>
+        </div>
+      </div>
+
+      <div className="grid cards">
+        <div className="stack">
         <MarketPrice ticker={ticker} rec={rec} onDone={refresh} />
         <div className="panel">
-          <header><h2>Track record</h2><span className="small muted">on-chain</span></header>
+          <Head icon="clock" title="Track record" tip="Read from the contract." />
           <dl className="kv body">
-            <dt>Successful runs</dt><dd>{rec.runs}</dd>
-            <dt>Refunded runs</dt><dd>{rec.failed}</dd>
-            <dt>Aborted before running</dt><dd>{rec.aborted}</dd>
-            <dt>Delivered vs promised</dt><dd>{rec.keptPromise == null ? 'no quoted runs yet' : `${(rec.keptPromise * 100).toFixed(0)}%`}</dd>
-            <dt>Paid to buyers from the deposit</dt><dd>{money(rec.deposit.paidToBuyers, 2)}</dd>
-            <dt>Version</dt><dd>v{m.onchain?.version ?? 1}{m.onchain?.pending_sealed_hash ? <div className="small"><span className="pill warn">v{(m.onchain.version ?? 1) + 1} announced</span> takes effect {new Date(Number(BigInt(m.onchain.update_effective_ns) / 1_000_000n)).toLocaleString()}. Runs already paid keep the version they paid for.</div> : null}</dd>
-            <dt>Settlement</dt><dd>{m.onchain?.settle_mode === 'checkpoint' ? 'per checkpoint: each part is paid as soon as it finishes' : 'one receipt at the end of the run'}</dd>
+            <dt><Icon name="check" size={14} />Successful</dt><dd>{rec.runs}</dd>
+            <dt><Icon name="refresh" size={14} />Refunded</dt><dd>{rec.failed}</dd>
+            <dt><Icon name="x" size={14} />Aborted</dt><dd>{rec.aborted}</dd>
+            <dt><Icon name="shield" size={14} />Paid to buyers</dt><dd>{money(rec.deposit.paidToBuyers, 2)}</dd>
+            <dt><Icon name="receipt" size={14} />Settles</dt><dd>{m.onchain?.settle_mode === 'checkpoint' ? 'per part' : 'once per run'}</dd>
           </dl>
+          {m.onchain?.pending_sealed_hash && <div className="body small" style={{ paddingTop: 0 }}><span className="pill warn">v{(m.onchain.version ?? 1) + 1} from {new Date(Number(BigInt(m.onchain.update_effective_ns) / 1_000_000n)).toLocaleString()}</span> <Tip>Runs already paid keep the version they paid for.</Tip></div>}
         </div>
+        </div>
+        <Split rec={rec} />
+        <div className="stack">
         <Deposit ticker={ticker} rec={rec} deposits={m.deposits} onDone={refresh} />
         <div className="panel">
-          <header><h2>Where each run’s price goes</h2></header>
-          <dl className="kv body">
-            <dt>Protocol</dt><dd>{money(rec.perRun.protocol, 4)}</dd>
-            <dt>Runner</dt><dd>{money(rec.perRun.runner, 4)}</dd>
-            {rec.perRun.parts.map((p: any, i: number) => <span key={i} style={{ display: 'contents' }}><dt>Part · {p.part.split('@')[0]}</dt><dd>{money(p.amount, 4)}</dd></span>)}
-            <dt>Creator</dt><dd>{money(rec.perRun.creator, 4)}</dd>
-            <dt>To the guarantee deposit</dt><dd>{money(rec.perRun.reserve, 4)} <span className="small muted">({rec.perRun.reserveBps / 100}% of the creator’s cut)</span></dd>
-          </dl>
-          <div className="body small muted" style={{ paddingTop: 0 }}>Sums to exactly {money(rec.perRun.price, 4)}; proved for every input in verification/.</div>
-        </div>
-        <div className="panel">
-          <header><h2>What the marketplace can see</h2></header>
-          <div className="body grid" style={{ gap: 8 }}>
-            <div className="parts-strip">
-              {m.listing?.parts.map((b: string, i: number) => (
-                <span key={b + i} className="row" style={{ gap: 6 }}>{i > 0 && <span className="arrow">›</span>}<button className="blk" title="Open this part's internals (all parts are public in this demo)" onClick={() => go({ page: 'compose', sub: 'part', part: b })}>{b.split('@')[0]}<small>{b.split('@')[1]}</small></button></span>
-              ))}
-            </div>
-            <div className="small">Buyer form: {m.listing?.form.map((f: any) => f.label).join(', ')}</div>
-            <div className="sealed-box">Wiring, parameters and prompts are sealed to the runner. On-chain commitment <span className="hash">{short(m.onchain?.sealed_hash ?? '', 14, 8)}</span></div>
-          </div>
-        </div>
-        <div className="panel">
-          <header><h2>Settlements</h2><span className="small muted">one receipt per paid run</span></header>
-          {m.settlements.length === 0 && <div className="body muted small">No paid runs yet. Get a quote and run it to see every party paid in one receipt.</div>}
+          <Head icon="receipt" title="Settlements" tip="One receipt per paid run: every party is paid in the same transaction." />
+          {m.settlements.length === 0 ? <Empty icon="receipt">No paid runs yet.</Empty> :
           <table><tbody>
             {m.settlements.slice(0, 8).map((x: any) => (
-              <tr key={x.run_id}><td><span className="hash">{short(x.tx, 6, 4)}</span><div className="small muted">{x.payouts.length} payees{x.compensation !== '0' ? ` · ${usd(x.compensation)} paid to buyer` : ''}</div></td><td className="r">{usd(x.price, 2)}</td><td className="r small">{usd(x.reserve)} to deposit</td></tr>
+              <tr key={x.run_id} title={`${x.payouts.length} payees · ${usd(x.reserve)} to the guarantee`}><td><span className="hash">{short(x.tx, 6, 4)}</span>{x.compensation !== '0' && <div className="small gain">{usd(x.compensation)} to buyer</div>}</td><td className="muted small"><Icon name="users" size={13} /> {x.payouts.length}</td><td className="r"><b>{usd(x.price, 2)}</b></td></tr>
             ))}
-          </tbody></table>
+          </tbody></table>}
+        </div>
         </div>
       </div>
     </>
+  );
+}
+
+const partCat = (id: string): string => {
+  const n = id.split('@')[0];
+  if (/scanner|positions|facts|access-keys|rpc|fresh/.test(n)) return 'source';
+  if (/shield|risk|verified|check|allowlist/.test(n)) return 'guard';
+  if (/swap|revoke|withdraw|claim|atomic|intents/.test(n)) return 'action';
+  if (/report|summary|merge/.test(n)) return 'sink';
+  return 'transform';
+};
+const prettyPart = (id: string) => id.split('@')[0].split('.').slice(1).join(' ').replace(/-/g, ' ');
+
+/** Where each run's price goes: one bar, every party. */
+function Split({ rec }: { rec: any }) {
+  const p = rec.perRun;
+  const segs = [
+    { k: 'Creator', v: p.creator, c: 'var(--wax)' },
+    ...p.parts.map((x: any) => ({ k: prettyPart(x.part), v: x.amount, c: 'var(--c-source)' })),
+    { k: 'Runner', v: p.runner, c: 'var(--c-transform)' },
+    { k: 'Guarantee', v: p.reserve, c: 'var(--gain)' },
+    { k: 'Protocol', v: p.protocol, c: 'var(--muted)' },
+  ].filter((s) => s.v > 0);
+  const tot = segs.reduce((a, s) => a + s.v, 0) || 1;
+  return (
+    <div className="panel">
+      <Head icon="split" title="Where the price goes" tip={`Sums to exactly ${money(p.price, 4)}, proved for every input in verification/. ${p.reserveBps / 100}% of the creator’s cut tops up the guarantee.`} />
+      <div className="body">
+        <div className="splitbar">{segs.map((s, i) => <i key={i} style={{ flex: s.v / tot, background: s.c }} title={`${s.k} ${money(s.v, 4)}`} />)}</div>
+        <dl className="kv legend">
+          {segs.map((s, i) => <span key={i} style={{ display: 'contents' }}><dt><i className="sw" style={{ background: s.c }} />{s.k}</dt><dd>{money(s.v, 4)}</dd></span>)}
+        </dl>
+      </div>
+    </div>
   );
 }
 
@@ -209,38 +228,36 @@ function useNow(ms = 1000) { const [n, setN] = useState(Date.now()); useEffect((
 function Trend({ h }: { h: { price: number }[] }) {
   if (!h || h.length < 2) return null;
   const a = h[h.length - 2].price, b = h[h.length - 1].price;
-  if (a === b) return null;
-  return <div className={'small ' + (b > a ? 'gain' : 'loss')} style={{ whiteSpace: 'nowrap' }}>{b > a ? '▲' : '▼'}&nbsp;{Math.abs((b - a) / a * 100).toFixed(1)}%</div>;
+  if (a === b) return <span className="trend flat">±0%</span>;
+  return <span className={'trend ' + (b > a ? 'gain' : 'loss')}>{b > a ? '▲' : '▼'} {Math.abs((b - a) / a * 100).toFixed(1)}%</span>;
 }
 
 /** Price per run and paid runs per pricing period: the demand that moved each price. Usage, not trading. */
 function PriceHistory({ rec }: { rec: any }) {
   const h: { runs: number; price: number }[] = rec.history ?? [];
-  if (!h.length) return null;
-  const W = 640, H = 120, pad = 6, n = Math.max(h.length, 12), bw = (W - 2 * pad) / n;
+  if (!h.length) return <Empty icon="trend">No price history yet.</Empty>;
+  const W = 760, H = 150, pad = 8, n = Math.max(h.length, 12), bw = (W - 2 * pad) / n;
   const maxRuns = Math.max(rec.pricing.targetRuns * 2, ...h.map((x) => x.runs), 1);
-  // scale to the prices actually seen (with the floor) so a 12.5% move is visible; the band is printed above
   const seen = h.map((x) => x.price);
   const lo = Math.min(rec.pricing.floor, ...seen), top = Math.max(...seen);
   const hi = Math.max(top + (top - lo) * 0.25, lo * 1.15, lo + 1e-9);
-  const y = (p: number) => pad + (1 - (p - lo) / (hi - lo)) * (H - 2 * pad);
-  const yr = (r: number) => H - pad - (r / maxRuns) * (H * 0.45);
+  const y = (p: number) => pad + 14 + (1 - (p - lo) / (hi - lo)) * (H - 2 * pad - 14);
+  const yr = (r: number) => H - pad - (r / maxRuns) * (H * 0.42);
   const x0 = W - pad - h.length * bw;
   const line = h.map((x, i) => `${i ? 'L' : 'M'}${x0 + i * bw},${y(x.price)} H${x0 + (i + 1) * bw}`).join(' ');
+  const area = line + ` V${H - pad} H${x0} Z`;
+  const last = h[h.length - 1];
   return (
-    <div className="body" style={{ paddingTop: 0 }}>
-      <div className="row between small muted" style={{ marginBottom: 6 }}>
-        <span>Price per run (line) and paid runs (bars) per {rec.pricing.periodS >= 120 ? `${Math.round(rec.pricing.periodS / 60)}-minute` : `${rec.pricing.periodS}-second`} period · dashed: target {rec.pricing.targetRuns}</span>
-        <span>{money(rec.pricing.ceiling)} ceiling · {money(rec.pricing.floor)} floor</span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img" aria-label="Price and demand per period">
-        <line x1={pad} x2={W - pad} y1={y(rec.pricing.floor)} y2={y(rec.pricing.floor)} stroke="#d7dde7" />
-        <text x={pad} y={y(rec.pricing.floor) - 3} style={{ fontSize: 10, fill: '#8592a8' }}>floor {money(rec.pricing.floor)}</text>
-        {h.map((x, i) => <rect key={i} x={x0 + i * bw + 2} width={bw - 4} y={yr(x.runs)} height={H - pad - yr(x.runs)} fill={x.runs > rec.pricing.targetRuns ? '#0f7a66' : x.runs < rec.pricing.targetRuns ? '#c9d2df' : '#5b6b84'} opacity={0.55} />)}
-        <line x1={pad} x2={W - pad} y1={yr(rec.pricing.targetRuns)} y2={yr(rec.pricing.targetRuns)} stroke="#5b6b84" strokeDasharray="4 4" />
-        <path d={line} fill="none" stroke="#b77a06" strokeWidth={2.5} />
-        {h.map((x, i) => (i === 0 || x.price !== h[i - 1].price) && <text key={'t' + i} x={x0 + i * bw + 2} y={y(x.price) - 4} style={{ fontSize: 10, fill: '#9a5f00' }}>{money(x.price, 3)}</text>)}
+    <div className="body chart" style={{ paddingTop: 4 }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" role="img" aria-label="Price and demand per period">
+        <defs><linearGradient id="pxfill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#F0B44C" stopOpacity=".24" /><stop offset="1" stopColor="#F0B44C" stopOpacity="0" /></linearGradient></defs>
+        <line x1={pad} x2={W - pad} y1={y(rec.pricing.floor)} y2={y(rec.pricing.floor)} stroke="var(--line-2)" />
+        {h.map((x, i) => <rect key={i} x={x0 + i * bw + 2} width={bw - 4} rx={2} y={yr(x.runs)} height={H - pad - yr(x.runs)} fill={x.runs > rec.pricing.targetRuns ? 'var(--gain)' : x.runs < rec.pricing.targetRuns ? 'var(--line-2)' : 'var(--muted)'} opacity={0.75} />)}
+        <line x1={pad} x2={W - pad} y1={yr(rec.pricing.targetRuns)} y2={yr(rec.pricing.targetRuns)} stroke="var(--muted)" strokeDasharray="3 4" opacity=".7" />
+        <path d={area} fill="url(#pxfill)" />
+        <path d={line} fill="none" stroke="var(--wax)" strokeWidth={2.25} vectorEffect="non-scaling-stroke" />
       </svg>
+      <div className="chart-lbl" style={{ top: `${(y(last.price) / H) * 100}%` }}>{money(last.price, 3)}</div>
     </div>
   );
 }
@@ -258,29 +275,34 @@ function MarketPrice({ ticker, rec, onDone }: { ticker: string; rec: any; onDone
   const save = async () => {
     try {
       const r = await api('/api/chain/tx', { signer: acting, method: 'set_pricing', args: { id: ticker, pricing: { price_floor: String(u(Number(edit!.floor))), price_ceiling: String(u(Number(edit!.ceiling))), target_runs: Number(edit!.target) } } });
-      toast(`Pricing band updated · tx ${short(r.tx, 6, 4)}`); setEdit(null); onDone();
+      toast(`Price band saved · tx ${short(r.tx, 6, 4)}`); setEdit(null); onDone();
     } catch (e) { toast((e as Error).message, true); }
   };
+  const fill = Math.min(1, p.periodRuns / Math.max(1, p.targetRuns));
+  const ring = 2 * Math.PI * 22;
   return (
     <div className="panel">
-      <header><h2>Market price</h2><span className="small muted">{p.fixed ? 'fixed by the creator' : 'set by demand'}</span></header>
-      <dl className="kv body">
-        <dt>Price per run now</dt><dd>{money(rec.pricePerRun, 4)}</dd>
-        <dt>Band</dt><dd>{money(p.floor, 2)} – {money(p.ceiling, 2)}</dd>
-        <dt>Paid runs this period</dt><dd>{p.periodRuns} of {p.targetRuns} target</dd>
-        <dt>Period ends in</dt><dd>{left >= 120 ? `${Math.floor(left / 60)} min ${left % 60} s` : `${left} s`}</dd>
-        {next !== null && <><dt>Next price if no more runs</dt><dd className={Number(next) / 1e6 > rec.pricePerRun ? 'gain' : Number(next) / 1e6 < rec.pricePerRun ? 'loss' : ''}>{money(Number(next) / 1e6, 4)}</dd></>}
-      </dl>
-      <div className="body small muted" style={{ paddingTop: 0 }}>
-        More paid runs than the target raise the price by up to 12.5% a period, fewer lower it. Same rule as Ethereum's base fee, applied on-chain and proved to stay in the band.
-        {mine && !edit && <p style={{ marginBottom: 0 }}><button className="btn ghost sm" onClick={() => setEdit({ floor: String(p.floor), ceiling: String(p.ceiling), target: String(p.targetRuns) })}>Change the band</button></p>}
+      <Head icon="clock" title="This period" tip={p.fixed ? 'Fixed by the creator.' : 'Paid runs this period against the target decide the next price.'}>
+        <span className="spacer" />{mine && !edit && !p.fixed && <button className="btn ghost sm icon-only" aria-label="Change the band" title="Change the band" onClick={() => setEdit({ floor: String(p.floor), ceiling: String(p.ceiling), target: String(p.targetRuns) })}><Icon name="sliders" size={14} /></button>}
+      </Head>
+      <div className="body period">
+        <svg width="64" height="64" viewBox="0 0 56 56" aria-hidden className="ring">
+          <circle cx="28" cy="28" r="22" fill="none" stroke="var(--line)" strokeWidth="5" />
+          <circle cx="28" cy="28" r="22" fill="none" stroke="var(--wax)" strokeWidth="5" strokeLinecap="round" strokeDasharray={`${fill * ring} ${ring}`} transform="rotate(-90 28 28)" />
+          <text x="28" y="32" textAnchor="middle" className="ring-tx">{p.periodRuns}/{p.targetRuns}</text>
+        </svg>
+        <dl className="kv">
+          <dt>Runs vs target</dt><dd>{p.periodRuns} of {p.targetRuns}</dd>
+          <dt>Ends in</dt><dd>{left >= 120 ? `${Math.floor(left / 60)}m ${left % 60}s` : `${left}s`}</dd>
+          {next !== null && <><dt>Next price</dt><dd className={Number(next) / 1e6 > rec.pricePerRun ? 'gain' : Number(next) / 1e6 < rec.pricePerRun ? 'loss' : ''}>{money(Number(next) / 1e6, 4)}</dd></>}
+        </dl>
       </div>
       {mine && edit && (
-        <div className="body grid" style={{ gap: 6, paddingTop: 0, gridTemplateColumns: '1fr 1fr 1fr' }}>
-          <input aria-label="Floor (USDC)" value={edit.floor} onChange={(e) => setEdit({ ...edit, floor: e.target.value })} />
-          <input aria-label="Ceiling (USDC)" value={edit.ceiling} onChange={(e) => setEdit({ ...edit, ceiling: e.target.value })} />
-          <input aria-label="Target runs" value={edit.target} onChange={(e) => setEdit({ ...edit, target: e.target.value })} />
-          <button className="btn sm" onClick={save}>Save</button><button className="btn ghost sm" onClick={() => setEdit(null)}>Cancel</button>
+        <div className="body grid band-edit">
+          <label className="field"><span>Floor</span><input aria-label="Floor (USDC)" value={edit.floor} onChange={(e) => setEdit({ ...edit, floor: e.target.value })} /></label>
+          <label className="field"><span>Ceiling</span><input aria-label="Ceiling (USDC)" value={edit.ceiling} onChange={(e) => setEdit({ ...edit, ceiling: e.target.value })} /></label>
+          <label className="field"><span>Target</span><input aria-label="Target runs" value={edit.target} onChange={(e) => setEdit({ ...edit, target: e.target.value })} /></label>
+          <div className="row"><button className="btn sm" onClick={save}>Save band</button><button className="btn ghost sm" onClick={() => setEdit(null)}>Cancel</button></div>
         </div>
       )}
     </div>
@@ -295,24 +317,23 @@ function Deposit({ ticker, rec, deposits, onDone }: { ticker: string; rec: any; 
   const tx = async (method: string, args: Record<string, string>, ok: string) => {
     try { const r = await api('/api/chain/tx', { signer: acting, method, args }); toast(`${ok} · tx ${short(r.tx, 6, 4)}`); onDone(); } catch (e) { toast((e as Error).message, true); }
   };
+  const d = rec.deposit;
+  const tot = d.available + d.locked || 1;
   return (
     <div className="panel">
-      <header><h2>Guarantee deposit</h2><span className="small muted">collateral, not an investment</span></header>
-      <dl className="kv body">
-        <dt>Available to back quotes</dt><dd>{money(rec.deposit.available, 2)}</dd>
-        <dt>Locked by runs in flight</dt><dd>{money(rec.deposit.locked, 2)}</dd>
-        <dt>Added from runs</dt><dd>{money(rec.deposit.fromRuns, 4)}</dd>
-      </dl>
-      <div className="body grid" style={{ gap: 8, paddingTop: 0 }}>
-        <div className="small muted">The creator’s own money. Each quote locks part of it as cover; a shortfall against the promise is paid to the buyer from that cover. It earns nothing and belongs to nobody else. {mine ? 'You can top it up or take out the free part.' : `Only ${rec.creator} can withdraw it.`}</div>
+      <Head icon="shield" title="Guarantee deposit" tip={`The creator’s own collateral, not an investment. Each quote locks part of it as cover; a shortfall against the promise is paid to the buyer from it. It earns nothing. ${mine ? 'You can top it up or withdraw the free part.' : `Only ${rec.creator} can withdraw it.`}`} />
+      <div className="body grid" style={{ gap: 10 }}>
+        <div className="dep-fig"><b>{money(d.available, 2)}</b><span className="muted">free{d.locked > 0 && <> · {money(d.locked, 2)} locked</>}</span></div>
+        {d.available + d.locked > 0 && <div className="splitbar thin"><i style={{ flex: d.available / tot, background: 'var(--gain)' }} /><i style={{ flex: d.locked / tot, background: 'var(--wax)' }} /></div>}
+        <div className="small muted">+{money(d.fromRuns, 4)} added from runs</div>
         {mine && (
           <div className="row wrap" style={{ gap: 6 }}>
-            <input aria-label="Amount in USDC" value={amt} onChange={(e) => setAmt(e.target.value)} inputMode="decimal" style={{ width: 80 }} />
-            <button className="btn sm" disabled={!Number(amt)} onClick={() => tx('bond', { recipe_id: ticker, amount: units }, `Deposited ${money(Number(amt))}`)}>Top up</button>
-            <button className="btn ghost sm" disabled={!Number(amt) || Number(amt) > rec.deposit.available} onClick={() => tx('withdraw_bond', { recipe_id: ticker, amount: units }, `Moved ${money(Number(amt))} to your balance`)}>Withdraw</button>
+            <input className="amt" aria-label="Amount in USDC" value={amt} onChange={(e) => setAmt(e.target.value)} inputMode="decimal" />
+            <button className="btn sm" disabled={!Number(amt)} onClick={() => tx('bond', { recipe_id: ticker, amount: units }, `Topped up ${money(Number(amt))}`)}><Icon name="plus" size={13} />Top up</button>
+            <button className="btn ghost sm" disabled={!Number(amt) || Number(amt) > d.available} onClick={() => tx('withdraw_bond', { recipe_id: ticker, amount: units }, `Withdrew ${money(Number(amt))}`)}>Withdraw</button>
           </div>
         )}
-        {deposits.length > 0 && <table className="small"><tbody>{deposits.slice(0, 4).map((d: any, i: number) => <tr key={i}><td>{d.event === 'bond_posted' ? `deposit by ${d.from}` : 'withdrawn by creator'}<div className="muted hash">tx {short(d.tx, 6, 4)}</div></td><td className={'r ' + (d.event === 'bond_posted' ? 'gain' : 'loss')}>{d.event === 'bond_posted' ? '+' : '−'}{usd(d.amount, 2)}</td></tr>)}</tbody></table>}
+        {deposits.length > 0 && <table className="small"><tbody>{deposits.slice(0, 3).map((x: any, i: number) => <tr key={i}><td>{x.event === 'bond_posted' ? x.from : 'withdrawn'}</td><td className="muted hash">{short(x.tx, 6, 4)}</td><td className={'r ' + (x.event === 'bond_posted' ? 'gain' : 'loss')}>{x.event === 'bond_posted' ? '+' : '−'}{usd(x.amount, 2)}</td></tr>)}</tbody></table>}
       </div>
     </div>
   );

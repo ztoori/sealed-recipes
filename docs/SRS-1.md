@@ -178,7 +178,7 @@ A recipe opts in with `"implements": "job.wallet-cleanup@1.0.0"`. The validator 
 5. **Re-check.** Right before executing, the runner re-prices the job in quote mode. If the fresh promise is below 98% of the quoted one (the wallet changed), it signs `abort`: the buyer is refunded and the cover goes back to the bond.
 6. **Settle.** The runner measures `delivered` (for bonded runs, credited with any value the buyer withheld after the re-check: drained funds or deposits smaller than asked count at their quoted minimum, so the bond insures the market, not the buyer's own choices) and signs `srs-run-v3|…|ok|…|<delivered>|…`. The contract pays `min(max(0, promised − delivered), cover)` to the buyer from the locked cover, updates the recipe's track record and releases the rest.
 
-A job with no implementing recipe is recorded as **open demand**, a signal for builders.
+A job with no implementing recipe gets no quotes.
 
 ## 8. Durable parts, settlement modes and versions
 
@@ -215,6 +215,6 @@ A marketplace for sealed recipes is only as useful as the number of parts, recip
 
 **Versioning.** Every part, job type and the standard itself carry a semantic version. Within 1.x, changes are additive: new types, new optional fields, new job types. A breaking change to a part or job type is a new major version with a new id, and the old one stays valid, so published recipes never break.
 
-**Proposing changes.** New types and job types are proposed as SRS improvement proposals: the JSON definition, one recipe that implements it, and the conformance suite passing. Until a proposal is accepted, buyers can still request the job on a marketplace (open demand), and builders can be paid to build it (builder bounties). The proposal process is not yet run by an independent body; that is a step for after the first external implementations.
+**Proposing changes.** New types and job types are proposed as SRS improvement proposals: the JSON definition, one recipe that implements it, and the conformance suite passing. The proposal process is not yet run by an independent body; that is a step for after the first external implementations.
 
 **License.** The standard and its reference implementation are MIT licensed. Anyone may implement, extend or fork them.

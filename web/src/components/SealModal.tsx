@@ -5,6 +5,7 @@ import { verifyRunnerAttestation } from '../../../core/src/attestation';
 import { creatorKeyFromSignature, creatorKeyMessage, demoWalletSign } from '../../../core/src/creator';
 import type { Check } from '../../../core/src/nearai';
 import { api, runnerAttestation, short } from '../api';
+import { Icon } from '../icons';
 
 const rand = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
 
@@ -64,20 +65,20 @@ export function SealModal({ recipe, catalog, auto, onClose }: { recipe: Recipe; 
   }, []);
 
   const plaintext = JSON.stringify({ nodes: recipe.nodes.map((n) => ({ id: n.id, part: n.part, inputs: n.inputs, params: n.params })) }, null, 1);
-  const listItems = ['Verify the runner attestation', 'Seal the recipe in this browser', 'Publish listing and commitment', 'Listed on the marketplace'];
+  const listItems = ['Verify the runner', 'Seal in this browser', 'Publish the commitment', 'Listed'];
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Seal and publish">
       <div className="sealer">
         <div className="left">
           <h2>{stage < 2 ? 'Your recipe, in plaintext' : 'What leaves this browser'}</h2>
-          <p className="small muted" style={{ margin: '4px 0 10px' }}>{stage < 2 ? 'Wiring, prompts and thresholds: the edge you are selling.' : `X25519 + XSalsa20-Poly1305 sealed box to runner key ${short(encPk, 10, 6)}`}</p>
+          <p className="small muted" style={{ margin: '4px 0 10px' }}>{stage < 2 ? 'The edge you are selling.' : `Sealed box to runner key ${short(encPk, 10, 6)}`}</p>
           <pre className={'plain' + (stage >= 2 ? ' gone' : '')}>{plaintext}</pre>
           <pre className={'cipher' + (stage >= 2 ? ' on' : '')}>{env ? `ct: ${env.ct}\n\nepk: ${env.epk}\nnonce: ${env.nonce}` : ''}</pre>
           <div className={'waxseal' + (stage >= 2 ? ' on' : '')} aria-hidden>sealed<br />{recipe.meta.ticker}</div>
         </div>
         <div className="right">
           <ol className="steps">
-            {listItems.map((l, i) => <li key={l} className={stage > i ? 'done' : stage === i ? 'now' : ''}><span className="dot">{stage > i ? '✓' : i + 1}</span>{l}</li>)}
+            {listItems.map((l, i) => <li key={l} className={stage > i ? 'done' : stage === i ? 'now' : ''}><span className="dot">{stage > i ? <Icon name="check" size={12} /> : i + 1}</span>{l}</li>)}
           </ol>
           {checks.length > 0 && <div style={{ borderTop: '1px solid var(--rule-soft)', paddingTop: 8 }}>
             {checks.map((c) => <div key={c.id} className={'check ' + c.status}><span className="i">{c.status === 'pass' ? '✓' : c.status === 'skip' ? '○' : '✕'}</span><span>{c.label}</span>{c.status === 'skip' && <span className="d">{c.detail}</span>}</div>)}
@@ -87,10 +88,10 @@ export function SealModal({ recipe, catalog, auto, onClose }: { recipe: Recipe; 
           {err && <div className="diag error">{err}</div>}
           <div className="row wrap">
             {phase === 'verify_failed' && <button className="btn ghost" onClick={() => verify()}>Verify again</button>}
-            {phase === 'verified' && !auto && <button className="btn seal" onClick={() => doSeal(encPk)}>Seal in this browser</button>}
+            {phase === 'verified' && !auto && <button className="btn seal" onClick={() => doSeal(encPk)}><Icon name="lock" size={15} />Seal in this browser</button>}
             {(phase === 'sealed' || phase === 'publish_failed') && !auto && env && <button className="btn" onClick={() => publish(env)}>{phase === 'publish_failed' ? 'Try publishing again' : `Publish ${recipe.meta.ticker}`}</button>}
             {phase === 'publishing' && <span className="small muted">Publishing…</span>}
-            {phase === 'published' && <button className="btn" onClick={() => onClose(true)}>Open the listing</button>}
+            {phase === 'published' && <button className="btn primary" onClick={() => onClose(true)}><Icon name="market" size={15} />Open the listing</button>}
             {phase !== 'published' && phase !== 'publishing' && (!auto || phase.endsWith('failed')) && <button className="btn ghost" onClick={() => onClose(false)}>{phase === 'publish_failed' || phase === 'verify_failed' ? 'Back to editing' : 'Cancel'}</button>}
           </div>
         </div>

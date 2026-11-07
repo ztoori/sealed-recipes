@@ -5,6 +5,8 @@ import { addPartAutoWired, recipeFromJob, sourcesFor, suggestNext } from '../../
 import { ASSET_LABEL, usd, usePoll } from '../api';
 import { useApp, useStoryOnce } from '../App';
 import { SealModal } from '../components/SealModal';
+import { CAT, Icon } from '../icons';
+import { Seal, Tip } from '../ui';
 import CLNP from '../../../seed/recipes/CLNP.json';
 
 /**
@@ -28,20 +30,20 @@ type PartData = { manifest: PartManifest; errors: number; isResult: boolean };
 function PartNode({ data, selected }: NodeProps<Node<PartData>>) {
   const m = data.manifest;
   return (
-    <div className={'fnode' + (selected ? ' selected' : '') + (data.errors ? ' err' : '') + (data.isResult ? ' result' : '')}>
-      <div className="hd"><span className={'cat cat-' + m.category}>{CAT_LABEL[m.category][0]}</span><b>{m.name}</b><span>{m.author} · {usd(m.fee_per_call, 2)}</span></div>
+    <div className={'fnode' + (selected ? ' selected' : '') + (data.errors ? ' err' : '') + (data.isResult ? ' result' : '')} style={{ ['--cc' as any]: CAT[m.category]?.color }}>
+      <div className="hd"><span className="cat"><Icon name={CAT[m.category]?.icon ?? 'box'} size={12} />{CAT_LABEL[m.category][0]}</span><b>{m.name}</b><span>{m.author} · {usd(m.fee_per_call, 2)}</span></div>
       <div className="ports">
         <div>{Object.entries(m.inputs).map(([p, s]) => (<div key={p} className="port"><Handle type="target" position={Position.Left} id={p} style={{ left: -6 }} />{p}<i>{s.type}</i></div>))}</div>
         <div>{Object.entries(m.outputs).map(([p, s]) => (<div key={p} className="port out"><Handle type="source" position={Position.Right} id={p} style={{ right: -6 }} />{p}<i>{s.type}</i></div>))}</div>
       </div>
-      {data.isResult && <div className="resulttag">recipe result</div>}
+      {data.isResult && <div className="resulttag"><Icon name="check" size={12} />result</div>}
     </div>
   );
 }
 function FormNode({ data, selected }: NodeProps<Node<{ fields: FormField[]; consts: [string, { type: string; value: unknown }][] }>>) {
   return (
     <div className={'fnode form' + (selected ? ' selected' : '')}>
-      <div className="hd"><b>Buyer’s form</b><span>filled in once per job</span></div>
+      <div className="hd"><span className="cat"><Icon name="user" size={12} />Buyer</span><b>Buyer’s form</b></div>
       <div className="ports" style={{ gridTemplateColumns: '1fr' }}>
         {data.fields.map((f) => (<div key={f.id} className="port out"><Handle type="source" position={Position.Right} id={f.id} style={{ right: -6 }} />{f.label}<i>{f.type}</i></div>))}
         {data.consts.map(([k, c]) => (<div key={'c' + k} className="port out"><Handle type="source" position={Position.Right} id={'const:' + k} style={{ right: -6 }} />fixed: {ASSET_LABEL[String(c.value)] ?? String(c.value)}<i>{c.type}</i></div>))}
@@ -91,7 +93,7 @@ function Builder() {
   const manifests = useMemo(() => new Map((catalog?.parts ?? []).map((b) => [b.id, b])), [catalog]);
   const v = useMemo(() => (catalog && recipe ? validateRecipe(recipe, catalog) : null), [recipe, catalog]);
   const nodeName = (id?: string) => manifests.get(recipe?.nodes.find((n) => n.id === id)?.part ?? '')?.name ?? id ?? '';
-  const fit = (ms = 120) => setTimeout(() => rf.fitView({ padding: 0.12, duration: 250 }), ms);
+  const fit = (ms = 120) => setTimeout(() => rf.fitView({ padding: 0.2, duration: 250, maxZoom: 1 }), ms);
 
   const startJob = (j: JobType) => {
     setRecipe((r) => (r && r.nodes.length && !confirm('Start over for a different job? The parts you added will be removed.') ? r : recipeFromJob(j, acting)));
@@ -174,21 +176,20 @@ function Builder() {
   if (!recipe) {
     return (
       <div className="panel">
-        <header><h2>1. What job will your recipe do?</h2><span className="small muted">Buyers ask for a job; every recipe that does it competes with a signed quote.</span></header>
+        <div className="pick-hero"><h1>What job will your recipe do?</h1><p>Buyers ask for a job; every recipe that does it competes with a signed quote. <Tip>Job types are part of the SRS-1 standard. New job types are proposed to the standard (Documentation › Standard).</Tip></p></div>
         <div className="body jobgrid">
           {jobs.map((j) => {
             const n = (listings ?? []).filter((l) => l.implements === j.id).length;
             return (
-              <button key={j.id} className="jobcard" onClick={() => startJob(j)}>
+              <button key={j.id} className="jobcard" onClick={() => startJob(j)} title={j.description}>
+                <Seal job={j.id} size={44} />
                 <b>{j.name}</b>
-                <span className="small muted">{j.description}</span>
-                <span className="small">Buyers fill in: {Object.values(j.inputs).map((f: any) => f.label.replace(/\s*\(.*\)$/, '')).join(' · ')}</span>
-                <span className="small muted">{n ? `${n} recipe${n > 1 ? 's' : ''} already compete` : 'no recipe yet: you would be the first'}</span>
+                <span className="small muted">{Object.keys(j.inputs).length} buyer input{Object.keys(j.inputs).length === 1 ? '' : 's'}</span>
+                <span className="jc-meta">{n ? <span className="pill"><Icon name="users" size={12} />{n} competing</span> : <span className="pill ok"><Icon name="flag" size={12} />be the first</span>}</span>
               </button>
             );
           })}
         </div>
-        <div className="body small muted" style={{ paddingTop: 0 }}>Need a job that is not here? Job types are part of the SRS-1 standard: <button className="linkbtn" onClick={() => go({ page: 'docs', sub: 'standard' })}>see how they are proposed</button>. Until one exists, buyers can request it on Recipes and post a bounty.</div>
       </div>
     );
   }
@@ -227,10 +228,10 @@ function Builder() {
   const setParam = (k: string, val: unknown) => setRecipe((r) => r && ({ ...r, nodes: r.nodes.map((n) => (n.id === sel ? { ...n, params: { ...n.params, [k]: val } } : n)) }));
 
   const partItem = (b: PartManifest, hint?: string) => (
-    <div key={b.id} className="item" draggable onDragStart={(e) => e.dataTransfer.setData('application/srs-part', b.id)} title={b.summary}>
+    <div key={b.id} className="item" style={{ ['--cc' as any]: CAT[b.category]?.color }} draggable onDragStart={(e) => e.dataTransfer.setData('application/srs-part', b.id)} title={b.summary}>
       <div className="row between" style={{ alignItems: 'flex-start' }}>
-        <div style={{ minWidth: 0 }}><b>{b.name}</b><span>{b.author} · {usd(b.fee_per_call, 2)} per run{hint ? ` · ${hint}` : ''}</span></div>
-        <button className="btn sm" onClick={() => add(b.id)} aria-label={`Add ${b.name}`}>Add</button>
+        <div style={{ minWidth: 0 }}><b>{b.name}</b><span>{usd(b.fee_per_call, 2)} · {b.author}{hint ? ` · ${hint}` : ''}</span></div>
+        <button className="btn sm icon-only" onClick={() => add(b.id)} aria-label={`Add ${b.name}`} title="Add (or drag onto the canvas)"><Icon name="plus" size={14} /></button>
       </div>
       <div className="sum">{b.summary}</div>
     </div>
@@ -239,28 +240,28 @@ function Builder() {
   return (
     <div className="grid composer">
       <aside className="panel palette" aria-label="Parts">
-        <header><h2>2. Add parts</h2><span className="small muted">they connect themselves</span></header>
+        <header><Icon name="box" size={16} className="hd-ic" /><h2>Parts</h2><Tip>Add a part and it wires itself to the previous step’s matching output. Drag to the canvas, or press +.</Tip></header>
         <div className="body" style={{ paddingBottom: 4 }}>
-          <div className="small"><span className="muted">Job:</span> <b>{job?.name}</b> <button className="linkbtn" onClick={() => { if (!recipe.nodes.length || confirm('Start over with a different job?')) { setRecipe(null); setSel(null); } }}>change</button></div>
-          <input className="search" type="search" placeholder="Search parts" value={find} onChange={(e) => setFind(e.target.value)} aria-label="Search parts" style={{ marginTop: 8 }} />
+          <div className="row small" style={{ gap: 8 }}><Seal job={job?.id} size={26} /><b style={{ flex: 1, minWidth: 0 }}>{job?.name}</b><button className="linkbtn" onClick={() => { if (!recipe.nodes.length || confirm('Start over with a different job?')) { setRecipe(null); setSel(null); } }}>Change</button></div>
+          <label className="search-wrap" style={{ marginTop: 10 }}><Icon name="search" size={15} /><input className="search" type="search" placeholder="Search parts" value={find} onChange={(e) => setFind(e.target.value)} aria-label="Search parts" /></label>
         </div>
-        {!s && done && <div className="body small gain" style={{ paddingTop: 4, paddingBottom: 4 }}>Your recipe already produces what the job promises. Add more parts only if they improve the result, or go to step 3.</div>}
-        {!s && !done && next.length > 0 && <><div className="cat">Suggested next</div>{next.map((b) => partItem(b, CAT_LABEL[b.category][0].toLowerCase()))}</>}
+        {!s && done && <div className="body small gain row" style={{ paddingTop: 4, paddingBottom: 4 }}><Icon name="check" size={14} />Delivers the job. Add more only to improve it.</div>}
+        {!s && !done && next.length > 0 && <><div className="cat" style={{ ['--cc' as any]: 'var(--wax)' }}><Icon name="sparkles" size={14} />Suggested next</div>{next.map((b) => partItem(b, CAT_LABEL[b.category][0].toLowerCase()))}</>}
         {CAT_ORDER.map((c) => {
           const items = visible.filter((b) => b.category === c);
-          return items.length ? <div key={c}><div className="cat">{CAT_LABEL[c][0]} <span className="muted">· {CAT_LABEL[c][1]}</span></div>{items.map((b) => partItem(b))}</div> : null;
+          return items.length ? <div key={c}><div className="cat" style={{ ['--cc' as any]: CAT[c].color }} title={CAT_LABEL[c][1]}><Icon name={CAT[c].icon} size={14} />{CAT_LABEL[c][0]}</div>{items.map((b) => partItem(b))}</div> : null;
         })}
       </aside>
 
       <section className="panel canvas" onDragOver={(e) => e.preventDefault()} onDrop={onDrop} aria-label="Recipe canvas">
         <div className="canvas-bar">
-          <span className="small muted">{recipe.nodes.length ? 'Drag parts to rearrange · drag from an output to an input to rewire · select a part to edit it' : 'Start with a “Read” part: it fetches what the job is about.'}</span>
+          <span className="hint">{recipe.nodes.length ? <><Icon name="compose" size={14} />Drag to arrange · output → input to rewire · click to edit</> : <><Icon name="database" size={14} />Start with a Read part</>}</span>
           <span className="spacer" />
-          {recipe.nodes.length > 0 && <button className="btn ghost sm" onClick={() => { const last = recipe.nodes.at(-1)!; remove(last.id); setSel(null); }}>Remove last part</button>}
-          {recipe.nodes.length > 0 && <button className="btn ghost sm" onClick={() => { if (confirm('Remove every part and start this job again?')) { setRecipe(recipeFromJob(job!, acting)); setSel(null); } }}>Start over</button>}
+          {recipe.nodes.length > 0 && <button className="btn ghost sm" onClick={() => { const last = recipe.nodes.at(-1)!; remove(last.id); setSel(null); }} title="Remove the last part"><Icon name="back" size={13} />Undo part</button>}
+          {recipe.nodes.length > 0 && <button className="btn ghost sm icon-only" aria-label="Start over" title="Start over" onClick={() => { if (confirm('Remove every part and start this job again?')) { setRecipe(recipeFromJob(job!, acting)); setSel(null); } }}><Icon name="refresh" size={14} /></button>}
         </div>
-        <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onPaneClick={() => setSel(null)} fitView minZoom={0.3} proOptions={{ hideAttribution: true }}>
-          <Background gap={22} color="#d7dde6" />
+        <ReactFlow colorMode="dark" nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onPaneClick={() => setSel(null)} fitView fitViewOptions={{ maxZoom: 1, padding: 0.2 }} minZoom={0.3} proOptions={{ hideAttribution: true }}>
+          <Background gap={22} color="#25314e" />
           <Controls showInteractive={false} />
         </ReactFlow>
       </section>
@@ -268,13 +269,13 @@ function Builder() {
       <aside className="grid" style={{ alignContent: 'start', overflow: 'auto', minWidth: 0 }}>
         {selNode && selM && (
           <div className="panel">
-            <header><h2>{selM.name}</h2><span className="small muted">{CAT_LABEL[selM.category][0]} · {usd(selM.fee_per_call, 2)} to {selM.author}</span></header>
+            <header><span style={{ color: CAT[selM.category]?.color, display: 'flex' }}><Icon name={CAT[selM.category]?.icon ?? 'box'} size={16} /></span><h2>{selM.name}</h2><Tip>{selM.summary}</Tip><span className="spacer" /><span className="small muted">{usd(selM.fee_per_call, 2)}</span></header>
             <div className="body grid" style={{ gap: 10 }}>
-              <div className="small muted">{selM.summary} <button className="linkbtn" onClick={() => go({ page: 'compose', sub: 'part', part: selM.id })}>How it works</button></div>
+              <div className="small muted row">by {selM.author}<span className="spacer" /><button className="linkbtn" onClick={() => go({ page: 'compose', sub: 'part', part: selM.id })}><Icon name="code" size={13} />Code</button></div>
               <div className="row wrap small" style={{ gap: 6 }}><RiskPill risk={withdrawalRisk(selM.disclosure)} label />{selM.capabilities.includes('wallet:approve') && <span className="pill">asks the buyer to sign</span>}</div>
               <InputsEditor recipe={recipe} nodeId={selNode.id} m={selM} catalog={catalog} wire={wire} setRecipe={setRecipe as never} />
               {Object.keys(selM.params).length > 0 && <div className="grid" style={{ gap: 8 }}>
-                <div className="sectlabel">Your settings <span className="muted">· sealed: only the runner sees them</span></div>
+                <div className="sectlabel"><Icon name="lock" size={13} />Your settings<Tip>Sealed: only the runner sees them.</Tip></div>
                 {Object.entries(selM.params).map(([k, ps]) => (
                   <div className="field" key={k}>
                     <label htmlFor={'p-' + k}>{k.replace(/_/g, ' ')}{ps.description ? ` · ${ps.description}` : ''}</label>
@@ -289,20 +290,20 @@ function Builder() {
                 <label className="row small"><input type="checkbox" checked={recipe.output.startsWith(selNode.id + '.')} onChange={(e) => { const port = Object.entries(selM.outputs).find(([, o]) => isAssignable(catalog.types, o.type, job.output))![0]; setRecipe((r) => r && ({ ...r, output: e.target.checked ? `${selNode.id}.${port}` : '' })); }} /> Use as the recipe’s result (what the buyer gets)</label>
               )}
               <SwapList recipe={recipe} nodeId={selNode.id} current={selM} catalog={catalog} onSwap={(id) => setRecipe(swapPart(recipe, selNode.id, id, catalog))} />
-              <button className="btn ghost sm" onClick={() => { remove(selNode.id); setSel(null); }}>Remove this part</button>
+              <button className="btn ghost sm" onClick={() => { remove(selNode.id); setSel(null); }}><Icon name="trash" size={13} />Remove part</button>
             </div>
           </div>
         )}
 
         <div className="panel">
-          <header><h2>3. Name, price and publish</h2></header>
+          <header><Icon name="ticket" size={16} className="hd-ic" /><h2>Listing</h2></header>
           <div className="body grid" style={{ gap: 8, gridTemplateColumns: '1fr 1fr' }}>
-            <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="nm">Name buyers will see</label><input id="nm" value={recipe.meta.name} onChange={(e) => setMeta('name', e.target.value)} placeholder="e.g. Clean up and protect" /></div>
-            <div className="field"><label htmlFor="tk">Short code</label><input id="tk" value={recipe.meta.ticker} onChange={(e) => setMeta('ticker', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} maxLength={6} placeholder="ABCD" />{taken && <span className="small loss">taken</span>}</div>
-            <div className="field"><label htmlFor="pr">Starting price (USDC)</label><input id="pr" value={Number(recipe.listing.price_per_run) / 1e6} onChange={(e) => setListing('price_per_run', toUnits(e.target.value))} inputMode="decimal" /></div>
-            <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="ds">One-line description</label><input id="ds" value={recipe.meta.description} onChange={(e) => setMeta('description', e.target.value)} placeholder="What the buyer gets, in their words" /></div>
+            <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="nm">Name</label><input id="nm" value={recipe.meta.name} onChange={(e) => setMeta('name', e.target.value)} placeholder="e.g. Clean up and protect" /></div>
+            <div className="field"><label htmlFor="tk">Ticker</label><input id="tk" value={recipe.meta.ticker} onChange={(e) => setMeta('ticker', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} maxLength={6} placeholder="ABCD" />{taken && <span className="small loss">taken</span>}</div>
+            <div className="field"><label htmlFor="pr">Price (USDC)</label><input id="pr" value={Number(recipe.listing.price_per_run) / 1e6} onChange={(e) => setListing('price_per_run', toUnits(e.target.value))} inputMode="decimal" /></div>
+            <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="ds">One line for buyers</label><input id="ds" value={recipe.meta.description} onChange={(e) => setMeta('description', e.target.value)} placeholder="What the buyer gets, in their words" /></div>
             <details style={{ gridColumn: '1 / 3' }} className="small">
-              <summary>Market price band, guarantee deposit</summary>
+              <summary>Price band and guarantee</summary>
               <div className="grid" style={{ gap: 8, gridTemplateColumns: '1fr 1fr', marginTop: 8 }}>
                 <label className="small" style={{ gridColumn: '1 / 3', display: 'flex', gap: 6, alignItems: 'center' }}>
                   <input type="checkbox" checked={!!band} onChange={(e) => setRecipe((r) => r && ({ ...r, listing: { ...r.listing, pricing: e.target.checked ? { price_floor: String((BigInt(r.listing.price_per_run || '0') * 6n) / 10n), price_ceiling: String(BigInt(r.listing.price_per_run || '0') * 2n), target_runs: 2 } : undefined } }))} />
@@ -322,20 +323,16 @@ function Builder() {
         </div>
 
         <div className="panel">
-          <header><h2>Ready to publish?</h2>{v && <span className={'pill ' + (canPublish ? 'ok' : 'warn')}>{canPublish ? 'ready' : `${progress.filter(([, ok]) => !ok).length} to go`}</span>}{v && recipe.nodes.length > 0 && <RiskPill risk={v.risk} label />}</header>
+          <header><Icon name="lock" size={16} className="hd-ic" /><h2>Publish</h2><span className="spacer" />{v && recipe.nodes.length > 0 && <RiskPill risk={v.risk} />}{v && <span className={'pill ' + (canPublish ? 'ok' : 'warn')}>{canPublish ? 'ready' : `${progress.filter(([, ok]) => !ok).length} to go`}</span>}</header>
           <div className="body">
-            <ul className="progress">{progress.map(([label, ok]) => <li key={label} className={ok ? 'ok' : ''}><span>{ok ? '✓' : '○'}</span>{label}</li>)}</ul>
-            {errors.length > 0 && <div style={{ marginTop: 6 }}>{errors.slice(0, 5).map((d, i) => <div key={i} className="diag error">{friendly(d, nodeName)}</div>)}</div>}
-            {(v?.diagnostics ?? []).filter((d) => d.severity === 'warning').slice(0, 3).map((d, i) => <div key={'w' + i} className="diag warning">{friendly(d, nodeName)}</div>)}
+            <div className="meter"><i style={{ width: `${(progress.filter(([, ok]) => ok).length / progress.length) * 100}%` }} /></div>
+            <ul className="progress">{progress.map(([label, ok]) => <li key={label} className={ok ? 'ok' : ''}><span className="pi">{ok && <Icon name="check" size={11} />}</span>{label}</li>)}</ul>
+            {recipe.nodes.length > 0 && errors.length > 0 && <div style={{ marginTop: 6 }}>{errors.slice(0, 3).map((d, i) => <div key={i} className="diag error">{friendly(d, nodeName)}</div>)}</div>}
+            {recipe.nodes.length > 0 && (v?.diagnostics ?? []).filter((d) => d.severity === 'warning').slice(0, 2).map((d, i) => <div key={'w' + i} className="diag warning">{friendly(d, nodeName)}</div>)}
             {floor < floorNeed && recipe.nodes.length > 0 && <div className="diag error">{band ? 'The floor' : 'The price'} must cover the fees: at least {usd(floorNeed)}.</div>}
-            <dl className="kv" style={{ marginTop: 8 }}>
-              <dt>Part fees</dt><dd>{usd(fees)}</dd>
-              <dt>Sealed runner</dt><dd>{usd(RUNNER_FEE)}</dd>
-              <dt>Protocol (2%)</dt><dd>{usd(protocol)}</dd>
-              <dt>You earn per run</dt><dd>{usd(left)}</dd>
-            </dl>
-            <button className="btn seal" style={{ width: '100%', marginTop: 12 }} disabled={!canPublish} onClick={() => setSealing(true)}>Seal and publish as {recipe.meta.creator}</button>
-            <div className="small muted" style={{ marginTop: 6 }}>Sealing encrypts the recipe in this browser to the attested runner. Nobody else, including this marketplace, can read your wiring or settings.</div>
+            <div className="earn"><span className="small muted">You earn per run <Tip>{`Price minus part fees ${usd(fees)}, sealed runner ${usd(RUNNER_FEE)} and protocol 2% ${usd(protocol)}.`}</Tip></span><b>{usd(left)}</b></div>
+            <button className="btn seal lg" style={{ width: '100%', marginTop: 12 }} disabled={!canPublish} onClick={() => setSealing(true)}><Icon name="lock" size={16} />Seal and publish</button>
+            <div className="small muted row" style={{ marginTop: 8, justifyContent: 'center' }}>Encrypted in this browser. Nobody else can read it. <Tip>Sealed to the attested runner. Not even this marketplace can read your wiring or settings.</Tip></div>
           </div>
         </div>
       </aside>
@@ -357,7 +354,7 @@ function InputsEditor({ recipe, nodeId, m, catalog, wire, setRecipe }: { recipe:
   };
   return (
     <div className="grid" style={{ gap: 8 }}>
-      <div className="sectlabel">Inputs <span className="muted">· where each value comes from</span></div>
+      <div className="sectlabel"><Icon name="link" size={13} />Inputs<Tip>Where each value comes from: an earlier part, the buyer’s form, or a fixed value.</Tip></div>
       {Object.entries(m.inputs).map(([port, spec]) => {
         const opts = all.filter((s) => isAssignable(catalog.types, s.type, spec.type));
         const ref = node.inputs[port] ?? '';
@@ -365,7 +362,7 @@ function InputsEditor({ recipe, nodeId, m, catalog, wire, setRecipe }: { recipe:
         const fixable = ['asset.id', 'usd', 'percent', 'near.account', 'address.near'].includes(spec.type);
         return (
           <div key={port} className={'field' + (ref ? '' : ' missing')}>
-            <label htmlFor={`in-${port}`}>{port} <span className="muted">({spec.type})</span></label>
+            <label htmlFor={`in-${port}`}>{port}<span className="muted" style={{ fontWeight: 400 }}>{spec.type}</span></label>
             <select id={`in-${port}`} value={fixedKey ? '__fixed' : ref} onChange={(e) => e.target.value === '__fixed' ? setFixed(port, spec.type, spec.type === 'asset.id' ? Object.keys(ASSET_LABEL)[0] : '') : wire(nodeId, port, e.target.value)}>
               {!ref && <option value="">choose…</option>}
               {opts.map((s) => <option key={s.ref} value={s.ref}>{s.label}</option>)}
@@ -387,7 +384,7 @@ function SwapList({ recipe, nodeId, current, catalog, onSwap }: { recipe: Recipe
   if (!swaps.length) return null;
   return (
     <details className="small">
-      <summary>{swaps.length} drop-in alternative{swaps.length > 1 ? 's' : ''} (same inputs and outputs)</summary>
+      <summary>{swaps.length} drop-in alternative{swaps.length > 1 ? 's' : ''}</summary>
       <div className="grid" style={{ gap: 6, marginTop: 6 }}>
         {swaps.map((b) => (
           <div className="swap-opt" key={b.id}>

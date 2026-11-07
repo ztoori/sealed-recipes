@@ -25,7 +25,7 @@ export function usePoll<T>(path: string | null, ms = 1500, deps: unknown[] = [])
 
 export const usd = (units: string | number | bigint, dp = 4) => '$' + (Number(units) / 1e6).toFixed(dp);
 export const money = (n: number, dp = 2) => '$' + n.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
-export const px = (n: number | null | undefined) => (n == null ? '—' : n < 0.1 ? n.toFixed(5) : n.toFixed(4));
+export const px = (n: number | null | undefined) => (n == null ? 'n/a' : n < 0.1 ? n.toFixed(5) : n.toFixed(4));
 export const short = (s: string, a = 8, b = 6) => (s && s.length > a + b + 1 ? `${s.slice(0, a)}…${s.slice(-b)}` : s);
 export const pct = (x: number) => (x >= 0 ? '+' : '') + (x * 100).toFixed(2) + '%';
 export const compact = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : n.toFixed(0);

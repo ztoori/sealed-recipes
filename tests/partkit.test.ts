@@ -8,7 +8,7 @@ import { addPartAutoWired, lintPartSource, partTemplate, recipeFromJob, sourcesF
 const root = join(import.meta.dirname, '..');
 const json = (p: string) => JSON.parse(readFileSync(join(root, p), 'utf8'));
 const catalog = { ...json('standard/parts.json'), jobs: json('standard/jobs.json').jobs } as Catalog;
-const recipes: Recipe[] = [...readdirSync(join(root, 'seed/recipes')).map((f) => json(`seed/recipes/${f}`)), json('seed/bounty/AIRD.json')];
+const recipes: Recipe[] = [...readdirSync(join(root, 'seed/recipes')).map((f) => json(`seed/recipes/${f}`))];
 
 test('partkit: every catalog part manifest conforms to SRS-1 §2', () => {
   for (const m of catalog.parts) assert.deepEqual(validatePartManifest(m, catalog).filter((x) => x.severity === 'error'), [], m.id);
@@ -46,8 +46,8 @@ test('partkit: the source checks reject fetch, env access and non-durable approv
   assert.deepEqual(t, []);
 });
 
-test('partkit: all 11 seed recipes can be composed from parts: job form + parts added in order, every wire available', () => {
-  assert.equal(recipes.length, 11);
+test('partkit: all 10 seed recipes can be composed from parts: job form + parts added in order, every wire available', () => {
+  assert.equal(recipes.length, 10);
   for (const r of recipes) {
     const job = catalog.jobs!.find((j) => j.id === r.implements)!;
     assert.ok(job, `${r.meta.ticker} implements a job`);

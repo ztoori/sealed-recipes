@@ -24,7 +24,7 @@ Businesses and agents run on workflows that chain several tools, bots and AI cal
 | Requirement (from the brief) | How it is built here |
 |---|---|
 | Specialized builders deploy utility apps and bots | **Parts**: code, specialist agents or data sources, with typed ports, declared network capabilities, a per-call fee, **disclosure of model, instructions, harness and verification**, and **per-run resource limits**, registered on-chain ([standard/parts.json](standard/parts.json)) |
-| A no-code / low-code standard to compose and swap parts | **SRS-1** ([docs/SRS-1.md](docs/SRS-1.md), and Documentation › Standard in the app), an open MIT-licensed standard with conformance checks and an adoption path: a typed graph with subtyping, validation, drop-in swap search, a withdrawal-risk label and standard **job types**. **Compose › Recipe** is a no-code builder: pick a job, add parts, they wire themselves (a test rebuilds all 11 seed recipes this way). **Compose › Part** builds a part with live SRS-1 conformance checks |
+| A no-code / low-code standard to compose and swap parts | **SRS-1** ([docs/SRS-1.md](docs/SRS-1.md), and Documentation › Standard in the app), an open MIT-licensed standard with conformance checks and an adoption path: a typed graph with subtyping, validation, drop-in swap search, a withdrawal-risk label and standard **job types**. **Compose › Recipe** is a no-code builder: pick a job, add parts, they wire themselves (a test rebuilds all 10 seed recipes this way). **Compose › Part** builds a part with live SRS-1 conformance checks |
 | Users create recipes without patents or licences | The recipe is **sealed** (X25519 + XSalsa20-Poly1305) to the runner's attested key. Only `sha256(envelope)` goes on-chain. See [What the sealing protects](#what-the-sealing-protects-and-what-it-doesnt) for its limits |
 | A decentralized exchange where recipes are listed, bought and traded | **Recipe intents**: a buyer posts a job, every recipe that implements its type quotes from a sealed dry run, and the buyer (or an agent's policy) picks one. Recipes are listed and bought **per run**; what competes is the service, not an asset, so nothing here is a security (see [No investment features](#no-investment-features)) |
 | Attribution that pays everyone involved | **`report_run`**: an ed25519-signed runner report is verified on-chain and splits the payment in one receipt. It also compares delivery with the signed quote and compensates any shortfall from the recipe's **guarantee deposit** (a performance bond the creator posts) |
@@ -51,7 +51,7 @@ Businesses and agents run on workflows that chain several tools, bots and AI cal
 
    A buyer or agent can set a **max price**: recipes listed above it aren't even asked to quote, and the contract refuses to charge more.
 
-   Each quote is sealed to the buyer's browser, which checks the runner's signature before paying. The signature binds the quote to that buyer, that job and that recipe version, and it can be used once. Recipes stay sealed: buyers compare results, not methods. A job nobody serves yet is recorded as **open demand** for builders.
+   Each quote is sealed to the buyer's browser, which checks the runner's signature before paying. The signature binds the quote to that buyer, that job and that recipe version, and it can be used once. Recipes stay sealed: buyers compare results, not methods.
 4. **The buyer picks a quote and pays** from any chain through NEAR Intents. The signed promise travels with the payment, so the contract can enforce it (it is then public on-chain; a buyer who prefers privacy can choose "No guarantee" and skip the promise and the bond).
 5. **The sealed workflow runs.** First the runner re-prices the job: if the wallet changed since the quote, it aborts and refunds instead of letting the deposit pay for an emptied wallet (`npm run attack:drain` shows this). Each part runs under declared limits on time, HTTP calls, model calls and output size; a run that goes over is cancelled and refunded. Part logs, wallet requests and the result leave the runner encrypted to a one-time key in the buyer's browser.
 6. **One settlement** pays the protocol, the runner, every part author used and the creator. A share of the creator's cut that the creator chose (`reserve_bps`) tops up the recipe's guarantee deposit. Delivery is checked against the promise, and any shortfall is paid to the buyer from the deposit, up to the cover in the quote.
@@ -86,7 +86,7 @@ Then follow these steps. Each one says what you should see.
 
 The app has four sections: **Recipes** (find one and get a quote), **Compose** (build a recipe from parts with no code, or build a part), **Wallet**, and **Documentation** (the SRS-1 standard, Trust & privacy, Landscape). Every page has its own link (`#/recipes/CLNP`, `#/quote/STAK`, `#/compose/part/…`), so the back button works.
 
-1. **Open http://127.0.0.1:8080.** You land on **Recipes**: nine listed recipes with a search box and favorites (★). Below the list, *Need something nobody offers?* shows the one job with no recipe yet, *Claim my eligible airdrops*.
+1. **Open http://127.0.0.1:8080.** You land on **Recipes**: nine listed recipes with a search box and favorites (★).
 2. **Click "Play the demo story"** (top right). The brief's four steps play automatically, with a caption for each:
    1. **Compose.** As `chef.testnet`, the creator picks the job *Clean up my wallet* and adds five parts one by one. Each wires itself to the previous step's matching output. The seal dialog verifies the runner attestation: 6 checks pass, and "Hardware TDX quote" shows as skipped in local mode. The plaintext turns into ciphertext and gets a wax seal. `publish_recipe` returns a tx hash, and a $25 guarantee deposit backs CLNP's quotes.
    2. **Find it and get a quote.**
@@ -176,41 +176,6 @@ npm run test:versions   # announce, cancel, re-announce SWPR v2; a run paid on v
 
 Where everything is stored, and who runs what, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#storage-what-lives-where).
 
-## Builder bounties on NEAR AI Agent Market
-
-When a buyer asks for a job no recipe serves, the request is recorded as open demand. On **Recipes**, *Need something nobody offers?* lets anyone request it and put a bounty on that job type. The bounty is posted as a job on NEAR AI Agent Market, so its builders, not only this marketplace's, can take it.
-
-1. **Post.** The bounty carries the SRS-1 job type (inputs, output, metric) and the exact checks a delivery must pass.
-2. **Bid and award.** Builder agents bid on Agent Market. The bounty's owner awards one, and Agent Market holds the bid amount in escrow.
-3. **Deliver.** The builder publishes a sealed recipe here from the NEAR account it bid with, and submits `{"recipe_id": "..."}`. The recipe itself never goes to Agent Market.
-4. **Verify, then pay.** `server/src/bounties.ts` checks the delivery against the contract and a live dry run before it accepts the job on Agent Market and releases the escrow:
-   - the recipe is listed;
-   - it implements the job type;
-   - it was published after the bounty;
-   - its creator is the account that won the bid;
-   - a guarantee deposit of at least 1 USDC backs it;
-   - a runner-signed quote on a test wallet verifies and promises more than zero.
-
-   If any check fails, it opens a dispute with the failed checks as the reason and pays nothing.
-5. **Compete.** The new recipe now quotes for that job, and any later recipe can compete with it.
-
-```bash
-npm run test:bounty   # bob asks for "claim my airdrops": no recipe, so it becomes open demand. A 250 USDC bounty is posted;
-                      # @swapsmith bids lower and delivers someone else's recipe: 3 checks fail, disputed, no payout.
-                      # Reposted; @dropsmith publishes AIRD from its own account: 7/7 checks, escrow released (2% fee).
-                      # bob asks again: AIRD quotes, and the run claims his REF and AURORA airdrops to a fresh address.
-```
-
-**What is mocked.** The demo talks to an offline mock of the Agent Market API (`server/src/agent-market.ts`), written to the published API at market.near.ai/skill.md. The mock enforces the same roles as the real API: only the creator awards and accepts, and only the awarded agent submits. It also keeps a log of escrow transactions. The two builder agents (`scripts/builder-agent.ts`) are demo agents.
-
-To use the real market, set `AGENT_MARKET_URL=https://market.near.ai` and `AGENT_MARKET_API_KEY`. The client and the builder agent are the same code in both cases.
-
-**Not yet checked against the live service:**
-- reading a job's bids with `GET /v1/jobs/{id}/bids`;
-- the dispute body `{"reason"}`.
-
-The new `airdrop.claim` part and its distributors (`fixtures/airdrops.json`) are fictional in local mode, like the wallets.
-
 ## Where this sits: comparable offerings, integrations, and what only this adds
 
 Workflow engines and agent markets exist, and some overlap with parts of this project:
@@ -287,7 +252,7 @@ npm run verify:tla      # also the TLC model check (~10 min; Java + tla2tools.ja
 ## Tests
 
 ```bash
-npm test                # 51 TypeScript tests: SRS-1 conformance of every part, all 11 seed recipes rebuilt in the composer, the web app's state machines; Agent Market mock roles and bounty accept/dispute; settlement, bond and pricing vectors; quote signatures and expiry;
+npm test                # 47 TypeScript tests: SRS-1 conformance of every part, all 10 seed recipes rebuilt in the composer, the web app's state machines; settlement, bond and pricing vectors; quote signatures and expiry;
                         # event parity with the contract; SRS-1 typing, swaps, job types and withdrawal risk;
                         # sealing; per-part resource limits; EIP-191; 1Click shapes; attestation; capability guard; code hash
 npm run test:rust       # 105 Rust tests for the NEAR contract (same vectors, conformance with the proved models,
@@ -360,7 +325,6 @@ These are kept separate so nothing here needs to be taken on faith.
 | TEE runner | `runner/` as a separate process with `TEE_MODE=local-dev`: real keys, sealing, signed quotes and reports, enforced limits, **no hardware quote** (shown as skipped). Job endpoints require a token shared only with the marketplace | Same code with `TEE_MODE=dstack` in a TDX CVM (`runner/Dockerfile`, `runner/docker-compose.yml`). `scripts/verify-quote.ts` runs Intel DCAP verification with `@phala/dcap-qvl` |
 | NEAR Intents 1Click | `/mock/1click`: same request and response shapes, a frozen token-price sample, the real status names | `core/src/oneclick.ts` live mode; `npm run live-check` gets real dry quotes. **NEAR Intents has no testnet**, so the demo cannot move real funds |
 | NEAR AI Cloud | `/mock/nearai` signs responses with a real secp256k1 key in the provider-TEE format. The "model" is a transparent heuristic, and there is no hardware quote (reported as skipped) | The same part code calls `cloud-api.near.ai`, and `live-check` verifies a real completion end to end |
-| NEAR AI Agent Market | `/mock/agent-market`: the published job, bid, award, submit, accept and dispute endpoints, with role checks and an escrow log. Builder agents are demo processes | `AGENT_MARKET_URL` + `AGENT_MARKET_API_KEY`: same client. Bid listing and dispute body not yet checked against the live API |
 | FastNEAR / NEAR RPC | `/mock/fastnear`, `/mock/rpc`, backed by fictional wallets in `fixtures/wallets.json` and fictional keys, staking pools and contracts in `fixtures/chain-state.json` | Same URLs unmocked |
 | Wallet signing | A local demo wallet "signs as" the selected account. Demo accounts have unlimited demo USDC, so deposit sizes are illustrative | **Not built yet.** The approval dialog shows the exact `signAndSendTransactions` payload a NEAR wallet would sign |
 | Chain view for attestation checks | The browser gets the attestation **directly from the runner**, but the registered keys come from the server's contract mirror, so the marketplace is trusted for that comparison | Clients read `get_runner` from NEAR RPC; the runner reads `get_run` / `get_recipe` over NEAR RPC when `NEAR_RPC_URL` is set |
@@ -431,8 +395,6 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 | `ONECLICK_JWT` | runner, live-check | authenticated 1Click fee tier |
 | `TEE_MODE` | runner | `local-dev` (default) or `dstack` |
 | `PORT`, `RUNNER_PORT` | launcher | default 8080 / 8787 |
-| `AGENT_MARKET_URL`, `AGENT_MARKET_API_KEY` | server, builder agent | real NEAR AI Agent Market for builder bounties (default: the offline mock) |
-| `BOUNTY_TEST_WALLET` | server | wallet used for a delivery's dry-run check (default `bob.testnet`) |
 
 ## Limitations and next steps
 
@@ -444,7 +406,7 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 - **The runner is trusted to measure delivery.** Guarantee deposits pay out on the runner's signed `delivered` value. That is sound only as far as the runner is attested; on-chain DCAP verification of the runner is the next step.
 - **Quotes cost compute.** Dry runs are capped at 5 recipes per job and 12 jobs per minute per client. A small quote fee would be the on-chain version.
 - **Supplier risk.** Bundled parts can't be switched off by their author, but remote and closed-model parts can. SRS-1 labels this risk; fallback parts, notice periods and supplier bonds are planned.
-- **Thin markets.** Head-to-head price competition needs several recipes per job type; there are 8 job types and 10 recipes (11 after the bounty demo); builder bounties are how a thin job type gets its first recipe. A niche recipe's price moves with its own demand only.
+- **Thin markets.** Head-to-head price competition needs several recipes per job type; there are 8 job types and 10 recipes, and one job type (*Claim my eligible airdrops*) has no recipe yet. A niche recipe's price moves with its own demand only.
 - **Demand can be faked, at a cost.** A creator can pay for their own runs to push the price up. Each fake run costs the protocol, runner and part fees, and the price rises at most 12.5% a period while buyers simply pick a cheaper rival or set a max price. Counting only quoted runs from distinct buyers would make it harder.
 - **Unquoted payments can miss a price change.** A payment without a quote is charged the list price when it arrives; if that rose since the payment was quoted, the payment is credited back to the buyer (never overcharged). Paying with a signed quote locks the price.
 - **Spam.** No storage deposits yet.

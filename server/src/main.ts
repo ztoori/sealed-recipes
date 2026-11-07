@@ -25,8 +25,6 @@ import { computeCodehash, loadCatalog } from '../../core/src/codehash.js';
 import { runPaymentQuoteRequest, USDC_NEAR, type Token, type QuoteResponse } from '../../core/src/oneclick.js';
 import { World } from './world.js';
 import { mockRouter } from './mocks.js';
-import { AgentMarketClient, agentMarketMock } from './agent-market.js';
-import { Bounties, type Check } from './bounties.js';
 import { seal, openQuote, jobHash } from '../../core/src/index.js';
 import nacl from 'tweetnacl';
 import { bytesToHex } from '@noble/hashes/utils.js';
@@ -287,7 +285,7 @@ if (env.SRS_ALLOW_CRASH === '1') app.post('/api/dev/solver-fail', guard((req, re
 if (env.SRS_ALLOW_CRASH === '1') app.post('/api/dev/verifier-withdraw', guard((req, res) => j(res, { withdrawn: mocks.verifier.withdrawAll(String(req.body.account)) })));
 app.get('/api/intents/verifier/:account', (req, res) => j(res, { account: req.params.account, balances: Object.fromEntries(mocks.verifier.balances.get(String(req.params.account)) ?? []), log: mocks.verifier.log.slice(-20) }));
 
-/** demo wallet: sign "as" an account. Local mode only — testnet mode uses a real NEAR wallet. */
+/** demo wallet: sign "as" an account. Local mode only: testnet mode uses a real NEAR wallet. */
 const ALLOWED = new Set(['register_part', 'withdraw', 'withdraw_bond', 'set_pricing']);
 app.post('/api/chain/tx', guard((req, res) => {
   const { signer, method, args } = req.body as { signer: string; method: string; args: Record<string, string> };
@@ -386,17 +384,7 @@ app.get('/api/intents/log', (_, res) => j(res, mocks.oneclick.log.slice(-60)));
 const MAX_QUOTES_PER_JOB = 5; // dry runs cost compute: cap the fan-out…
 const JOBS_PER_MINUTE = 12; //   …and rate-limit job posts per client
 const jobLog = new Map<string, number[]>();
-const openDemand: { job_type: string; at: string }[] = [];
 app.get('/api/jobs', (_, res) => j(res, (catalog.jobs ?? []).map((jt) => ({ ...jt, recipes: [...listings.values()].filter((l) => l.implements === jt.id).map((l) => l.ticker) }))));
-app.get('/api/demand', (_, res) => j(res, openDemand.slice(-50).reverse()));
-/** "Request a recipe": records open demand for a job type nobody serves yet. No inputs are sent, so nothing about a wallet leaks. */
-app.post('/api/demand', guard((req, res) => {
-  const { job_type } = req.body as { job_type: string };
-  if (!catalog.jobs?.some((jt) => jt.id === job_type)) throw new LedgerError('unknown job type');
-  const recent = openDemand.filter((d) => d.job_type === job_type && Date.now() - Date.parse(d.at) < 2000);
-  if (!recent.length) openDemand.push({ job_type, at: new Date().toISOString() });
-  j(res, { ok: true, requests: openDemand.filter((d) => d.job_type === job_type).length });
-}));
 /** Part internals for the part builder: every part in this demo is public, so its manifest and source are served. */
 app.get('/api/parts/:id/source', (req, res) => {
   const m = catalog.parts.find((p) => p.id === req.params.id);
@@ -406,59 +394,6 @@ app.get('/api/parts/:id/source', (req, res) => {
   j(res, { id: m.id, path: m.implementation, source: src, helpers, visibility: 'public' });
 });
 
-// ---- builder bounties on NEAR AI Agent Market (server/src/bounties.ts) ----
-// Live: AGENT_MARKET_URL=https://market.near.ai AGENT_MARKET_API_KEY=<key from POST /v1/agents/register>. Default: an
-// offline mock of the same API, mounted at /mock/agent-market, with demo builder agents (scripts/builder-agent.ts).
-const MARKET_LIVE = !!env.AGENT_MARKET_URL;
-const MARKET_URL = env.AGENT_MARKET_URL ?? `http://127.0.0.1:${PORT}/mock/agent-market`;
-const MARKET_WEB = env.AGENT_MARKET_WEB ?? (MARKET_LIVE ? 'https://market.near.ai' : '');
-const marketMock = MARKET_LIVE ? null : agentMarketMock();
-if (marketMock) app.use('/mock/agent-market', marketMock.router);
-let bounties: Bounties | null = null;
-const BOUNTY_TEST_WALLET = env.BOUNTY_TEST_WALLET ?? 'bob.testnet';
-const MIN_BOUNTY_DEPOSIT = 1_000_000n; // 1 USDC of guarantee deposit backing the delivered recipe's quotes
-/** Checks a builder's delivery against the contract mirror and a live, runner-signed dry run. */
-async function verifyDelivery(deliverable: string, b: { job_type: string; posted_at: number }, workerNear?: string): Promise<Check[]> {
-  const checks: Check[] = [];
-  const add = (name: string, ok: boolean, detail: string) => { checks.push({ name, ok, detail }); return ok; };
-  let id = '';
-  try { id = String(JSON.parse(deliverable).recipe_id ?? ''); } catch { /* below */ }
-  if (!add('deliverable format', /^[A-Z0-9]{3,6}$/.test(id), id ? `recipe_id ${id}` : 'expected {"recipe_id": "<ID>"}')) return checks;
-  const r = ledger.get_recipe(id); const l = listings.get(id);
-  if (!add('listed on the Sealed Recipes contract', !!r && !!l && r.listed, r ? `published by ${r.creator}, version ${r.version}` : 'no such recipe')) return checks;
-  add('implements the requested job type', l!.implements === b.job_type, `implements ${l!.implements ?? 'nothing'}`);
-  const pub = ledger.events.find((e) => e.event === 'recipe_published' && (e.data[0] as { id: string }).id === id);
-  add('published after the bounty', !!pub && BigInt(pub.timestamp_ns) >= BigInt(b.posted_at) * 1_000_000n, pub ? new Date(Number(BigInt(pub.timestamp_ns) / 1_000_000n)).toISOString() : 'no publish event');
-  add('creator is the awarded builder', workerNear ? r!.creator === workerNear : true, workerNear ? `creator ${r!.creator}, awarded ${workerNear}` : 'Agent Market did not report the worker\'s NEAR account; skipped');
-  add('guarantee deposit backs its quotes', r!.bond_available + r!.bond_locked >= MIN_BOUNTY_DEPOSIT, `${(Number(r!.bond_available + r!.bond_locked) / USDC).toFixed(2)} USDC (min ${(Number(MIN_BOUNTY_DEPOSIT) / USDC).toFixed(2)})`);
-  // live dry run, exactly as a buyer would get it: sealed job -> runner quote sealed back to us -> signature verified
-  const runner = ledger.runners.get(r!.runner_id)!;
-  const reply = nacl.box.keyPair();
-  const recipient = bytesToHex(nacl.sign.keyPair().publicKey); // a fresh implicit address
-  const inputs = { wallet: BOUNTY_TEST_WALLET, recipient };
-  const salt = randomBytes(16).toString('hex');
-  const job_hash = jobHash(inputs, salt);
-  const sealed_job = seal({ inputs, salt, reply_to: bytesToHex(reply.publicKey) }, runner.enc_pk_hex, 'inputs');
-  const buyer = 'bounty-verifier.srs.testnet';
-  const q = await backend.quote({ recipe_id: id, sealed_recipe: currentSealed(id), sealed_job, job_hash, buyer });
-  if (!q.ok || !q.sealed_quote) { add('live dry run quotes', false, q.error ?? 'no quote'); return checks; }
-  const o = openQuote(q.sealed_quote, reply.secretKey, { contractId: CONTRACT_ID, recipeId: id, signingPk: runner.signing_pk, buyer, inputsHash: sealedHash(sealed_job), jobHash: job_hash });
-  add('live dry run quotes', o.verified && BigInt(o.promised ?? 0) > 0n, o.verified ? `test wallet ${BOUNTY_TEST_WALLET}: promises ${(Number(o.promised) / USDC).toFixed(2)} USDC at ${(Number(o.price) / USDC).toFixed(2)} per run` : `quote did not verify: ${o.problem}`);
-  return checks;
-}
-app.get('/api/bounties', (_, res) => j(res, { mode: MARKET_LIVE ? 'live' : 'mock', market: MARKET_LIVE ? MARKET_URL : 'offline mock of the Agent Market API', ready: !!bounties, bounties: bounties ? [...bounties.list.values()].reverse() : [] }));
-app.post('/api/bounties', guard(async (req, res) => {
-  if (!bounties) throw new LedgerError('Agent Market is not connected');
-  const { job_type, budget, by } = req.body as { job_type: string; budget: string; by: string };
-  const jt = catalog.jobs?.find((x) => x.id === job_type); if (!jt) throw new LedgerError('unknown job type');
-  if ([...listings.values()].some((l) => l.implements === job_type)) throw new LedgerError('a recipe already serves this job type');
-  if (!(Number(budget) > 0 && Number(budget) <= 10_000)) throw new LedgerError('budget must be between 0 and 10000 USDC');
-  try { j(res, await bounties.post({ job_type: jt as never, budget: String(Number(budget)), token: 'USDC', origin: `http://127.0.0.1:${PORT}`, by: String(by ?? 'marketplace') })); } catch (e) { throw new LedgerError((e as Error).message); }
-}));
-app.post('/api/bounties/:id/award', guard(async (req, res) => {
-  if (!bounties) throw new LedgerError('Agent Market is not connected');
-  try { j(res, await bounties.award(String(req.params.id), String(req.body?.bid_id))); } catch (e) { throw new LedgerError((e as Error).message); }
-}));
 app.post('/api/jobs', guard(async (req, res) => {
   const ip = req.ip ?? 'local';
   const now = Date.now();
@@ -471,7 +406,7 @@ app.post('/api/jobs', guard(async (req, res) => {
   if (!catalog.jobs?.some((jt) => jt.id === job_type)) throw new LedgerError('unknown job type');
   if (!/^[0-9a-f]{64}$/.test(job_hash ?? '') || sealed_job?.purpose !== 'inputs') throw new LedgerError('expected a sealed job and its job_hash');
   const candidates = [...listings.values()].filter((l) => l.implements === job_type && (!only || l.ticker === only)).slice(0, MAX_QUOTES_PER_JOB);
-  if (!candidates.length) { openDemand.push({ job_type, at: new Date().toISOString() }); j(res, { quotes: [], open_demand: true }); return; }
+  if (!candidates.length) { j(res, { quotes: [] }); return; }
   const quotes = await Promise.all(candidates.map(async (l) => {
     const r = ledger.get_recipe(l.ticker)!;
     // buyer's price cap: a recipe listed above it isn't asked to quote (no dry run, no compute spent)
@@ -482,7 +417,7 @@ app.post('/api/jobs', guard(async (req, res) => {
     return { recipe_id: l.ticker, ok: !!q.ok, error: q.error, sealed_quote: q.sealed_quote, listing: { ticker: l.ticker, name: l.name, creator: l.creator, price_per_run: r.price_per_run.toString(), price_floor: r.price_floor.toString(), price_ceiling: r.price_ceiling.toString(), privacy: l.privacy, risk: l.risk, disclosures: l.disclosures, parts: l.parts },
       track: { runs: r.runs, failed: r.failed, promised_total: r.promised_total, delivered_total: r.delivered_total, compensated_total: r.compensated_total, aborted: r.aborted, bond_available: r.bond_available } };
   }));
-  j(res, { quotes, open_demand: false });
+  j(res, { quotes });
 }));
 
 // ---- runs ----
@@ -606,21 +541,13 @@ async function boot() {
   // without re-pinning and the runner's attestation no longer matches: the UI check turns red.
   const pinned = resolve(ROOT, 'AUDITED_CODEHASH');
   const audited = existsSync(pinned) ? readFileSync(pinned, 'utf8').trim() : computeCodehash(ROOT).codehash;
-  if (att.codehash !== audited) console.warn(`[server] WARNING runner codehash ${att.codehash.slice(0, 12)} != audited ${audited.slice(0, 12)} — UI will show the mismatch`);
+  if (att.codehash !== audited) console.warn(`[server] WARNING runner codehash ${att.codehash.slice(0, 12)} != audited ${audited.slice(0, 12)}; the UI will show the mismatch`);
   ledger.call('srs-dao.testnet', (l) => l.add_runner({ id: RUNNER_ID, signing_pk: att!.signing_pk, enc_pk_hex: att!.enc_pk_hex, codehash: audited, fee_per_run: '30000' }));
   for (const b of catalog.parts) ledger.call(b.author, (l) => l.register_part({ id: b.id, version: b.id.split('@')[1], fee_per_call: b.fee_per_call, manifest_hash: hashObject(b) }));
   // SRS_HOST=0.0.0.0 makes it reachable from outside the machine (e.g. WSL without localhost forwarding); default: local only
   const HOST = env.SRS_HOST ?? '127.0.0.1';
   app.listen(PORT, HOST, () => {
     console.log(`[server] marketplace on http://${HOST}:${PORT}  (contract mirror ${CONTRACT_ID}, runner ${RUNNER})`);
-    // Agent Market: use the given key, or register this marketplace as an agent on the mock
-    (async () => {
-      const key = env.AGENT_MARKET_API_KEY ?? (MARKET_LIVE ? undefined : (await AgentMarketClient.register(MARKET_URL, 'sealed-recipes', ['sealed-recipes', 'near'])).api_key);
-      if (!key) { console.log('[server] Agent Market: AGENT_MARKET_URL set without AGENT_MARKET_API_KEY; bounties disabled'); return; }
-      bounties = new Bounties(new AgentMarketClient(MARKET_URL, key), verifyDelivery, MARKET_WEB);
-      setInterval(() => { void bounties!.tick(); }, 1500);
-      console.log(`[server] Agent Market bounties: ${MARKET_LIVE ? MARKET_URL : 'offline mock at /mock/agent-market'}`);
-    })().catch((e) => console.error('[server] Agent Market unavailable:', (e as Error).message));
   });
   // keeper: apply ended pricing periods so price_updated events are timely (anyone may call update_price)
   setInterval(() => { for (const id of ledger.recipes.keys()) { try { ledger.call('keeper.srs.testnet', (l) => l.update_price({ id })); } catch { /* ignore */ } } }, 1000);

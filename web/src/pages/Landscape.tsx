@@ -1,4 +1,7 @@
-/** Where this project sits next to comparable offerings: overlap, integration path, status. Source: docs/LANDSCAPE.md */
+import { Icon } from '../icons';
+import { Tip } from '../ui';
+/** Where this project sits
+ next to comparable offerings: overlap, integration path, status. Source: docs/LANDSCAPE.md */
 type Status = 'built' | 'partly' | 'path' | 'n/a';
 const STATUS: Record<Status, [string, string]> = {
   built: ['built', 'ok'],
@@ -13,7 +16,7 @@ const ROWS: { name: string; what: string; overlap: string; integrate: string; st
   { name: 'Shade Agents', what: 'TEE agents (dstack, Phala by default) registered by an agent contract that checks attestation on-chain; multichain signing via Chain Signatures.', overlap: 'The attested-runner pattern used here.', integrate: 'Register runners through on-chain attestation instead of owner approval; Chain Signatures for multichain parts.', status: 'partly' },
   { name: 'NEAR AI Cloud', what: 'Private inference in TEEs (Intel TDX + NVIDIA) with per-request attestation. Beta.', overlap: 'Private model calls.', integrate: 'Already the model backend for AI parts; responses are signature-checked.', status: 'built' },
   { name: 'IronClaw', what: "NEAR AI's agent runtime: WASM tool sandbox, routines (cron, events, webhooks), deployable in TEEs.", overlap: 'Triggers for a single agent.', integrate: 'Buyer-side trigger that posts jobs on a schedule.', status: 'path' },
-  { name: 'NEAR AI Agent Market', what: 'Agents bid on tasks; escrowed payment settles in NEAR; built on NEAR Intents.', overlap: 'Post a job, providers compete, escrowed payment.', integrate: 'Builder bounties (built, offline mock of its published API; live with an API key): a job type nobody serves becomes a paid Agent Market job, and the delivered sealed recipe is verified before escrow is released (npm run test:bounty). Next: list recipes as services.', status: 'partly' },
+  { name: 'NEAR AI Agent Market', what: 'Agents bid on tasks; escrowed payment settles in NEAR; built on NEAR Intents.', overlap: 'Post a job, providers compete, escrowed payment.', integrate: 'List recipes as Agent Market services so its agents can buy runs.', status: 'path' },
   { name: 'NEAR Intents', what: 'Cross-chain swaps settled by the verifier contract, which applies a batch of intents together.', overlap: 'None: infrastructure used here.', integrate: 'Payment rail (1Click delivers the run price), confidential swaps, and atomic swap bundles (one signed batch: every swap and the payout, or nothing; local stand-in of the Verifier, npm run test:atomic).', status: 'built' },
   { name: 'NEAR yield/resume', what: 'Contracts pause until an external service resumes them, up to about 200 blocks (~4 min).', overlap: 'Waiting on off-chain work.', integrate: 'Fine for short calls; long workflows here use durable runs with on-chain checkpoints.', status: 'n/a' },
   { name: 'Olas Mech Marketplace', what: 'Agents hire other agents’ tools per request (native token, OLAS, USDC or subscription).', overlap: 'Pay-per-request agent services.', integrate: 'Different chains; reference design for agent-to-agent payment.', status: 'n/a' },
@@ -35,7 +38,6 @@ const VALUE = [
 
 const AHEAD = [
   ['Chainlink CRE', 'Decentralized execution with DON consensus (this project uses one attested runner), many triggers, a secrets vault, and far greater maturity.'],
-  ['NEAR AI Agent Market', 'A live network of agents and jobs; this project is not deployed, and its bounty connection has run only against an offline mock of the Agent Market API.'],
   ['IronClaw', 'Routines (cron, events, webhooks) and a WASM sandbox for untrusted tools; this project has no triggers and runs parts as reviewed in-process code.'],
   ['OutLayer', 'Production attested execution with secrets, key derivation and a WASM sandbox, callable from NEAR contracts today.'],
 ];
@@ -44,9 +46,9 @@ export function Landscape() {
   return (
     <div className="grid">
       <div className="panel">
-        <header><h2>Landscape</h2><span className="small muted">comparable offerings, how this project would use them, and what is built here · docs/LANDSCAPE.md</span></header>
-        <div className="body small" style={{ paddingBottom: 0 }}>
-          Sealed Recipes is not a workflow engine. It is the market and settlement layer for sealed workflows that other people pay to run. Where others already provide a piece, the plan is to integrate, not compete.
+        <header><Icon name="globe" size={16} className="hd-ic" /><h2>Landscape</h2><Tip wide>Comparable offerings, how this project would use them, and what is built here (docs/LANDSCAPE.md).</Tip></header>
+        <div className="body" style={{ paddingBottom: 0 }}>
+          <p className="lede" style={{ margin: 0 }}>Not a workflow engine: the market and settlement layer for sealed workflows others pay to run. Integrate, don’t compete.</p>
         </div>
         <div className="body" style={{ overflowX: 'auto' }}>
           <table className="small landscape">
@@ -67,15 +69,15 @@ export function Landscape() {
       </div>
       <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', alignItems: 'start' }}>
         <div className="panel">
-          <header><h2>Where this project adds value</h2><span className="small muted">as far as the others' public docs show</span></header>
+          <header><Icon name="sparkles" size={16} className="hd-ic" /><h2>Where this project adds value</h2></header>
           <div className="body">
-            <dl className="kv">{VALUE.map(([k, v]) => [<dt key={k + 't'} style={{ color: 'var(--ink)', fontWeight: 600 }}>{k}</dt>, <dd key={k + 'd'} className="small" style={{ textAlign: 'left', fontWeight: 400 }}>{v}</dd>])}</dl>
+            <div className="value-list">{VALUE.map(([k, v]) => <div key={k}><Icon name="check" size={16} /><div><b>{k}</b><p>{v}</p></div></div>)}</div>
           </div>
         </div>
         <div className="panel">
-          <header><h2>Where others are ahead</h2><span className="small muted">stated plainly</span></header>
+          <header><Icon name="flag" size={16} className="hd-ic" /><h2>Where others are ahead</h2></header>
           <div className="body">
-            <dl className="kv">{AHEAD.map(([k, v]) => [<dt key={k + 't'} style={{ color: 'var(--ink)', fontWeight: 600 }}>{k}</dt>, <dd key={k + 'd'} className="small" style={{ textAlign: 'left', fontWeight: 400 }}>{v}</dd>])}</dl>
+            <div className="value-list ahead">{AHEAD.map(([k, v]) => <div key={k}><Icon name="arrow" size={16} /><div><b>{k}</b><p>{v}</p></div></div>)}</div>
           </div>
         </div>
       </div>

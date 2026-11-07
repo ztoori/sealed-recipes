@@ -8,6 +8,11 @@ import { useApp, useStoryOnce } from '../App';
 import { SettlementFlow } from '../components/Sankey';
 import { Output, timeline, type Ev } from '../components/RunViews';
 import { LOCKED, quoteReducer } from './quote-machine';
+import { Icon } from '../icons';
+import { Empty, Head, Seal, Tip } from '../ui';
+
+const STAGES: [string, string][] = [['lock', 'Seal inputs'], ['receipt', 'Quote'], ['wallet', 'Pay'], ['cpu', 'Run'], ['check', 'Settled']];
+const SRC_ICON: Record<string, string> = { 'NEAR Intents': 'globe', contract: 'vault', runner: 'cpu', part: 'box', market: 'market' };
 
 const hex = (u: Uint8Array) => Array.from(u, (b) => b.toString(16).padStart(2, '0')).join('');
 
@@ -175,108 +180,121 @@ export function Quote({ ticker }: { ticker: string }) {
   const metric = !!job?.metric;
   const expired = phase.name === 'quoted' && q && now > Number(BigInt(q.expires_ns) / 1_000_000n);
   const busy = LOCKED.has(phase.name);
+  const stage = phase.name === 'finished' ? (settlement?.payouts ? 5 : 4) : phase.name === 'running' ? 3 : phase.name === 'ready' || phase.name === 'paying' ? 2 : phase.name === 'quoted' || phase.name === 'preparing' ? 1 : 0;
 
   return (
     <div className="grid">
-      <nav className="crumbs small" aria-label="Breadcrumb"><button onClick={() => go({ page: 'recipes' })}>Recipes</button> › <button onClick={() => go({ page: 'recipes', ticker })}>{listing.name}</button> › <b>Get a quote</b></nav>
+      <div className="panel">
+        <ol className="stepper" aria-label="Progress">
+          {STAGES.map(([icon, label], i) => <li key={label} className={i < stage ? 'done' : i === stage ? 'now' + (busy ? ' busy' : '') : ''}><span className="sn">{i < stage ? <Icon name="check" size={15} /> : <Icon name={icon} size={15} />}</span><span className="lbl">{label}</span></li>)}
+        </ol>
+      </div>
       <div className="grid runpage">
         <section className="grid">
           <div className="panel">
-            <header><h2>Get a quote</h2><span className="small muted">as {acting}</span></header>
+            <header><button className="btn ghost sm icon-only" aria-label={'Back to ' + listing.name} onClick={() => go({ page: 'recipes', ticker })}><Icon name="back" size={15} /></button><h2>Your job</h2><span className="spacer" /><span className="small muted">as {acting}</span></header>
             <div className="body grid" style={{ gap: 10 }}>
               <div className="quote-recipe">
-                <div><b>{listing.name}</b> <span className="muted small">{ticker} · by {listing.creator}</span></div>
-                <div className="small muted">{job?.description}</div>
-                <div className="row wrap small" style={{ gap: 6 }}>
-                  <span className="pill">{money(rec.pricePerRun)} per run now</span>
-                  <span className="pill">{money(rec.deposit.available, 0)} guarantee deposit</span>
-                  <span className={'pill ' + (listing.risk === 'low' ? 'ok' : listing.risk === 'high' ? 'bad' : 'warn')}>{listing.risk} withdrawal risk</span>
+                <Seal job={listing.implements} size={48} />
+                <div style={{ minWidth: 0 }}><b>{listing.name}</b> <span className="tk">{ticker}</span>
+                  <div className="tags">
+                    <span className="tag">{money(rec.pricePerRun)} / run</span>
+                    <span className="tag"><Icon name="shield" size={12} />{money(rec.deposit.available, 0)}</span>
+                    <span className={'tag risk-' + listing.risk}><i className="dot" />{listing.risk} risk</span>
+                  </div>
                 </div>
               </div>
               <fieldset disabled={locked} className="plainset grid" style={{ gap: 10 }}>
                 {form.map((f) => (
                   <div className="field" key={f.id}>
-                    <label htmlFor={'f-' + f.id}>{f.label}</label>
+                    <label htmlFor={'f-' + f.id}>{f.label}{f.generator === 'fresh-implicit' && <Tip>A new keypair made in this browser. Only the address goes into the sealed job; the key never leaves your device.</Tip>}</label>
                     {f.options ? (
                       <select id={'f-' + f.id} value={values[f.id] ?? ''} onChange={(e) => edit(f.id, e.target.value)}>{f.options.map((o: string) => <option key={o} value={o}>{ASSET_LABEL[o] ?? o}</option>)}</select>
                     ) : f.generator === 'fresh-implicit' ? (
-                      <div className="row"><input id={'f-' + f.id} style={{ flex: 1, minWidth: 0 }} value={values[f.id] ? short(values[f.id], 12, 8) : ''} readOnly placeholder="not generated yet" />
-                        <button className="btn ghost sm" onClick={() => genFresh(f.id)}>Generate</button>
-                        {freshKey && <button className="btn ghost sm" onClick={downloadKey}>Save key</button>}</div>
+                      <div className="fresh"><input id={'f-' + f.id} value={values[f.id] ? short(values[f.id], 12, 8) : ''} readOnly placeholder="press Generate" />
+                        <button className="btn ghost sm" onClick={() => genFresh(f.id)}><Icon name="sparkles" size={13} />Generate</button>
+                        {freshKey && <button className="btn ghost sm icon-only" aria-label="Save key" title="Save the key file" onClick={downloadKey}><Icon name="download" size={14} /></button>}</div>
                     ) : (
                       <input id={'f-' + f.id} value={values[f.id] ?? ''} placeholder={f.placeholder} inputMode={f.type === 'usd' || f.type === 'percent' ? 'decimal' : undefined} onChange={(e) => edit(f.id, e.target.value)} />
                     )}
-                    {f.generator === 'fresh-implicit' && <span className="small muted">A new keypair made in this browser. Only the address goes into the sealed job; the key never leaves your device.</span>}
                   </div>
                 ))}
-                <div className="field"><label htmlFor="maxp">Max price per run (USD, optional)</label>
-                  <input id="maxp" value={maxPrice} onChange={(e) => { setMaxPrice(e.target.value.replace(/[^0-9.]/g, '')); dispatch({ t: 'edit' }); }} inputMode="decimal" placeholder="no limit" />
-                  <span className="small muted">If the recipe's price is above it, it isn't asked to quote, and the contract refuses to charge more.</span></div>
-                <div className="field"><label htmlFor="pay">Pay with (NEAR Intents)</label>
+                <div className="field"><label htmlFor="maxp">Max price per run<Tip>Optional. If the recipe's price is above it, it isn't asked to quote, and the contract refuses to charge more.</Tip></label>
+                  <input id="maxp" value={maxPrice} onChange={(e) => { setMaxPrice(e.target.value.replace(/[^0-9.]/g, '')); dispatch({ t: 'edit' }); }} inputMode="decimal" placeholder="no limit" /></div>
+                <div className="field"><label htmlFor="pay">Pay with<Tip>Any of these, through NEAR Intents: the contract always receives USDC.</Tip></label>
                   <select id="pay" value={payAsset} onChange={(e) => { setPayAsset(e.target.value); dispatch({ t: 'edit' }); }}>{PAY_ASSETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</select></div>
               </fieldset>
               {phase.name === 'finished'
-                ? <button className="btn" onClick={() => { dispatch({ t: 'again' }); setEvents([]); setShown(0); const fid = form.find((f) => f.generator === 'fresh-implicit')?.id; if (fid) { setFreshKey(null); setValues((v) => ({ ...v, [fid]: '' })); } }}>Get another quote</button>
-                : <button id="get-quote-btn" className="btn" disabled={busy || phase.name === 'ready' || phase.name === 'running'} onClick={getQuote}>{phase.name === 'quoting' ? 'Sealing and quoting…' : phase.name === 'quoted' || phase.name === 'unquotable' ? 'Quote again' : 'Seal the job and get a quote'}</button>}
-              {runnerOk && <div className="small">{runnerOk.ok ? <span className="pill ok">runner attestation verified</span> : <span className="pill bad">runner attestation failed</span>} {!runnerOk.hardware && <span className="pill warn">local-dev: no hardware quote</span>}</div>}
+                ? <button className="btn lg" onClick={() => { dispatch({ t: 'again' }); setEvents([]); setShown(0); const fid = form.find((f) => f.generator === 'fresh-implicit')?.id; if (fid) { setFreshKey(null); setValues((v) => ({ ...v, [fid]: '' })); } }}><Icon name="refresh" size={15} />Get another quote</button>
+                : <button id="get-quote-btn" className="btn lg" disabled={busy || phase.name === 'ready' || phase.name === 'running'} onClick={getQuote}>{phase.name === 'quoting' ? <><span className="spinner" />Sealing and quoting</> : phase.name === 'quoted' || phase.name === 'unquotable' ? <><Icon name="refresh" size={15} />Quote again</> : <><Icon name="lock" size={15} />Seal and get a quote</>}</button>}
+              {runnerOk && <div className="row wrap small" style={{ gap: 6 }}>{runnerOk.ok ? <span className="pill ok"><Icon name="cpu" size={12} />runner verified</span> : <span className="pill bad">runner attestation failed</span>} {!runnerOk.hardware && <span className="pill warn" title="Local development: no hardware TEE quote">no TEE (local)</span>}</div>}
             </div>
           </div>
         </section>
 
         <section className="grid" style={{ minWidth: 0, alignContent: 'start' }}>
-          {phase.name === 'form' && <div className="panel"><div className="body muted">Fill the form and press <b>Seal the job and get a quote</b>. Your inputs are sealed in this browser to the attested runner; {ticker} runs a dry run inside it and returns a signed quote that only this browser can open.</div></div>}
-          {phase.name === 'quoting' && <div className="panel"><div className="body">Dry run in progress inside the sealed runner…</div></div>}
-          {phase.name === 'unquotable' && <div className="panel"><div className="body"><b>{ticker} could not quote this job.</b><div className="small muted">{phase.error}</div></div></div>}
+          {phase.name === 'form' && <div className="panel"><div className="quote-wait">
+            <span className="big-ic"><Icon name="lock" size={28} /></span>
+            <b>Your inputs are sealed before they leave</b>
+            <p>{ticker} quotes from a private dry run and signs a promise only this browser can open.</p>
+            <div className="mini-flow"><span><Icon name="user" size={13} />You</span><Icon name="arrow" size={13} className="arrow-ic" /><span><Icon name="cpu" size={13} />Sealed runner</span><Icon name="arrow" size={13} className="arrow-ic" /><span><Icon name="receipt" size={13} />Signed quote</span></div>
+          </div></div>}
+          {phase.name === 'quoting' && <div className="panel"><div className="quote-wait"><span className="big-ic"><span className="spinner" style={{ width: 26, height: 26, borderWidth: 3 }} /></span><b>Dry run inside the sealed runner</b><p>Nothing is spent until you pay.</p></div></div>}
+          {phase.name === 'unquotable' && <div className="panel"><Empty icon="alert"><b>{ticker} could not quote this job.</b><div className="small">{phase.error}</div></Empty></div>}
           {q && (
             <div className="panel" id="quote">
-              <header><h2>{ticker}'s quote</h2><span className="small muted">from a dry run inside the sealed runner · signature checked in this browser</span></header>
+              <Head icon="receipt" title={`${ticker}'s quote`} tip="From a dry run inside the sealed runner. The signature is checked in this browser against the exact message the contract will verify."><span className="spacer" /><span className="pill ok"><Icon name="check" size={12} />signature verified</span></Head>
               <div className="body grid" style={{ gap: 10 }}>
                 <div className="quote-figs">
-                  {metric && <div><span>Expected</span><b>{usd(q.expected, 2)}</b></div>}
-                  {metric && <div><span>Promised</span><b>{usd(q.promised, 2)}</b><small>{Number(q.cover) > 0 ? `deposit covers ${usd(q.cover, 2)}` : 'no deposit cover'}</small></div>}
-                  <div><span>Price</span><b>{usd(q.price, 2)}</b><small>locked by the quote</small></div>
-                  <div><span>Valid until</span><b>{new Date(Number(BigInt(q.expires_ns) / 1_000_000n)).toLocaleTimeString()}</b></div>
+                  {metric && <div><span><Icon name="trend" size={13} />Expected</span><b>{usd(q.expected, 2)}</b></div>}
+                  {metric && <div className="promise"><span><Icon name="shield" size={13} />Promised</span><b>{usd(q.promised, 2)}</b><small>{Number(q.cover) > 0 ? `${usd(q.cover, 2)} covered` : 'no cover'}</small></div>}
+                  <div><span><Icon name="lock" size={13} />Price</span><b>{usd(q.price, 2)}</b><small>locked</small></div>
+                  <div><span><Icon name="clock" size={13} />Valid until</span><b>{new Date(Number(BigInt(q.expires_ns) / 1_000_000n)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</b></div>
                 </div>
                 {!metric && q.details?.output?.title && <div className="small">Dry run says: <b>{q.details.output.title}</b></div>}
-                <div className="small muted">Track record: {q.track.runs} run{q.track.runs === 1 ? '' : 's'}{Number(q.track.failed) ? `, ${q.track.failed} refunded` : ''}{Number(q.track.promised_total) ? `, delivered ${(Number(q.track.delivered_total) / Number(q.track.promised_total) * 100).toFixed(0)}% of promises` : ', no quoted runs yet'}. Privacy: {listing.privacy}.</div>
-                {expired && <div className="diag warning">This quote has expired. Press “Quote again” for a fresh one.</div>}
+                <div className="row wrap small" style={{ gap: 6 }}>
+                  <span className="tag"><Icon name="check" size={12} />{q.track.runs} run{q.track.runs === 1 ? '' : 's'}{Number(q.track.failed) ? `, ${q.track.failed} refunded` : ''}</span>
+                  {Number(q.track.promised_total) > 0 && <span className="tag"><Icon name="target" size={12} />{(Number(q.track.delivered_total) / Number(q.track.promised_total) * 100).toFixed(0)}% of promises kept</span>}
+                  <span className={'tag' + (listing.privacy === 'confidential' ? ' sealed' : '')}><Icon name={listing.privacy === 'confidential' ? 'lock' : 'eye'} size={12} />{listing.privacy}</span>
+                </div>
+                {expired && <div className="diag warning">This quote expired. Press Quote again for a fresh one.</div>}
                 {phase.name === 'quoted' && !expired && <div className="row wrap">
-                  <button id="choose-guaranteed" className="btn" onClick={() => choose(true)} title="Its price is locked and its promise is backed by the guarantee deposit">Use this quote{metric ? ' (guaranteed)' : ''}</button>
+                  <button id="choose-guaranteed" className="btn lg" onClick={() => choose(true)} title="Its price is locked and its promise is backed by the guarantee deposit"><Icon name="shieldCheck" size={16} />Use this quote{metric ? ' (guaranteed)' : ''}</button>
                   {metric && <button className="btn ghost" onClick={() => choose(false)} title="Pay without the quote: no guarantee, and no promised or delivered value written on-chain">Run without a guarantee</button>}
+                  <Tip wide>The promise is bound to your account and this job. If the run delivers less, the contract pays the shortfall from the guarantee deposit in the same settlement. Right before executing, the runner re-prices the job; if your wallet changed since the quote, it aborts and you are refunded.</Tip>
                 </div>}
-                {phase.name === 'preparing' && <div className="small">Asking 1Click for a payment quote…</div>}
-                <div className="small muted">The promise is bound to your account and this job. If the run delivers less, the contract pays the shortfall from the guarantee deposit in the same settlement. Right before executing, the runner re-prices the job; if your wallet changed since the quote, it aborts and you are refunded.</div>
+                {phase.name === 'preparing' && <div className="row small muted"><span className="spinner" />Getting a payment quote from 1Click</div>}
               </div>
             </div>
           )}
 
           {'pay' in phase && (
             <div className="panel">
-              <header><h2>Pay {ticker} through NEAR Intents</h2><span className="small muted">1Click EXACT_OUTPUT</span></header>
+              <Head icon="wallet" title="Pay" tip="Through NEAR Intents (1Click, EXACT_OUTPUT): you send any supported asset, the contract receives exactly the run price in USDC." />
               <div className="body grid" style={{ gap: 8 }}>
                 <dl className="kv">
-                  <dt>You send</dt><dd>{phase.pay.quote.quote.amountInFormatted} {PAY_ASSETS.find((p) => p.id === payAsset)?.label}</dd>
-                  <dt>Contract receives</dt><dd>{usd(phase.pay.quote.quote.amountOut, 2)} USDC</dd>
-                  <dt>Guarantee</dt><dd>{guaranteed && metric ? <>{usd(q.promised, 2)} promised, covered up to {usd(q.cover, 2)}</> : guaranteed ? 'signed price, no value metric for this job' : 'none: nothing about your wallet is written on-chain'}</dd>
-                  <dt>Deposit address</dt><dd className="hash">{short(phase.pay.quote.quote.depositAddress, 10, 8)}</dd>
-                  <dt>Run ticket</dt><dd className="hash">{phase.pay.run_id}</dd>
+                  <dt><Icon name="arrow" size={14} />You send</dt><dd>{phase.pay.quote.quote.amountInFormatted} {PAY_ASSETS.find((p) => p.id === payAsset)?.label}</dd>
+                  <dt><Icon name="vault" size={14} />Contract receives</dt><dd>{usd(phase.pay.quote.quote.amountOut, 2)} USDC</dd>
+                  <dt><Icon name="shield" size={14} />Guarantee</dt><dd>{guaranteed && metric ? <>{usd(q.promised, 2)} promised, covered up to {usd(q.cover, 2)}</> : guaranteed ? 'signed price' : 'none'}</dd>
+                  <dt><Icon name="link" size={14} />Deposit address</dt><dd className="hash">{short(phase.pay.quote.quote.depositAddress, 10, 8)}</dd>
+                  <dt><Icon name="ticket" size={14} />Run ticket</dt><dd className="hash">{phase.pay.run_id}</dd>
                 </dl>
-                <details className="small"><summary>customRecipientMsg sent to the contract</summary><pre className="codebox">{JSON.stringify(JSON.parse(phase.pay.msg), null, 1)}</pre></details>
-                {(phase.name === 'ready' || phase.name === 'paying') && <button id="pay-btn" className="btn buy" disabled={phase.name === 'paying'} onClick={pay}>{phase.name === 'paying' ? 'Sending the deposit…' : `Pay ${phase.pay.quote.quote.amountInFormatted} and run`}</button>}
+                <details className="small"><summary>Message to the contract</summary><pre className="codebox">{JSON.stringify(JSON.parse(phase.pay.msg), null, 1)}</pre></details>
+                {(phase.name === 'ready' || phase.name === 'paying') && <button id="pay-btn" className="btn buy lg" disabled={phase.name === 'paying'} onClick={pay} style={{ justifySelf: 'start' }}>{phase.name === 'paying' ? <><span className="spinner" />Sending</> : <><Icon name="bolt" size={16} />Pay {phase.pay.quote.quote.amountInFormatted} and run</>}</button>}
               </div>
             </div>
           )}
 
           {(phase.name === 'running' || phase.name === 'finished') && (
             <div className="panel">
-              <header><h2>Execution</h2><span className="small muted">payment → on-chain escrow → sealed runner → settlement</span></header>
-              {!rows.length && <div className="body muted">Waiting for the deposit to reach the contract…</div>}
+              <Head icon="cpu" title="Run" tip="Payment → on-chain escrow → sealed runner → settlement. Gold-marked details were sealed to your browser key; the marketplace only relayed ciphertext.">{phase.name === 'running' && <><span className="spacer" /><span className="pill warn"><span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />live</span></>}</Head>
+              {!rows.length && <div className="body row muted"><span className="spinner" />Waiting for the deposit to reach the contract</div>}
               <div className="timeline">
                 {rows.map((r, i) => (
                   <div key={i} className={'tl ' + (r.state === 'fail' ? 'fail' : i === rows.length - 1 && phase.name === 'running' ? 'live' : 'done')}>
-                    <span className="ic">{r.state === 'fail' ? '!' : i === rows.length - 1 && phase.name === 'running' ? '' : '✓'}</span>
+                    <span className="tic">{r.state === 'fail' ? <Icon name="x" size={13} /> : i === rows.length - 1 && phase.name === 'running' ? <Icon name={SRC_ICON[r.source] ?? 'cpu'} size={13} /> : <Icon name="check" size={13} />}</span>
                     <div><b>{r.title}</b>{r.sub && <div className="small muted">{r.sub}</div>}</div>
-                    <span className="src">{r.sealed ? <span className="pill sealed" title="These details were sealed to your browser key; the marketplace only relayed ciphertext">sealed to you</span> : r.source}</span>
+                    <span className="src">{r.sealed ? <span className="pill sealed" title="Sealed to your browser key; the marketplace only relayed ciphertext"><Icon name="lock" size={11} />sealed</span> : <span className="pill"><Icon name={SRC_ICON[r.source] ?? 'cpu'} size={11} />{r.source}</span>}</span>
                     {r.logs.length > 0 && <div className="logs">{r.logs.map((l, j) => <div key={j}>{l}</div>)}</div>}
                   </div>
                 ))}
@@ -285,17 +303,17 @@ export function Quote({ ticker }: { ticker: string }) {
           )}
           {completed?.data?.ok && result && (
             <div className="panel">
-              <header><h2>Result</h2><span className="pill sealed">sealed to your browser key</span></header>
+              <Head icon="check" title="Result"><span className="spacer" /><span className="pill sealed"><Icon name="lock" size={11} />only you can read this</span></Head>
               <div className="body"><Output out={result.output} /></div>
             </div>
           )}
           {settlement?.payouts && (
             <div className="panel" id="settlement">
-              <header><h2>Settlement</h2><span className="small muted">tx {short(settlement.tx, 8, 6)} · block {settlement.height} · one receipt</span></header>
+              <Head icon="receipt" title="Settled in one receipt"><span className="spacer" /><span className="small muted hash">tx {short(settlement.tx, 8, 6)} · #{settlement.height}</span></Head>
               <div className="body">
                 {guaranteed && metric && settleEv && <p className="small" style={{ marginTop: 0 }}>Delivered <b>{usd(settleEv.delivered, 2)}</b> against a signed promise of {usd(q.promised, 2)}{Number(settleEv.compensation) > 0 ? <>: the guarantee deposit paid you <b>{usd(settleEv.compensation, 2)}</b>.</> : ': promise kept, the deposit is untouched.'}</p>}
                 <SettlementFlow price={Number(settleEv?.price ?? q?.price ?? 0)} payouts={settlement.payouts} reserve={Number(settleEv?.reserve ?? 0)} />
-                <div className="row wrap"><button className="btn ghost sm" onClick={() => go({ page: 'recipes', ticker })}>See {ticker}’s track record</button><button className="btn ghost sm" onClick={() => go({ page: 'wallet' })}>See who was paid</button><button className="btn ghost sm" onClick={() => go({ page: 'docs', sub: 'trust' })}>Inspect the proofs</button></div>
+                <div className="row wrap"><button className="btn ghost sm" onClick={() => go({ page: 'recipes', ticker })}><Icon name="clock" size={13} />{ticker}’s track record</button><button className="btn ghost sm" onClick={() => go({ page: 'wallet' })}><Icon name="users" size={13} />Who was paid</button><button className="btn ghost sm" onClick={() => go({ page: 'docs', sub: 'trust' })}><Icon name="shieldCheck" size={13} />The proofs</button></div>
               </div>
             </div>
           )}
@@ -305,15 +323,13 @@ export function Quote({ ticker }: { ticker: string }) {
       {approval && (
         <div className="overlay" role="dialog" aria-modal="true" aria-label="Wallet approval">
           <div className="wallet-modal">
-            <div className="small muted">Wallet · {approval.signer}</div>
-            <h2>{approval.title}</h2>
-            <p className="small muted" style={{ margin: 0 }}>Decrypted in your browser. The runner never holds your funds or keys: it prepared these transactions, and only your wallet can sign them.</p>
+            <div className="wm-top"><span className="wm-ic"><Icon name="wallet" size={19} /></span><div><div className="small muted">Wallet · {approval.signer}</div><h2>{approval.title}</h2></div><Tip wide>Decrypted in your browser. The runner never holds your funds or keys: it prepared these transactions, and only your wallet can sign them.</Tip></div>
             <table className="small"><thead><tr><th>What</th><th className="r">Amount</th>{approval.summary.some((s: any) => s.usd > 0) && <th className="r">≈ USD</th>}<th>To</th></tr></thead><tbody>
               {approval.summary.map((s: any, i: number) => <tr key={i}><td>{s.symbol}</td><td className="r">{s.amount}</td>{approval.summary.some((x: any) => x.usd > 0) && <td className="r">{money(s.usd)}</td>}<td className="hash">{short(s.to, 12, 6)}</td></tr>)}
             </tbody></table>
             {approval.sign_message && <div className="small" style={{ padding: '8px 10px', border: '1px solid var(--rule)', borderRadius: 8 }}><b>Also sign one NEAR Intents bundle (NEP-413):</b> {approval.sign_summary}<details><summary>Message</summary><pre className="codebox">{JSON.stringify(JSON.parse(approval.sign_message.message), null, 1)}</pre></details></div>}
             <details className="small"><summary>Raw transactions (signAndSendTransactions)</summary><pre className="codebox">{JSON.stringify(approval.transactions, null, 1)}</pre></details>
-            <div className="row"><button className="btn buy" disabled={approving} onClick={() => approve(true)}>Approve {approval.transactions.length} transaction{approval.transactions.length === 1 ? '' : 's'}</button><button className="btn ghost" disabled={approving} onClick={() => approve(false)}>Reject</button></div>
+            <div className="row"><button className="btn buy lg" disabled={approving} onClick={() => approve(true)}><Icon name="check" size={16} />Approve {approval.transactions.length} transaction{approval.transactions.length === 1 ? '' : 's'}</button><button className="btn ghost" disabled={approving} onClick={() => approve(false)}>Reject</button></div>
           </div>
         </div>
       )}

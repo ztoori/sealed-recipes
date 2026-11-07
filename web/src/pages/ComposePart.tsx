@@ -5,6 +5,8 @@ import { hashObject } from '../../../core/src/canonical';
 import { api, short, usd, usePoll } from '../api';
 import { useApp } from '../App';
 import { RiskPill } from './ComposeRecipe';
+import { CAT, Icon } from '../icons';
+import { Tip } from '../ui';
 
 /**
  * Compose › Part: build a part from scratch, or open any part to see its internals (every part in this demo is
@@ -123,37 +125,36 @@ export function ComposePart({ part }: { part?: string }) {
   const list = (catalog?.parts ?? []).filter((p) => !q || `${p.name} ${p.id} ${p.author} ${p.summary}`.toLowerCase().includes(q.toLowerCase()));
   return (
     <div className="grid">
-    <div className="banner" role="note"><BrandSeal /><div><b className="big">Parts must follow the SRS-1 standard.</b> A part is a building block other people put inside private recipes and pay for on every run. It may only read its declared inputs, reach its declared hosts, ask for signatures if it is an “Act” part, and must be read-only during quotes. The conformance checks on the right must pass before it can be registered, and the code is reviewed before it ships in the audited runner.</div></div>
+    <div className="banner" role="note"><BrandSeal /><div><b className="big">Build a part, get paid on every run.</b> <Tip wide>A part is a building block other people put inside private recipes and pay for on every run. It may only read its declared inputs, reach its declared hosts, ask for signatures if it is an “Act” part, and must be read-only during quotes. The conformance checks must pass before it can be registered, and the code is reviewed before it ships in the audited runner.</Tip><div className="small">Every part follows SRS-1: typed ports, declared capabilities, read-only quotes.</div></div></div>
     <div className="grid partpage">
       <aside className="grid" style={{ alignContent: 'start' }}>
         <div className="panel">
-          <header><h2>Parts</h2><span className="small muted">all public in this demo</span></header>
+          <header><Icon name="box" size={16} className="hd-ic" /><h2>Parts</h2><Tip>All public in this demo: open one to read its code.</Tip></header>
           <div className="body" style={{ paddingBottom: 6 }}>
-            <button className="btn" style={{ width: '100%' }} onClick={startNew}>Build a new part</button>
-            <input className="search" type="search" placeholder="Open a part to see how it works" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search parts" style={{ marginTop: 8 }} />
+            <button className="btn primary" style={{ width: '100%' }} onClick={startNew}><Icon name="plus" size={15} />New part</button>
+            <label className="search-wrap" style={{ marginTop: 10 }}><Icon name="search" size={15} /><input className="search" type="search" placeholder="Search parts" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search parts" /></label>
           </div>
           <ul className="plist">
             {CATS.map(([c, label]) => {
               const items = list.filter((p) => p.category === c);
-              return items.length ? [<li key={c} className="cat">{label}</li>, ...items.map((p) => (
+              return items.length ? [<li key={c} className="cat" style={{ color: CAT[c]?.color }}><Icon name={CAT[c]?.icon ?? 'box'} size={13} />{label}</li>, ...items.map((p) => (
                 <li key={p.id}><button aria-current={p.id === part ? 'true' : undefined} onClick={() => go({ page: 'compose', sub: 'part', part: p.id })}><b>{p.name}</b><span>{p.id}</span></button></li>
               ))] : null;
             })}
           </ul>
         </div>
         <div className="panel standard">
-          <header><h2>Every part follows SRS-1</h2></header>
+          <header><Icon name="shieldCheck" size={16} className="hd-ic" /><h2>The rules</h2><Tip>A recipe author never sees your code, and buyers never see the recipe. What makes that safe is that every part does exactly what its manifest declares, and the runner enforces it.</Tip></header>
           <div className="body small grid" style={{ gap: 6 }}>
-            <div>A recipe author never sees your code, and buyers never see the recipe. What makes that safe is that <b>every part does exactly what its manifest declares</b>, and the runner enforces it:</div>
             <ul>
-              <li><b>Types.</b> Inputs and outputs use the standard types, so parts snap together and can be swapped.</li>
-              <li><b>Capabilities.</b> The part can only reach the hosts it lists (net:…); only Act parts may ask the buyer to sign (wallet:approve), and they never sign themselves.</li>
-              <li><b>Quotes are dry runs.</b> With ctx.mode = "quote" the part must be read-only.</li>
-              <li><b>Durable.</b> Save state before any irreversible step; resume after a restart without asking twice.</li>
-              <li><b>Disclosure.</b> Name the model, and say which layers are open, sealed or closed. It sets the withdrawal risk buyers see.</li>
-              <li><b>Limits.</b> Time, HTTP calls, model calls and output size are capped per run.</li>
+              <li><Icon name="link" size={15} /><span><b>Typed ports</b> <Tip>Inputs and outputs use the standard types, so parts snap together and can be swapped.</Tip></span></li>
+              <li><Icon name="globe" size={15} /><span><b>Declared hosts only</b> <Tip>The part can only reach the hosts it lists (net:…); only Act parts may ask the buyer to sign (wallet:approve), and they never sign themselves.</Tip></span></li>
+              <li><Icon name="eye" size={15} /><span><b>Read-only quotes</b> <Tip>With ctx.mode = "quote" the part must be read-only.</Tip></span></li>
+              <li><Icon name="refresh" size={15} /><span><b>Durable</b> <Tip>Save state before any irreversible step; resume after a restart without asking twice.</Tip></span></li>
+              <li><Icon name="info" size={15} /><span><b>Disclosure</b> <Tip>Name the model, and say which layers are open, sealed or closed. It sets the withdrawal risk buyers see.</Tip></span></li>
+              <li><Icon name="clock" size={15} /><span><b>Limits</b> <Tip>Time, HTTP calls, model calls and output size are capped per run.</Tip></span></li>
             </ul>
-            <button className="linkbtn" onClick={() => go({ page: 'docs', sub: 'standard' })}>Read the full standard (Documentation › Standard)</button>
+            <button className="linkbtn" onClick={() => go({ page: 'docs', sub: 'standard' })}><Icon name="docs" size={13} />Full standard</button>
           </div>
         </div>
       </aside>
@@ -163,7 +164,7 @@ export function ComposePart({ part }: { part?: string }) {
           <h2>{readOnly ? viewing!.name : draft.name || 'New part'}</h2>
           <span className="small muted">{readOnly ? `${viewing!.id} · public · read-only` : 'draft'}</span>
           <span className="spacer" />
-          {readOnly && <button className="btn sm" onClick={copyFrom}>Use as a starting point</button>}
+          {readOnly && <button className="btn sm" onClick={copyFrom}><Icon name="plus" size={13} />Use as a starting point</button>}
         </header>
         <div className="subnav inner" role="tablist">
           {(['manifest', 'code', 'preview'] as const).map((t) => <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}>{t === 'manifest' ? 'Manifest' : t === 'code' ? 'Code' : 'Preview'}</button>)}
@@ -176,7 +177,7 @@ export function ComposePart({ part }: { part?: string }) {
             </div>
             <div className="field"><label>What it does, in one sentence (buyers and creators read this)</label><input value={draft.summary} onChange={(e) => set('summary', e.target.value)} /></div>
             <div className="field"><label>Kind of step</label>
-              <div className="catpick">{CATS.map(([c, label, help]) => <label key={c} className={draft.category === c ? 'on' : ''}><input type="radio" name="cat" checked={draft.category === c} onChange={() => { set('category', c); if (c !== 'action') set('wallet', false); }} /><b>{label}</b><span>{help}</span></label>)}</div>
+              <div className="catpick">{CATS.map(([c, label, help]) => <label key={c} className={draft.category === c ? 'on' : ''} style={{ ['--cc' as any]: CAT[c]?.color }} title={help}><input type="radio" name="cat" checked={draft.category === c} onChange={() => { set('category', c); if (c !== 'action') set('wallet', false); }} /><b><Icon name={CAT[c]?.icon ?? 'box'} size={14} />{label}</b><span>{help}</span></label>)}</div>
             </div>
             <PortTable title="Inputs" ports={draft.inputs} types={types} onChange={(v) => set('inputs', v)} />
             <PortTable title="Outputs" ports={draft.outputs} types={types} onChange={(v) => set('outputs', v)} />
@@ -230,31 +231,31 @@ export function ComposePart({ part }: { part?: string }) {
 
       <aside className="grid" style={{ alignContent: 'start', minWidth: 0 }}>
         <div className="panel">
-          <header><h2>SRS-1 conformance</h2><span className={'pill ' + (errs.length ? 'bad' : 'ok')}>{errs.length ? `${errs.length} to fix` : 'conforms'}</span></header>
+          <header><Icon name="shieldCheck" size={16} className="hd-ic" /><h2>Conformance</h2><span className="spacer" /><span className={'pill ' + (errs.length ? 'bad' : 'ok')}>{errs.length ? `${errs.length} to fix` : 'conforms'}</span></header>
           <div className="body">
-            {!all.length && <div className="small gain">The manifest conforms to SRS-1 and the code passes the static checks.</div>}
+            {!all.length && <div className="small gain row"><Icon name="check" size={14} />Conforms to SRS-1</div>}
             {all.map((d, i) => <Diag key={i} d={d} where={d.where} />)}
-            <div className="small muted" style={{ marginTop: 8 }}>Code checks are static: they catch common mistakes, not malicious code. The runner enforces capabilities and limits at run time, and parts are reviewed before they ship.</div>
+            <div className="small muted row" style={{ marginTop: 8 }}>Static checks <Tip>They catch common mistakes, not malicious code. The runner enforces capabilities and limits at run time, and parts are reviewed before they ship.</Tip></div>
           </div>
         </div>
         {!readOnly && (
           <div className="panel">
-            <header><h2>Submit</h2></header>
+            <header><Icon name="flag" size={16} className="hd-ic" /><h2>Submit</h2></header>
             <div className="body grid" style={{ gap: 8 }}>
               <ol className="submit-steps small">
-                <li className={registered ? 'done' : ''}><b>Register the manifest on-chain</b> as {acting}: id, fee and manifest hash. You are paid the fee in every settlement that uses the part.</li>
-                <li><b>Review and release.</b> The code is reviewed and shipped in the next audited runner release; the runner's code hash, checked by every buyer and creator, covers it.</li>
-                <li><b>Available in Compose.</b> Creators can add it, and any recipe using it pays you per run.</li>
+                <li className={registered ? 'done' : ''}><span className="sn">{registered ? <Icon name="check" size={12} /> : 1}</span><span><b>Register on-chain</b> <Tip>As {acting}: id, fee and manifest hash. You are paid the fee in every settlement that uses the part.</Tip></span></li>
+                <li><span className="sn">2</span><span><b>Review and release</b> <Tip>The code is reviewed and shipped in the next audited runner release; the runner's code hash, checked by every buyer and creator, covers it.</Tip></span></li>
+                <li><span className="sn">3</span><span><b>Earn per run</b> <Tip>Creators can add it in Compose, and any recipe using it pays you per run.</Tip></span></li>
               </ol>
               {draft.author !== acting && <div className="diag warning">The author is {draft.author}; switch “Acting as” to that account to register.</div>}
-              <button className="btn" disabled={!!errs.length || !!registered || draft.author !== acting} onClick={register}>{registered ? `Registered · tx ${short(registered.tx, 6, 4)}` : 'Register on-chain'}</button>
-              <button className="btn ghost" disabled={!!errs.length} onClick={download}>Download the submission (manifest + code)</button>
+              <button className="btn" disabled={!!errs.length || !!registered || draft.author !== acting} onClick={register}>{registered ? <><Icon name="check" size={14} />Registered · tx {short(registered.tx, 6, 4)}</> : 'Register on-chain'}</button>
+              <button className="btn ghost" disabled={!!errs.length} onClick={download}><Icon name="download" size={14} />Download submission</button>
             </div>
           </div>
         )}
         {readOnly && viewing && (
           <div className="panel">
-            <header><h2>On-chain</h2></header>
+            <header><Icon name="vault" size={16} className="hd-ic" /><h2>On-chain</h2></header>
             <dl className="kv body small">
               <dt>Author (paid per run)</dt><dd>{viewing.author}</dd>
               <dt>Fee</dt><dd>{usd(viewing.fee_per_call, 2)}</dd>

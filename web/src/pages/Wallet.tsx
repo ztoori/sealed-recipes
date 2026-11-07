@@ -1,5 +1,7 @@
 import { api, short, usd, usePoll } from '../api';
 import { useApp } from '../App';
+import { Icon } from '../icons';
+import { Empty, Head } from '../ui';
 
 export function Wallet() {
   const { acting, toast, go } = useApp();
@@ -15,22 +17,21 @@ export function Wallet() {
   };
   if (!p) return null;
   return (
-    <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', alignItems: 'start' }}>
-      <div className="panel">
-        <header><h2>{acting}</h2><span className="small muted">contract balance</span></header>
-        <div className="body grid" style={{ gap: 10 }}>
-          <div className="bigpx">{usd(p.balance)} <span className="small muted">USDC withdrawable</span></div>
-          <div className="small muted">Fees, creator earnings, refunds and shortfall payments all land here inside the settlement receipt. Withdraw sends an ft_transfer of the payment token (1 yoctoNEAR attached on testnet).</div>
-          <div className="row"><button className="btn" disabled={p.balance === '0'} onClick={() => tx('withdraw', {}, 'Withdrawn')}>Withdraw all</button></div>
+    <div className="grid wallet-grid">
+      <div className="panel balance">
+        <Head icon="wallet" title={acting} tip="Fees, creator earnings, refunds and shortfall payments all land here inside the settlement receipt. Withdraw sends an ft_transfer of the payment token (1 yoctoNEAR attached on testnet)." />
+        <div className="body">
+          <div className="bal-fig">{usd(p.balance, 2)}<small>USDC</small></div>
+          <div className="row"><button className="btn primary" disabled={p.balance === '0'} onClick={() => tx('withdraw', {}, 'Withdrawn')}><Icon name="download" size={15} />Withdraw all</button><span className="small muted">{income.length} payment{income.length === 1 ? '' : 's'} received</span></div>
         </div>
       </div>
       <div className="panel">
-        <header><h2>Recipes you created</h2></header>
-        {p.created.length === 0 && <div className="body small muted">None yet. Compose one and publish it; you are paid inside every run's settlement. <button className="btn ghost sm" onClick={() => go({ page: 'compose', sub: 'recipe' })}>Compose a recipe</button></div>}
-        {p.created.length > 0 && <table><thead><tr><th>Recipe</th><th className="r">Runs</th><th className="r">Earned</th><th className="r">Guarantee deposit</th></tr></thead><tbody>
+        <Head icon="compose" title="Your recipes" />
+        {p.created.length === 0 && <Empty icon="compose" action={<button className="btn ghost sm" onClick={() => go({ page: 'compose', sub: 'recipe' })}><Icon name="plus" size={13} />Compose</button>}>None yet. You are paid inside every run’s settlement.</Empty>}
+        {p.created.length > 0 && <table><thead><tr><th>Recipe</th><th className="r">Runs</th><th className="r">Earned</th><th className="r">Guarantee</th></tr></thead><tbody>
           {p.created.map((x: any) => (
-            <tr key={x.ticker}>
-              <td><button className="btn ghost sm" onClick={() => go({ page: 'recipes', ticker: x.ticker })}>{x.ticker}</button></td>
+            <tr key={x.ticker} className="click" onClick={() => go({ page: 'recipes', ticker: x.ticker })}>
+              <td><span className="tk">{x.ticker}</span></td>
               <td className="r">{Number(x.runs)}</td>
               <td className="r">{usd(x.earned)}</td>
               <td className="r">{usd(x.deposit_available, 2)}{x.deposit_locked !== '0' && <div className="small muted">+{usd(x.deposit_locked, 2)} locked</div>}</td>
@@ -40,18 +41,18 @@ export function Wallet() {
       </div>
       <AccountHealth chain={p.chain} />
       <div className="panel">
-        <header><h2>Income</h2><span className="small muted">from settlements, recent</span></header>
-        {income.length === 0 && <div className="body small muted">Nothing yet. Part authors, creators and the runner are paid inside each run's settlement.</div>}
+        <Head icon="trend" title="Income" tip="From settlements, most recent first. Part authors, creators and the runner are paid inside each run’s settlement." />
+        {income.length === 0 && <Empty icon="receipt">Nothing yet.</Empty>}
         <table className="small"><tbody>
-          {income.slice(0, 12).map((x: any, i: number) => <tr key={i}><td>{x.what}<div className="muted">{x.ref} · tx {short(x.tx, 6, 4)}</div></td><td className="r gain">+{usd(x.amount)}</td></tr>)}
+          {income.slice(0, 12).map((x: any, i: number) => <tr key={i}><td><span className="tk">{x.ref}</span></td><td style={{ textTransform: 'capitalize' }}>{x.what}<div className="muted hash">tx {short(x.tx, 6, 4)}</div></td><td className="r gain"><b>+{usd(x.amount)}</b></td></tr>)}
         </tbody></table>
       </div>
       <div className="panel">
-        <header><h2>Tokens in this wallet</h2><span className="small muted">local world, fictional balances</span></header>
-        {p.wallet.length === 0 && <div className="body small muted">No tokens.</div>}
+        <Head icon="layers" title="Tokens" tip="Local world: fictional balances." />
+        {p.wallet.length === 0 && <Empty icon="layers">No tokens.</Empty>}
         <table className="small"><tbody>
           {p.wallet.filter((w: any) => w.balance !== '0').map((w: any) => (
-            <tr key={w.contract_id}><td><b>{w.symbol}</b><div className="muted hash">{short(w.contract_id, 18, 8)}</div></td><td className="r">{(Number(w.balance) / 10 ** (w.decimals ?? 0)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td></tr>
+            <tr key={w.contract_id} className="tokrow"><td><span className="tokdot">{String(w.symbol).slice(0, 3)}</span><span><b>{w.symbol}</b><div className="muted hash">{short(w.contract_id, 16, 6)}</div></span></td><td className="r">{(Number(w.balance) / 10 ** (w.decimals ?? 0)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td></tr>
           ))}
         </tbody></table>
       </div>
@@ -67,20 +68,20 @@ function AccountHealth({ chain }: { chain: { native: string; keys: { public_key:
   const ready = chain.stakes.filter((s) => s.can_withdraw && BigInt(s.unstaked) > 0n).reduce((t, s) => t + NEARf(s.unstaked), 0);
   const idle = chain.stakes.filter((s) => !s.active && BigInt(s.staked) > 0n);
   if (!chain.keys.length && !chain.stakes.length && chain.native === '0') return null;
-  const tip = (show: boolean, text: string, ticker: string) => show && <div className="row between small" style={{ padding: '6px 0', borderTop: '1px solid var(--rule-soft)' }}><span>{text}</span><button className="btn ghost sm" onClick={() => go({ page: 'recipes', ticker })}>{ticker}</button></div>;
+  const tip = (show: boolean, text: string, ticker: string, icon: string) => show && <div className="tipline"><Icon name={icon} size={16} /><span>{text}</span><button className="btn ghost sm" onClick={() => go({ page: 'recipes', ticker })}>{ticker}<Icon name="chevron" size={12} /></button></div>;
   return (
     <div className="panel">
-      <header><h2>Account</h2><span className="small muted">on-chain state (local world)</span></header>
+      <Head icon="user" title="Account" tip="On-chain state (local world). Suggestions point to recipes that could help." />
       <div className="body">
         <dl className="kv">
-          <dt>NEAR</dt><dd>{NEARf(chain.native).toLocaleString()}</dd>
-          <dt>Access keys</dt><dd>{full} full-access, {app} app key{app === 1 ? '' : 's'}</dd>
-          <dt>Staked</dt><dd>{chain.stakes.reduce((t, s) => t + NEARf(s.staked), 0).toLocaleString()} NEAR in {chain.stakes.length} pool{chain.stakes.length === 1 ? '' : 's'}</dd>
+          <dt><Icon name="globe" size={14} />NEAR</dt><dd>{NEARf(chain.native).toLocaleString()}</dd>
+          <dt><Icon name="key" size={14} />Access keys</dt><dd>{full} full · {app} app</dd>
+          <dt><Icon name="layers" size={14} />Staked</dt><dd>{chain.stakes.reduce((t, s) => t + NEARf(s.staked), 0).toLocaleString()} NEAR in {chain.stakes.length} pool{chain.stakes.length === 1 ? '' : 's'}</dd>
         </dl>
-        <div style={{ marginTop: 8 }}>
-          {tip(app > 0 || full > 1, `${app} app key${app === 1 ? '' : 's'} left by dApps${full > 1 ? `, ${full} full-access keys` : ''}: check which are risky`, 'KEYS')}
-          {tip(ready > 0, `${ready.toLocaleString()} NEAR finished unbonding and is waiting to be withdrawn`, 'STAK')}
-          {tip(idle.length > 0, `${idle.length} validator${idle.length > 1 ? 's' : ''} you stake with stopped validating`, 'STAK')}
+        <div className="tips">
+          {tip(app > 0 || full > 1, `${app} app key${app === 1 ? '' : 's'} left by dApps${full > 1 ? `, ${full} full-access` : ''}`, 'KEYS', 'key')}
+          {tip(ready > 0, `${ready.toLocaleString()} NEAR ready to withdraw`, 'STAK', 'layers')}
+          {tip(idle.length > 0, `${idle.length} validator${idle.length > 1 ? 's' : ''} stopped validating`, 'STAK', 'alert')}
         </div>
       </div>
     </div>

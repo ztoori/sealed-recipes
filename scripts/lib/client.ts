@@ -57,7 +57,7 @@ export async function postJob(jobType: string, inputs: Record<string, unknown>, 
   const sealed_job = seal({ inputs, salt, reply_to: bytesToHex(reply.publicKey) }, runner.enc_pk_hex, 'inputs');
   const inputsHash = sealedHash(sealed_job);
   const { contract_id } = await api<{ contract_id: string }>('/api/chain/config');
-  const r = await api<{ quotes: any[]; open_demand: boolean }>('/api/jobs', { job_type: jobType, sealed_job, job_hash, buyer, ...(only ? { only } : {}), ...(maxPrice !== undefined ? { max_price: maxPrice.toString() } : {}) });
+  const r = await api<{ quotes: any[] }>('/api/jobs', { job_type: jobType, sealed_job, job_hash, buyer, ...(only ? { only } : {}), ...(maxPrice !== undefined ? { max_price: maxPrice.toString() } : {}) });
   for (const q of r.quotes) {
     if (!q.ok || !q.sealed_quote) continue;
     const o = openQuote(q.sealed_quote, reply.secretKey, { contractId: contract_id, recipeId: q.recipe_id, signingPk: runner.signing_pk, buyer, inputsHash, jobHash: job_hash });

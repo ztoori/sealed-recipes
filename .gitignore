@@ -11,3 +11,5 @@ __pycache__/
 .venv/
 tools/
 node_modules.windows-backup/
+_to_delete/
+.shots/

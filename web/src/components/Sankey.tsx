@@ -1,10 +1,10 @@
 import { usd } from '../api';
 
-const COLORS: Record<string, string> = { protocol: '#8592a8', runner: '#5b6b84', creator: '#b77a06', reserve: '#0f7a66' };
+const COLORS: Record<string, string> = { protocol: '#8592ae', runner: '#a98bff', creator: '#f0b44c', reserve: '#3ccb9a' };
 
 /** Where one run's payment went: a single settlement split into every payee. */
 export function SettlementFlow({ price, payouts, reserve }: { price: number; payouts: { account_id: string; role: string; amount: string }[]; reserve: number }) {
-  const items = [...payouts.map((p) => ({ label: p.role.startsWith('part:') ? `${p.account_id}` : p.account_id, sub: p.role.startsWith('part:') ? p.role.slice(5).split('@')[0] : p.role.replace('_', ' '), amount: Number(p.amount), color: p.role.startsWith('part:') ? '#2f6fdb' : COLORS[p.role] ?? '#5b6b84' })),
+  const items = [...payouts.map((p) => ({ label: p.role.startsWith('part:') ? `${p.account_id}` : p.account_id, sub: p.role.startsWith('part:') ? p.role.slice(5).split('@')[0] : p.role.replace('_', ' '), amount: Number(p.amount), color: p.role.startsWith('part:') ? '#79a8ff' : COLORS[p.role] ?? '#8592ae' })),
     ...(reserve > 0 ? [{ label: 'guarantee deposit', sub: 'creator’s reserve, backs future quotes', amount: reserve, color: COLORS.reserve }] : [])];
   const H = 430, W = 660, gap = 5, x0 = 150, x1 = 400;
   const total = items.reduce((s, i) => s + i.amount, 0) || 1;
@@ -22,15 +22,15 @@ export function SettlementFlow({ price, payouts, reserve }: { price: number; pay
   });
   return (
     <svg className="sankey" viewBox={`0 0 ${W} ${H + 16}`} width="100%" role="img" aria-label="Settlement split">
-      <rect x={x0 - 18} y={(H - usable * 0.9) / 2} width={18} height={usable * 0.9} fill="#15233f" rx={2} />
-      <text x={x0 - 26} y={H / 2 - 8} textAnchor="end" style={{ fontWeight: 650, fontSize: 15 }}>{usd(price, 2)}</text>
+      <rect x={x0 - 18} y={(H - usable * 0.9) / 2} width={18} height={usable * 0.9} fill="#f0b44c" rx={2} />
+      <text x={x0 - 26} y={H / 2 - 8} textAnchor="end" style={{ fontWeight: 650, fontSize: 17 }}>{usd(price, 2)}</text>
       <text x={x0 - 26} y={H / 2 + 10} textAnchor="end" className="muted">one run</text>
       {bands.map((b, i) => (
         <g key={i}>
-          <path d={`M${x0},${b.yl} C${(x0 + x1) / 2},${b.yl} ${(x0 + x1) / 2},${b.yr} ${x1},${b.yr} L${x1},${b.yr + b.h} C${(x0 + x1) / 2},${b.yr + b.h} ${(x0 + x1) / 2},${b.yl + b.lh} ${x0},${b.yl + b.lh} Z`} fill={b.color} opacity={0.28} />
+          <path d={`M${x0},${b.yl} C${(x0 + x1) / 2},${b.yl} ${(x0 + x1) / 2},${b.yr} ${x1},${b.yr} L${x1},${b.yr + b.h} C${(x0 + x1) / 2},${b.yr + b.h} ${(x0 + x1) / 2},${b.yl + b.lh} ${x0},${b.yl + b.lh} Z`} fill={b.color} opacity={0.22} />
           <rect x={x1} y={b.yr} width={10} height={b.h} fill={b.color} />
           <text x={x1 + 18} y={b.yr + b.h / 2 - 2} dominantBaseline="middle"><tspan style={{ fontWeight: 650 }}>{usd(b.amount)}</tspan> <tspan>{b.label}</tspan></text>
-          <text x={x1 + 18} y={b.yr + b.h / 2 + 11} dominantBaseline="middle" style={{ fill: '#5b6b84', fontSize: 10.5 }}>{b.sub}</text>
+          <text x={x1 + 18} y={b.yr + b.h / 2 + 11} dominantBaseline="middle" style={{ fill: '#8592ae', fontSize: 10.5 }}>{b.sub}</text>
         </g>
       ))}
     </svg>

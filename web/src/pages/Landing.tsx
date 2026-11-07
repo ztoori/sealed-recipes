@@ -1,0 +1,202 @@
+import { useEffect, useState } from 'react';
+import { money, usePoll } from '../api';
+import { useApp } from '../App';
+import { CAT, Icon } from '../icons';
+import { Seal } from '../ui';
+
+/**
+ * The front door. One loop explains the whole market: builders supply parts, creators seal them into recipes,
+ * buyers (people or agents) run them, and one receipt pays everyone. Every number on this page is read live.
+ */
+export function Landing() {
+  const { go, story } = useApp();
+  const [listings] = usePoll<any[]>('/api/listings', 15000);
+  const [jobs] = usePoll<any[]>('/api/jobs', 30000);
+  const [cat] = usePoll<any>('/api/catalog', 60000);
+  const parts: any[] = cat?.parts ?? [];
+  const builders = new Set(parts.map((p) => p.author)).size;
+
+  // real examples, never invented: the listing whose creator keeps the most per run, and the most reused part
+  const best = [...(listings ?? [])].filter((l) => l.record?.perRun).sort((a, b) => b.record.perRun.creator - a.record.perRun.creator)[0];
+  const uses = (id: string) => (listings ?? []).filter((l) => l.parts.includes(id)).length;
+  const popular = [...parts].sort((a, b) => uses(b.id) - uses(a.id))[0];
+  const served = (jobs ?? []).filter((j) => j.recipes.length);
+  return (
+    <div className="lp">
+      <section className="lp-hero">
+        <div className="lp-hero-tx">
+          <h1>
+            <span><i className="lp-dot buy" />Run a recipe.</span>
+            <span><i className="lp-dot sell" />Sell a recipe.</span>
+            <span><i className="lp-dot build" />Supply the ingredients.</span>
+          </h1>
+          <p className="lp-lede">A market for crypto workflows that are proven, private and paid for one run at a time, by people and AI agents alike.</p>
+          <div className="lp-cta">
+            <button className="btn primary lg" onClick={() => go({ page: 'recipes' })}>Explore recipes<Icon name="arrow" size={16} /></button>
+            <button className="btn ghost lg" onClick={() => story.start()}><Icon name="play" size={14} fill />Watch it work</button>
+          </div>
+          <dl className="lp-stats" aria-label="Live from this market">
+            <div><dt>recipes</dt><dd>{listings?.length ?? '–'}</dd></div>
+            <div><dt>jobs covered</dt><dd>{served.length || '–'}</dd></div>
+            <div><dt>parts by {builders || '–'} builders</dt><dd>{parts.length || '–'}</dd></div>
+          </dl>
+        </div>
+        <Loop />
+      </section>
+
+      <section className="lp-row buy" id="lp-s-buy" aria-labelledby="lp-buy">
+        <div className="lp-copy">
+          <span className="lp-who"><Icon name="user" size={15} />If you use crypto</span>
+          <h2 id="lp-buy">Crypto has a thousand pitfalls. Step around them.</h2>
+          <p>Pick a recipe for the job, see what it promises, press run. Good habits, without the homework.</p>
+          <ul className="lp-beats">
+            <li><Icon name="receipt" size={17} />A signed promise before you pay</li>
+            <li><Icon name="shield" size={17} />Delivered less than promised? The guarantee covers the gap.</li>
+            <li><Icon name="key" size={17} />Your wallet signs. Nobody else can.</li>
+          </ul>
+          <button className="linkbtn" onClick={() => go({ page: 'recipes' })}>Find a recipe<Icon name="arrow" size={14} /></button>
+        </div>
+        <div className="lp-visual">
+          <div className="lp-jobs">
+            {(jobs ?? []).slice(0, 8).map((j) => (
+              <button key={j.id} className={'lp-job' + (j.recipes.length ? '' : ' open')} onClick={() => go({ page: 'recipes', ...(j.recipes[0] ? { ticker: j.recipes[0] } : {}) })} title={j.description}>
+                <Seal job={j.id} size={34} />
+                <span>{j.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="lp-row sell flip" id="lp-s-sell" aria-labelledby="lp-sell">
+        <div className="lp-copy">
+          <span className="lp-who"><Icon name="compose" size={15} />If you know the moves</span>
+          <h2 id="lp-sell">You know what works. Get paid for it.</h2>
+          <p>Drag parts into a workflow, no code required. Seal it, list it, and earn every time someone runs it.</p>
+          <ul className="lp-beats">
+            <li><Icon name="lock" size={17} />Sealed, so no one can copy it. Not even us.</li>
+            <li><Icon name="trend" size={17} />Priced by demand, inside the band you set</li>
+            <li><Icon name="receipt" size={17} />Paid the moment each run settles</li>
+          </ul>
+          <button className="linkbtn" onClick={() => go({ page: 'compose', sub: 'recipe' })}>Compose a recipe<Icon name="arrow" size={14} /></button>
+        </div>
+        <div className="lp-visual">
+          <div className="lp-sealed">
+            <div className="lp-chain">
+              {['source', 'guard', 'transform', 'action'].map((c, i) => (
+                <span key={c} className="lp-link" style={{ ['--cc' as any]: CAT[c].color, ['--i' as any]: i }}><Icon name={CAT[c].icon} size={15} />{CAT[c].label}</span>
+              ))}
+            </div>
+            <div className="lp-wax"><Seal job={best?.implements ?? 'job.wallet-cleanup'} ticker={best?.ticker ?? 'SEAL'} size={96} /></div>
+            {best && <div className="lp-earn"><span>{best.ticker} creator keeps</span><b>{money(best.record.perRun.creator, 2)}</b><span>of every {money(best.record.pricePerRun, 2)} run</span></div>}
+          </div>
+        </div>
+      </section>
+
+      <section className="lp-row build" id="lp-s-build" aria-labelledby="lp-build">
+        <div className="lp-copy">
+          <span className="lp-who"><Icon name="code" size={15} />If you build</span>
+          <h2 id="lp-build">You make the tools. Earn every time they’re used.</h2>
+          <p>Publish a part once. Every recipe that includes it pays your fee, run after run.</p>
+          <ul className="lp-beats">
+            <li><Icon name="link" size={17} />Built to an open standard, so it fits anywhere</li>
+            <li><Icon name="vault" size={17} />Registered on-chain with your fee</li>
+            <li><Icon name="users" size={17} />Paid in the same receipt as everyone else</li>
+          </ul>
+          <button className="linkbtn" onClick={() => go({ page: 'compose', sub: 'part' })}>Build a part<Icon name="arrow" size={14} /></button>
+        </div>
+        <div className="lp-visual">
+          {popular && (
+            <div className="lp-part" style={{ ['--cc' as any]: CAT[popular.category]?.color }}>
+              <div className="lp-part-hd"><Icon name={CAT[popular.category]?.icon ?? 'box'} size={18} /><b>{popular.name}</b><span>{popular.author}</span></div>
+              <div className="lp-part-math">
+                <span className="fee">{money(Number(popular.fee_per_call) / 1e6, 2)}</span>
+                <Icon name="x" size={16} />
+                <span>every run of</span>
+                <b>{uses(popular.id)} recipe{uses(popular.id) === 1 ? '' : 's'}</b>
+              </div>
+              <div className="lp-part-users">{(listings ?? []).filter((l) => l.parts.includes(popular.id)).slice(0, 7).map((l) => <span key={l.ticker} className="tk">{l.ticker}</span>)}</div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="lp-agents" id="lp-s-agents" aria-labelledby="lp-agents">
+        <div>
+          <span className="lp-who"><Icon name="cpu" size={15} />If you’re an AI agent</span>
+          <h2 id="lp-agents">Fluent in API.</h2>
+          <p>Everything a person does here, an agent can do on its own: post a job, weigh signed quotes against its rules, pay, and check what was delivered.</p>
+        </div>
+        <pre className="lp-term" aria-label="Agent flow over the API"><code>
+<span className="c">{'# the whole market, machine-readable (SRS-1)'}</span>{'\n'}
+<span className="k">GET </span>{'/api/catalog'}{'\n\n'}
+<span className="c">{'# post a sealed job, get a signed quote from every recipe that does it'}</span>{'\n'}
+<span className="k">POST</span>{' /api/jobs        { job_type, sealed_job, max_price }'}{'\n\n'}
+<span className="c">{'# pick by policy, pay through NEAR Intents, stream the run'}</span>{'\n'}
+<span className="k">POST</span>{' /api/runs/quote  { recipe_id, signed_quote, … }'}
+        </code></pre>
+      </section>
+
+      <section className="lp-end" id="lp-s-end">
+        <Seal job="job.wallet-cleanup" ticker="CLNP" size={72} className="lp-end-seal" />
+        <h2>See the whole loop in ninety seconds.</h2>
+        <p>A creator seals a recipe, a buyer runs it, and everyone gets paid in a single receipt.</p>
+        <div className="lp-cta">
+          <button className="btn ghost lg" onClick={() => story.start()}><Icon name="play" size={14} fill />Watch the demo</button>
+          <button className="btn primary lg" onClick={() => go({ page: 'recipes' })}>Proceed to recipes<Icon name="arrow" size={16} /></button>
+        </div>
+      </section>
+      <NextCue />
+    </div>
+  );
+}
+
+/**
+ * A first-time visitor needs to know the story continues. One cue floats at the bottom and always names the next
+ * section; clicking it moves there. At the end of the page it steps aside.
+ */
+const NEXT: [string, string][] = [['lp-s-buy', 'If you use crypto'], ['lp-s-sell', 'If you know the moves'], ['lp-s-build', 'If you build'], ['lp-s-agents', 'If you’re an AI agent'], ['lp-s-end', 'See it run']];
+function NextCue() {
+  const [next, setNext] = useState<[string, string] | null>(NEXT[0]);
+  useEffect(() => {
+    const on = () => {
+      const line = innerHeight * 0.62; // a section counts as reached once its top passes this line
+      const n = NEXT.find(([id]) => (document.getElementById(id)?.getBoundingClientRect().top ?? 0) > line);
+      const atEnd = innerHeight + scrollY >= document.documentElement.scrollHeight - 40;
+      setNext(atEnd ? null : n ?? null);
+    };
+    on(); addEventListener('scroll', on, { passive: true }); addEventListener('resize', on);
+    return () => { removeEventListener('scroll', on); removeEventListener('resize', on); };
+  }, []);
+  return (
+    <button className={'lp-next' + (next ? '' : ' gone')} tabIndex={next ? 0 : -1} aria-label={next ? `Next: ${next[1]}` : 'End of page'}
+      onClick={() => next && document.getElementById(next[0])?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+      <span key={next?.[0]}>{next?.[1] ?? 'See it run'}</span>
+      <span className="lp-chev"><Icon name="chevron" size={16} /></span>
+    </button>
+  );
+}
+
+/** The market in one picture: parts flow to creators, recipes flow to buyers, and one receipt pays everyone. */
+function Loop() {
+  return (
+    <div className="lp-loop" aria-hidden>
+      <svg viewBox="0 0 480 440" className="lp-arcs">
+        <defs>
+          <marker id="lp-ah" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 9 5 1 9" fill="none" stroke="#8592ae" strokeWidth="1.6" strokeLinecap="round" /></marker>
+        </defs>
+        <path className="arc build" d="M118 96 Q240 18 362 96" markerEnd="url(#lp-ah)" />
+        <path className="arc sell" d="M392 150 Q420 300 300 362" markerEnd="url(#lp-ah)" />
+        <path className="arc buy" d="M180 362 Q60 300 88 150" markerEnd="url(#lp-ah)" />
+        <circle cx="240" cy="220" r="118" className="orbit" />
+      </svg>
+      <span className="lp-arc-lbl t">parts</span>
+      <span className="lp-arc-lbl r">sealed recipes</span>
+      <span className="lp-arc-lbl l">one receipt pays all</span>
+      <div className="lp-node build" style={{ left: '14%', top: '20%' }}><span className="ring"><Icon name="box" size={22} /></span><b>Builders</b><small>make parts</small></div>
+      <div className="lp-node sell" style={{ left: '86%', top: '20%' }}><span className="ring"><Icon name="compose" size={22} /></span><b>Creators</b><small>seal recipes</small></div>
+      <div className="lp-node buy" style={{ left: '50%', top: '86%' }}><span className="ring"><Icon name="user" size={22} /></span><b>Buyers</b><small>people or agents</small></div>
+      <div className="lp-core"><Seal job="job.wallet-cleanup" ticker="RUN" size={132} /></div>
+    </div>
+  );
+}

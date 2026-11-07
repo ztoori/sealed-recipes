@@ -12,13 +12,13 @@ export function Output({ out }: { out: any }) {
     return (
       <>
         <table><thead><tr><th>{swaps ? 'Swept' : 'Asset'}</th><th className="r">{swaps ? 'Amount in' : 'From'}</th><th className="r">Received</th><th>Status</th>{swaps && <th>Privacy</th>}</tr></thead><tbody>
-          {out.map((r, i) => <tr key={i}><td>{r.symbol}</td><td className="r">{swaps ? r.amountIn : <span className="hash">{r.source}</span>}</td><td className="r">{Number.isFinite(human(r)) ? human(r).toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'}</td><td><span className={'pill ' + (r.status === 'SUCCESS' ? 'ok' : 'bad')}>{r.status}</span></td>{swaps && <td><span className={'pill ' + (r.confidentiality === 'basic' ? 'sealed' : '')}>{r.confidentiality === 'basic' ? 'confidential' : 'public'}</span></td>}</tr>)}
+          {out.map((r, i) => <tr key={i}><td>{r.symbol}</td><td className="r">{swaps ? r.amountIn : <span className="hash">{r.source}</span>}</td><td className="r">{Number.isFinite(human(r)) ? human(r).toLocaleString(undefined, { maximumFractionDigits: 4 }) : 'n/a'}</td><td><span className={'pill ' + (r.status === 'SUCCESS' ? 'ok' : 'bad')}>{r.status}</span></td>{swaps && <td><span className={'pill ' + (r.confidentiality === 'basic' ? 'sealed' : '')}>{r.confidentiality === 'basic' ? 'confidential' : 'public'}</span></td>}</tr>)}
         </tbody></table>
-        {swaps && <p className="small" style={{ marginBottom: 0 }}><b>{out.reduce((s, r) => s + (Number.isFinite(human(r)) ? human(r) : 0), 0).toFixed(4)} {target}</b> delivered to the fresh address. Scam tokens were never touched.</p>}
+        {swaps && <p className="small" style={{ marginBottom: 0 }}><b>{out.reduce((s, r) => s + (Number.isFinite(human(r)) ? human(r) : 0), 0).toFixed(4)} {target}</b> delivered to a fresh address. Scam tokens untouched.</p>}
       </>
     );
   }
-  if (out?.title && Array.isArray(out.items)) return (<><h3 className="serif" style={{ fontWeight: 500, fontSize: 20, marginBottom: 6 }}>{out.title}</h3><table className="small"><tbody>{out.items.map((f: any, i: number) => <tr key={i}><td style={{ width: '28%' }}>{f.tag ? <span className={'pill ' + f.tag}>{f.label}</span> : <b>{f.label}</b>}</td><td style={{ wordBreak: 'break-word' }}>{f.detail}</td></tr>)}</tbody></table></>);
+  if (out?.title && Array.isArray(out.items)) return (<><h3 className="serif" style={{ fontWeight: 500, fontSize: 22, marginBottom: 8 }}>{out.title}</h3><table className="small"><tbody>{out.items.map((f: any, i: number) => <tr key={i}><td style={{ width: '28%' }}>{f.tag ? <span className={'pill ' + f.tag}>{f.label}</span> : <b>{f.label}</b>}</td><td style={{ wordBreak: 'break-word' }}>{f.detail}</td></tr>)}</tbody></table></>);
   if (out?.title) return (<><h3 className="serif" style={{ fontWeight: 500, fontSize: 20 }}>{out.title}</h3><table className="small"><tbody>{out.flagged.map((f: any) => <tr key={f.contract}><td><b>{f.symbol}</b><div className="muted hash">{f.contract}</div></td><td>{f.reason}</td></tr>)}</tbody></table></>);
   return <pre className="codebox">{JSON.stringify(out, null, 1)}</pre>;
 }
