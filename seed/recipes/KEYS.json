@@ -1,0 +1,80 @@
+{
+  "srs": "1.0",
+  "kind": "recipe",
+  "meta": {
+    "ticker": "KEYS",
+    "name": "Lock down app keys",
+    "creator": "warden.testnet",
+    "description": "Finds the keys dApps left on your account, revokes the risky ones in one transaction you approve, and tells you which full-access keys to review."
+  },
+  "form": [
+    {
+      "id": "wallet",
+      "label": "Wallet",
+      "type": "near.account",
+      "required": true,
+      "placeholder": "bob.testnet"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "keys",
+      "part": "near.access-keys@1.0.0",
+      "inputs": {
+        "account": "form.wallet"
+      },
+      "params": {},
+      "ui": {
+        "x": 0,
+        "y": 120
+      }
+    },
+    {
+      "id": "risk",
+      "part": "rules.key-risk@1.0.0",
+      "inputs": {
+        "keys": "keys.keys"
+      },
+      "params": {
+        "blocklist": [
+          "near-gift-claim.near",
+          "ref-finance-airdrop.near"
+        ],
+        "trusted": [
+          "v2.ref-finance.near",
+          "social.near",
+          "app.burrow.finance"
+        ]
+      },
+      "ui": {
+        "x": 280,
+        "y": 120
+      }
+    },
+    {
+      "id": "revoke",
+      "part": "keys.revoke@1.0.0",
+      "inputs": {
+        "account": "form.wallet",
+        "keys": "risk.risky"
+      },
+      "params": {},
+      "ui": {
+        "x": 560,
+        "y": 120
+      }
+    }
+  ],
+  "output": "revoke.report",
+  "listing": {
+    "price_per_run": "250000",
+    "reserve_bps": 1000,
+    "bond": "0",
+    "pricing": {
+      "price_floor": "150000",
+      "price_ceiling": "600000",
+      "target_runs": 2
+    }
+  },
+  "implements": "job.key-cleanup@1.0.0"
+}

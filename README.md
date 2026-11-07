@@ -15,7 +15,7 @@ Every recipe is unique: a sealed combination of standard, swappable parts ([SRS-
 
 Built for the [NEAR Hackathon](https://nearhackathon.com) (Nov 1–14, 2026). Suggested tracks: `privacy`, `agents`, `defi` and `open`.
 
-![Competing quotes for one job](docs/media/03-quotes.png)
+![A signed quote from one sealed recipe](docs/media/03-quote.png)
 
 ## The problem
 
@@ -24,7 +24,7 @@ Businesses and agents run on workflows that chain several tools, bots and AI cal
 | Requirement (from the brief) | How it is built here |
 |---|---|
 | Specialized builders deploy utility apps and bots | **Parts**: code, specialist agents or data sources, with typed ports, declared network capabilities, a per-call fee, **disclosure of model, instructions, harness and verification**, and **per-run resource limits**, registered on-chain ([standard/parts.json](standard/parts.json)) |
-| A no-code / low-code standard to compose and swap parts | **SRS-1** ([docs/SRS-1.md](docs/SRS-1.md)): a typed graph with subtyping, validation, drop-in swap search, a withdrawal-risk label and standard **job types**. The visual composer is the Compose tab |
+| A no-code / low-code standard to compose and swap parts | **SRS-1** ([docs/SRS-1.md](docs/SRS-1.md)): a typed graph with subtyping, validation, drop-in swap search, a withdrawal-risk label and standard **job types**. **Compose › Recipe** is a no-code builder: pick a job, add parts, they wire themselves (a test rebuilds all 11 seed recipes this way). **Compose › Part** builds a part with live SRS-1 conformance checks |
 | Users create recipes without patents or licences | The recipe is **sealed** (X25519 + XSalsa20-Poly1305) to the runner's attested key. Only `sha256(envelope)` goes on-chain. See [What the sealing protects](#what-the-sealing-protects-and-what-it-doesnt) for its limits |
 | A decentralized exchange where recipes are listed, bought and traded | **Recipe intents**: a buyer posts a job, every recipe that implements its type quotes from a sealed dry run, and the buyer (or an agent's policy) picks one. Recipes are listed and bought **per run**; what competes is the service, not an asset, so nothing here is a security (see [No investment features](#no-investment-features)) |
 | Attribution that pays everyone involved | **`report_run`**: an ed25519-signed runner report is verified on-chain and splits the payment in one receipt. It also compares delivery with the signed quote and compensates any shortfall from the recipe's **guarantee deposit** (a performance bond the creator posts) |
@@ -65,7 +65,7 @@ There is no fixed price list. Each recipe's price per run follows demand inside 
 
 Unique recipes compete on results: for a job type, the buyer compares each recipe's signed price against the value it promises. A recipe with no direct rival still gets a market price from its own demand. The rule's bounds, direction and monotonicity are proved with Z3 for every input, and the Rust contract and TypeScript mirror reproduce the model's vectors exactly.
 
-![A recipe's market price following its demand](docs/media/12-market-price.png)
+![A recipe's market price following its demand](docs/media/07-recipe-clnp.png)
 
 ```bash
 npm run test:pricing    # SAFE with 15-second periods: 4 buyers pay in one period (twice the target) -> +12.5%;
@@ -84,30 +84,31 @@ npm run demo            # starts runner :8787 + marketplace :8080, seeds the rec
 
 Then follow these steps. Each one says what you should see.
 
-1. **Open http://127.0.0.1:8080.** You land on **Post a job**, which lists four job types and how many recipes compete for each. *Claim my eligible airdrops* has none yet.
+The app has four sections: **Recipes** (find one and get a quote), **Compose** (build a recipe from parts with no code, or build a part), **Wallet**, and **Documentation** (Trust & privacy, Landscape). Every page has its own link (`#/recipes/CLNP`, `#/quote/STAK`, `#/compose/part/…`), so the back button works.
+
+1. **Open http://127.0.0.1:8080.** You land on **Recipes**: nine listed recipes with a search box and favorites (★). Below the list, *Need something nobody offers?* shows the one job with no recipe yet, *Claim my eligible airdrops*.
 2. **Click "Play the demo story"** (top right). The brief's four steps play automatically, with a caption for each:
-   1. **Compose.** Five parts snap together into *Clean up and protect* (CLNP). The seal dialog verifies the runner attestation: 6 checks pass, and "Hardware TDX quote" shows as skipped in local mode. The plaintext turns into ciphertext and gets a wax seal. `publish_recipe` returns a tx hash, and a $25 guarantee deposit backs CLNP's quotes.
-   2. **Post a job.**
-      - As `bob.testnet`, a fresh address is generated in the browser and the job *Clean up my wallet* is sealed and posted.
-      - Two recipes quote. **SWPR** expects $37.54 and promises $36.98, but it is *public* and also sweeps the wallet's wNEAR. **CLNP** expects $28.02 and promises $27.81, is *confidential* and its $25 guarantee deposit covers $25.00 of the promise.
-      - Bob chooses CLNP. A 1Click quote shows *0.75188 USDC on Arbitrum → $0.75 delivered to the contract*, with the signed promise in the `customRecipientMsg`.
+   1. **Compose.** As `chef.testnet`, the creator picks the job *Clean up my wallet* and adds five parts one by one. Each wires itself to the previous step's matching output. The seal dialog verifies the runner attestation: 6 checks pass, and "Hardware TDX quote" shows as skipped in local mode. The plaintext turns into ciphertext and gets a wax seal. `publish_recipe` returns a tx hash, and a $25 guarantee deposit backs CLNP's quotes.
+   2. **Find it and get a quote.**
+      - As `bob.testnet`, the buyer searches “clean”, opens *Clean up and protect* (CLNP), sees that SWPR does the same job more cheaply but routes publicly, and presses **Get a quote**.
+      - The quote page asks only CLNP: a fresh address is generated in the browser, the job is sealed, and CLNP quotes from a sealed dry run. It expects $28.02 and promises $27.81, with $25.00 covered by the deposit, at a signed price of $0.75.
+      - Bob uses the quote. A 1Click quote shows *0.75188 USDC on Arbitrum → $0.75 delivered to the contract*, with the signed promise in the `customRecipientMsg`.
    3. **Execute.**
       - The runner checks the paid run against its on-chain commitments, decrypts, and runs each part, showing its author and fee. Part details carry a *sealed to you* tag.
       - The AI Spam Shield quarantines two scam airdrops, with its signature verified.
       - A wallet dialog, decrypted in the browser, asks to approve four `ft_transfer`s. Four confidential swaps then reach `SUCCESS`.
    4. **Settle.** "Delivered $28.02 against a signed promise of $27.81: promise kept, the deposit is untouched." Below that, a diagram shows $0.75 split between the protocol, the runner, five part authors, **$0.5085 to the creator** and **$0.0565 into CLNP's guarantee deposit** (the creator's 10% reserve), in one tx.
-3. **Recipes → CLNP.** The track record shows 1 successful run, delivery at 101% of the promise and a guarantee deposit of $25.06: the $25 the creator posted plus the reserve from the run. "Where each run's price goes" itemizes the split, which sums to exactly $0.75.
-4. **Acting as → chef.testnet, then Wallet.** Income shows `creator earnings CLNP +$0.5085`, and *Recipes you created* lists CLNP with its deposit. Withdraw works; the creator can also top up or withdraw the free part of the deposit from the Recipes tab.
-5. **Compose → "Load Dust sweeper", then select the *Allowlist Shield* node.**
-   - The inspector shows the part's disclosure (model none, bundled, low risk) and its limits.
-   - Drop-in replacements list *AI Spam Shield* (low risk) and *AI Spam Shield Pro* (**high** risk: closed model, closed harness, remote). Swap in Pro: Checks now shows *high withdrawal risk* and warns that the closed model can be withdrawn or repriced.
-   - Drag *Confidential Swap* onto the canvas and wire `form.recipient` into its `to` port. The edge turns red: `"to" expects address.near.fresh but form.recipient is address.near`.
-6. **Post a job → *Claim my eligible airdrops* → Seal the job and get quotes.** "No recipe does this job yet. It was recorded as open demand." Compose now lists it under *Open demand*.
-7. **Trust & privacy** shows three things:
-   - what the marketplace stores (ciphertext), what the contract stores, and what only the runner sees;
-   - runner attestation, re-run with a new nonce;
-   - the exact JSON 1Click receives, and the contract's NEP-297 events.
-8. **An agent as the buyer** (with the demo running and the story done): `npm run agent`. The agent posts a job for `carol.testnet`, compares quotes against its policy (confidential only, maximum risk, price cap, approval cap), pays the winner, approves only within its limit, and checks delivery against the promise. No human in the loop.
+3. **Recipes → CLNP.** The track record shows 1 successful run, delivery at 101% of the promise and a guarantee deposit of $25.06: the $25 the creator posted plus the reserve from the run. "Where each run's price goes" itemizes the split, which sums to exactly $0.75. "What the marketplace can see" follows it: the part list (each one opens its internals) and the sealed commitment.
+4. **Acting as → chef.testnet, then Wallet.** Income shows the creator's $0.5085, and *Recipes you created* lists CLNP with its deposit. As `bob.testnet`, Wallet's *Account* panel reads his on-chain state and points to the recipes that would help: app keys left by dApps (KEYS), and unstaked NEAR waiting to be withdrawn (STAK).
+5. **The four everyday-safety recipes.** Search Recipes for *keys*, *stake*, *contract* or *cap*, then press **Get a quote** and run:
+   - **KEYS** revokes two risky app keys in one `DeleteKey` transaction you approve, then confirms they are gone. It never removes a full-access key; those are listed for review.
+   - **STAK** withdraws 4.2 NEAR from two pools that finished unbonding, skips one still unbonding, and flags a validator that stopped validating.
+   - **CHEK** checks a contract before you sign. Try `near-gift-claim.near` (high risk: reward-bait name, upgradable, no published source) and `v2.ref-finance.near` (low risk: locked, source published).
+   - **TRIM** caps any token at a share of your wallet (use `dana.testnet`, about 48% NEAR): it sells only the excess, privately, into USDC at a fresh address.
+6. **Compose → Recipe** (no code). Pick a job, then add parts from the palette. *Suggested next* lists what fits, each part wires itself, and every input has a plain "comes from" list, including a fixed value. Select a part to see its settings (sealed), its withdrawal risk, and drop-in alternatives. For example, swap *Allowlist Shield* for *AI Spam Shield Pro* and the recipe turns **high** risk (closed model). *Ready to publish?* lists what is left in plain words. There is no "load" option: recipes are private.
+7. **Compose → Part** (for developers). Open any part to read its manifest and source (all parts are public in this demo), or build a new one. SRS-1 conformance checks run live on the manifest and the code. Registering puts the manifest hash on-chain, and the code ships after review in an audited runner release.
+8. **Documentation → Trust & privacy** shows what the marketplace stores (ciphertext), what the contract stores and what only the runner sees, the runner attestation (re-run with a new nonce), the exact JSON 1Click receives, and the contract's NEP-297 events.
+9. **An agent as the buyer** (with the demo running and the story done): `npm run agent`. The agent posts a job for `carol.testnet`, compares quotes against its policy (confidential only, maximum risk, price cap, approval cap), pays the winner, approves only within its limit, and checks delivery against the promise. No human in the loop.
 
 Headless version for CI or AI judges. It exits non-zero if any step fails:
 
@@ -126,6 +127,31 @@ Expected tail of the output:
   payouts + reserve == price ($0.7500): every unit accounted for
   delivered $28.0249 vs promised $27.8147 → compensation from the guarantee deposit $0.0000
 ✔ story complete
+```
+
+## The recipes
+
+Ten recipes for common crypto problems, each a sealed workflow of public parts. Several compete for the same job.
+
+| Recipe | Job | What it does | Parts |
+|---|---|---|---|
+| CLNP Clean up and protect | Clean up my wallet | sweeps dust into one asset at a fresh address, privately; scam airdrops quarantined by a private AI | scanner, AI spam shield, dust filter, fresh-address check, confidential swap |
+| SWPR Dust sweeper (public) | Clean up my wallet | the cheaper, public version | scanner, allowlist shield, dust filter, public swap |
+| EXIT Panic button | Move everything to stables | every non-scam token to USDC at a fresh address | scanner, AI shield, fresh check, confidential swap |
+| TRCH Exit in two tranches | Move everything to stables | half now, half later; durable across runner restarts | … + wait, merge |
+| ATOM Exit, all or nothing | Move everything to stables | every swap and the payout in one NEAR Intents batch, or nothing | … + atomic swap |
+| SAFE Scam airdrop audit | Audit my wallet | read-only list of tokens never to touch | scanner, AI shield, report |
+| **KEYS** Lock down app keys | Revoke risky app keys | dApp sign-in keys whose app is gone or known bad are revoked in one `DeleteKey` you sign; full-access keys are only reported | access keys, key-risk rules, key revoker |
+| **STAK** Collect unstaked NEAR | Withdraw my unstaked NEAR | `withdraw_all` on every pool that finished unbonding; flags validators that stopped validating or charge high fees | staking positions, unstaked collector |
+| **CHEK** Contract check before you sign | Check a contract before I sign | a private AI verdict from on-chain facts: code, who can upgrade it, NEP-330 source, lookalike names | contract inspector, AI contract risk, contract report |
+| **TRIM** Concentration cap | Cap my biggest positions | sells only the excess of any token above your cap, into a stablecoin at a fresh address | scanner, allowlist shield, trimmer, fresh check, confidential swap |
+
+The four in bold were added with ten new parts and four job types. They read the same public NEAR interfaces in production that the local mocks serve: RPC `view_access_key_list`, `view_account` and `validators`; the staking pool's `get_account`, `get_reward_fee_fraction` and `withdraw_all`; NEP-330 `contract_source_metadata`; and FastNEAR `/v1/account/{id}/staking`.
+
+```bash
+npm run test:recipes  # KEYS revokes 2 risky keys and confirms on-chain (full-access keys untouched); STAK withdraws 4.2 NEAR from
+                      # 2 pools, skips 1 still unbonding, flags an inactive validator; CHEK rates a phishing lookalike high and
+                      # v2.ref-finance.near low; TRIM sells $172 of dana's NEAR (48% → 25%) and delivers USDC to a fresh address
 ```
 
 ## Complex workflows: durable runs, partial settlement, versions
@@ -152,7 +178,7 @@ Where everything is stored, and who runs what, is in [docs/ARCHITECTURE.md](docs
 
 ## Builder bounties on NEAR AI Agent Market
 
-When a buyer asks for a job no recipe serves, the request is recorded as open demand. From the **Post a job** page, anyone can put a bounty on that job type. The bounty is posted as a job on NEAR AI Agent Market, so its builders, not only this marketplace's, can take it.
+When a buyer asks for a job no recipe serves, the request is recorded as open demand. On **Recipes**, *Need something nobody offers?* lets anyone request it and put a bounty on that job type. The bounty is posted as a job on NEAR AI Agent Market, so its builders, not only this marketplace's, can take it.
 
 1. **Post.** The bounty carries the SRS-1 job type (inputs, output, metric) and the exact checks a delivery must pass.
 2. **Bid and award.** Builder agents bid on Agent Market. The bounty's owner awards one, and Agent Market holds the bid amount in escrow.
@@ -212,11 +238,11 @@ Where others are ahead is listed too:
 - IronClaw's triggers;
 - OutLayer's sandbox.
 
-Full comparison: [docs/LANDSCAPE.md](docs/LANDSCAPE.md), and the **Landscape** tab in the app.
+Full comparison: [docs/LANDSCAPE.md](docs/LANDSCAPE.md), and **Documentation › Landscape** in the app.
 
 Two more pieces make recipes manageable over time:
 - **Durable storage.** Every sealed version and checkpoint is kept in a content-addressed store (`server/src/store.ts`). A blob's id is the hash committed on-chain, and every read is integrity-checked.
-- **Creator copies.** Each version is also sealed to a key derived from the creator's wallet signature. The creator can reopen and edit any published version from any device ("Reopen my published recipe…" in Compose), and nothing is kept in the browser.
+- **Creator copies.** Each version is also sealed to a key derived from the creator's wallet signature. The creator can reopen any published version from any device (`GET /api/vault/:ticker/creator-copy`, opened with a key re-derived from a wallet signature), and nothing is kept in the browser. The composer has no "load" option in the UI; editing a published recipe as a new version is a planned Wallet feature.
 
 ## No investment features
 
@@ -261,7 +287,7 @@ npm run verify:tla      # also the TLC model check (~10 min; Java + tla2tools.ja
 ## Tests
 
 ```bash
-npm test                # 41 TypeScript tests: Agent Market mock roles and bounty accept/dispute; settlement, bond and pricing vectors; quote signatures and expiry;
+npm test                # 51 TypeScript tests: SRS-1 conformance of every part, all 11 seed recipes rebuilt in the composer, the web app's state machines; Agent Market mock roles and bounty accept/dispute; settlement, bond and pricing vectors; quote signatures and expiry;
                         # event parity with the contract; SRS-1 typing, swaps, job types and withdrawal risk;
                         # sealing; per-part resource limits; EIP-191; 1Click shapes; attestation; capability guard; code hash
 npm run test:rust       # 105 Rust tests for the NEAR contract (same vectors, conformance with the proved models,
@@ -326,7 +352,7 @@ These are kept separate so nothing here needs to be taken on faith.
 | NEAR Intents 1Click | `/mock/1click`: same request and response shapes, a frozen token-price sample, the real status names | `core/src/oneclick.ts` live mode; `npm run live-check` gets real dry quotes. **NEAR Intents has no testnet**, so the demo cannot move real funds |
 | NEAR AI Cloud | `/mock/nearai` signs responses with a real secp256k1 key in the provider-TEE format. The "model" is a transparent heuristic, and there is no hardware quote (reported as skipped) | The same part code calls `cloud-api.near.ai`, and `live-check` verifies a real completion end to end |
 | NEAR AI Agent Market | `/mock/agent-market`: the published job, bid, award, submit, accept and dispute endpoints, with role checks and an escrow log. Builder agents are demo processes | `AGENT_MARKET_URL` + `AGENT_MARKET_API_KEY`: same client. Bid listing and dispute body not yet checked against the live API |
-| FastNEAR / NEAR RPC | `/mock/fastnear`, `/mock/rpc`, backed by fictional wallets in `fixtures/wallets.json` | Same URLs unmocked |
+| FastNEAR / NEAR RPC | `/mock/fastnear`, `/mock/rpc`, backed by fictional wallets in `fixtures/wallets.json` and fictional keys, staking pools and contracts in `fixtures/chain-state.json` | Same URLs unmocked |
 | Wallet signing | A local demo wallet "signs as" the selected account. Demo accounts have unlimited demo USDC, so deposit sizes are illustrative | **Not built yet.** The approval dialog shows the exact `signAndSendTransactions` payload a NEAR wallet would sign |
 | Chain view for attestation checks | The browser gets the attestation **directly from the runner**, but the registered keys come from the server's contract mirror, so the marketplace is trusted for that comparison | Clients read `get_runner` from NEAR RPC; the runner reads `get_run` / `get_recipe` over NEAR RPC when `NEAR_RPC_URL` is set |
 
@@ -377,7 +403,7 @@ verification/                 Z3 proofs (settlement, billing, guarantee deposits
 core/src/                     SRS-1 (parts, disclosure, job types), sealing, settlement, ledger mirror, job hashing, clients, attestation
 runner/                       sealed TEE runner: dry-run quotes, durable execution (checkpoints, resume), resource limits, 11 parts (9 implementation files)
 server/                       marketplace API (jobs, quotes, runs, track records) and local mocks of external services
-web/                          React UI: Post a job, Compose, Wallet, Recipes, Trust & privacy, story mode
+web/                          React UI: Recipes (search, favorites, Get a quote), Compose (Recipe, Part), Wallet, Documentation, story mode
 standard/parts.json           SRS-1 part catalog (ports, capabilities, fees, disclosure, limits)
 standard/jobs.json            SRS-1 job types (inputs, output, value metric)
 seed/recipes/                 plaintext of the demo recipes (in the app they only ever travel sealed)
@@ -409,7 +435,7 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 - **The runner is trusted to measure delivery.** Guarantee deposits pay out on the runner's signed `delivered` value. That is sound only as far as the runner is attested; on-chain DCAP verification of the runner is the next step.
 - **Quotes cost compute.** Dry runs are capped at 5 recipes per job and 12 jobs per minute per client. A small quote fee would be the on-chain version.
 - **Supplier risk.** Bundled parts can't be switched off by their author, but remote and closed-model parts can. SRS-1 labels this risk; fallback parts, notice periods and supplier bonds are planned.
-- **Thin markets.** Head-to-head price competition needs several recipes per job type; there are 4 job types and 6 recipes today (7 after the bounty demo); builder bounties are how a thin job type gets its first recipe. A niche recipe's price moves with its own demand only.
+- **Thin markets.** Head-to-head price competition needs several recipes per job type; there are 8 job types and 10 recipes (11 after the bounty demo); builder bounties are how a thin job type gets its first recipe. A niche recipe's price moves with its own demand only.
 - **Demand can be faked, at a cost.** A creator can pay for their own runs to push the price up. Each fake run costs the protocol, runner and part fees, and the price rises at most 12.5% a period while buyers simply pick a cheaper rival or set a max price. Counting only quoted runs from distinct buyers would make it harder.
 - **Unquoted payments can miss a price change.** A payment without a quote is charged the list price when it arrives; if that rose since the payment was quoted, the payment is credited back to the buyer (never overcharged). Paying with a signed quote locks the price.
 - **Spam.** No storage deposits yet.

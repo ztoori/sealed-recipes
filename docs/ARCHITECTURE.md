@@ -148,6 +148,22 @@ builder submits {"recipe_id"} on Agent Market ──► Bounties.tick() sees "su
 
 The recipe is never sent to Agent Market or to the bounty poster; only its id crosses over. Polling runs every 1.5 s, and a job type can have only one open bounty at a time.
 
+## State machines
+
+Every flow with more than two states is written as an explicit machine with a transition table, not as a set of booleans. Each is tested.
+
+| Machine | Where | States | What it prevents |
+|---|---|---|---|
+| Contract run | `contracts/sealed-recipes` (mirror `core/src/ledger.ts`) | Pending → Settled / Refunded / Reclaimed, with checkpoints | proved in Z3 and model-checked in TLA+ (`verification/`) |
+| Bounty | `server/src/bounties.ts` `BOUNTY_TRANSITIONS` | open → in_progress → submitted → verifying → accepted / rejected (+ Agent Market's cancelled, expired, disputed) | a delivery verified twice by overlapping polls; a bounty stuck in "verifying" when Agent Market is briefly unreachable (it returns to "submitted" and retries); awarding twice |
+| Agent Market job (mock) | `server/src/agent-market.ts` | open → in_progress → submitted → completed / disputed | award, submit, accept or dispute out of order, or by the wrong party (409/403) |
+| Run payment | `server/src/main.ts` `RunCtx.payment` | quoted → deposit_sent → delivered | paying the same run ticket twice (a double click or a retried request used to send a second deposit) |
+| Get a quote | `web/src/pages/quote-machine.ts` | form → quoting → quoted / unquotable → preparing → ready → paying → running → finished | paying with a quote whose sealed inputs no longer match the form (editing drops the quote); editing, re-quoting or re-paying while a payment or run is in flight; using an expired quote |
+| Seal and publish | `web/src/components/SealModal.tsx` | verifying → verified → sealed → publishing → published, with verify_failed and publish_failed | dead ends after a failed attestation or publish (both now retry) |
+| Demo story | `web/src/story-machine.ts` | idle → 1 compose → 2 find and quote → 3 run → 4 settle → done; a run id per playthrough | stale timers advancing the wrong step; replaying the story silently doing nothing (pages remembered they had already played) |
+| Navigation | `web/src/route.ts` | one route, mirrored in the URL hash | a selected recipe and an "only ask this recipe" flag drifting apart; pages that could not be linked or reached with Back |
+| Builder agent | `scripts/builder-agent.ts` | bid → awarded → published → submitted, each step idempotent | a failed publish marking the job as delivered forever |
+
 ## Local mode wiring
 
 `scripts/demo.mjs` starts the runner with

@@ -41,6 +41,26 @@
     "report": {
       "description": "Human-readable summary object",
       "extends": null
+    },
+    "percent": {
+      "description": "Percentage between 0 and 100 (decimal number)",
+      "extends": null
+    },
+    "key.list": {
+      "description": "Access keys of an account: {public_key, kind: full|function-call, receiver, methods, allowance, nonce, action?, reason?}",
+      "extends": null
+    },
+    "stake.list": {
+      "description": "Delegations to staking pools: {pool, staked, unstaked, can_withdraw, fee_pct, active}",
+      "extends": null
+    },
+    "contract.facts": {
+      "description": "What a contract account exposes on-chain: existence, code, full-access keys, NEP-330 source metadata, token listing",
+      "extends": null
+    },
+    "contract.verdict": {
+      "description": "Risk verdict on a contract: {risk: low|medium|high, reasons[], source}",
+      "extends": null
     }
   },
   "parts": [
@@ -642,6 +662,445 @@
       "limits": {
         "max_ms": 60000,
         "max_http_calls": 40,
+        "max_model_calls": 0,
+        "max_output_bytes": 32000
+      }
+    },
+    {
+      "id": "near.access-keys@1.0.0",
+      "name": "Access Key Reader",
+      "category": "source",
+      "author": "keysafe.testnet",
+      "summary": "Lists every key that can sign for an account (NEAR RPC view_access_key_list): full-access keys and the app keys dApps created at sign-in.",
+      "inputs": {
+        "account": {
+          "type": "near.account"
+        }
+      },
+      "outputs": {
+        "keys": {
+          "type": "key.list"
+        }
+      },
+      "params": {},
+      "capabilities": [
+        "net:rpc.mainnet.fastnear.com"
+      ],
+      "fee_per_call": "10000",
+      "implementation": "runner/src/parts/access-keys.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 8000,
+        "max_http_calls": 2,
+        "max_model_calls": 0,
+        "max_output_bytes": 32000
+      }
+    },
+    {
+      "id": "rules.key-risk@1.0.0",
+      "name": "Key Risk Rules",
+      "category": "guard",
+      "author": "keysafe.testnet",
+      "summary": "Marks app keys to revoke (app gone, known drainer, unlimited allowance for an unvetted app) and full-access keys to review. Never marks a full-access key for removal.",
+      "inputs": {
+        "keys": {
+          "type": "key.list"
+        }
+      },
+      "outputs": {
+        "risky": {
+          "type": "key.list"
+        }
+      },
+      "params": {
+        "blocklist": {
+          "type": "string[]",
+          "default": [],
+          "secret": true,
+          "description": "Contracts known to drain sessions"
+        },
+        "trusted": {
+          "type": "string[]",
+          "default": [],
+          "secret": true,
+          "description": "Apps whose keys are kept even with unlimited allowance"
+        }
+      },
+      "capabilities": [
+        "net:rpc.mainnet.fastnear.com"
+      ],
+      "fee_per_call": "20000",
+      "implementation": "runner/src/parts/key-risk.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 10000,
+        "max_http_calls": 24,
+        "max_model_calls": 0,
+        "max_output_bytes": 32000
+      }
+    },
+    {
+      "id": "keys.revoke@1.0.0",
+      "name": "Key Revoker",
+      "category": "action",
+      "author": "keysafe.testnet",
+      "summary": "Deletes the app keys marked for revocation in one DeleteKey transaction you sign, then re-reads the key list to confirm. Full-access keys are only reported.",
+      "inputs": {
+        "account": {
+          "type": "near.account"
+        },
+        "keys": {
+          "type": "key.list"
+        }
+      },
+      "outputs": {
+        "report": {
+          "type": "report"
+        }
+      },
+      "params": {},
+      "capabilities": [
+        "net:rpc.mainnet.fastnear.com",
+        "wallet:approve"
+      ],
+      "fee_per_call": "30000",
+      "implementation": "runner/src/parts/keys-revoke.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 60000,
+        "max_http_calls": 4,
+        "max_model_calls": 0,
+        "max_output_bytes": 32000
+      }
+    },
+    {
+      "id": "staking.positions@1.0.0",
+      "name": "Staking Positions",
+      "category": "source",
+      "author": "validator-watch.testnet",
+      "summary": "Finds every pool you delegate to (FastNEAR), with staked and unstaked NEAR, whether it can be withdrawn, the pool's fee and whether it is still validating.",
+      "inputs": {
+        "account": {
+          "type": "near.account"
+        }
+      },
+      "outputs": {
+        "stakes": {
+          "type": "stake.list"
+        }
+      },
+      "params": {},
+      "capabilities": [
+        "net:api.fastnear.com",
+        "net:rpc.mainnet.fastnear.com"
+      ],
+      "fee_per_call": "20000",
+      "implementation": "runner/src/parts/staking-positions.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 15000,
+        "max_http_calls": 40,
+        "max_model_calls": 0,
+        "max_output_bytes": 32000
+      }
+    },
+    {
+      "id": "staking.withdraw@1.0.0",
+      "name": "Unstaked NEAR Collector",
+      "category": "action",
+      "author": "validator-watch.testnet",
+      "summary": "Calls withdraw_all on every pool where unstaked NEAR has finished unbonding, with your approval, and confirms the payout from each pool.",
+      "inputs": {
+        "account": {
+          "type": "near.account"
+        },
+        "stakes": {
+          "type": "stake.list"
+        }
+      },
+      "outputs": {
+        "receipts": {
+          "type": "swap.receipts"
+        }
+      },
+      "params": {},
+      "capabilities": [
+        "net:rpc.mainnet.fastnear.com",
+        "wallet:approve"
+      ],
+      "fee_per_call": "40000",
+      "implementation": "runner/src/parts/staking-withdraw.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 60000,
+        "max_http_calls": 20,
+        "max_model_calls": 0,
+        "max_output_bytes": 32000
+      }
+    },
+    {
+      "id": "near.contract-facts@1.0.0",
+      "name": "Contract Inspector",
+      "category": "source",
+      "author": "scanlabs.testnet",
+      "summary": "Reads what a contract exposes on-chain: code, who can upgrade it (full-access keys), NEP-330 source metadata, and whether solvers list it as a token.",
+      "inputs": {
+        "contract": {
+          "type": "near.account"
+        }
+      },
+      "outputs": {
+        "facts": {
+          "type": "contract.facts"
+        }
+      },
+      "params": {},
+      "capabilities": [
+        "net:rpc.mainnet.fastnear.com",
+        "net:1click.chaindefuser.com"
+      ],
+      "fee_per_call": "20000",
+      "implementation": "runner/src/parts/contract-facts.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 10000,
+        "max_http_calls": 6,
+        "max_model_calls": 0,
+        "max_output_bytes": 32000
+      }
+    },
+    {
+      "id": "ai.contract-risk@1.0.0",
+      "name": "AI Contract Risk",
+      "category": "guard",
+      "author": "sentinel.testnet",
+      "summary": "Private LLM on NEAR AI Cloud judges a contract from its on-chain facts with the creator's sealed policy. The verdict is signed inside the model TEE and verified.",
+      "inputs": {
+        "facts": {
+          "type": "contract.facts"
+        }
+      },
+      "outputs": {
+        "verdict": {
+          "type": "contract.verdict"
+        }
+      },
+      "params": {
+        "policy": {
+          "type": "string",
+          "secret": true,
+          "description": "Risk policy and lookalike knowledge (part of the creator's edge)"
+        }
+      },
+      "capabilities": [
+        "net:cloud-api.near.ai",
+        "net:nras.attestation.nvidia.com"
+      ],
+      "fee_per_call": "50000",
+      "implementation": "runner/src/parts/contract-risk.ts",
+      "disclosure": {
+        "model": {
+          "kind": "open-weights",
+          "name": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+          "host": "NEAR AI Cloud (private, TEE)"
+        },
+        "instructions": "sealed",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 20000,
+        "max_http_calls": 10,
+        "max_model_calls": 2,
+        "max_output_bytes": 32000
+      }
+    },
+    {
+      "id": "rules.contract-risk@1.0.0",
+      "name": "Contract Risk Rules",
+      "category": "guard",
+      "author": "scanlabs.testnet",
+      "summary": "Deterministic verdict from the same facts: missing code, upgradable by a key holder, no published source, lookalike names. No model.",
+      "inputs": {
+        "facts": {
+          "type": "contract.facts"
+        }
+      },
+      "outputs": {
+        "verdict": {
+          "type": "contract.verdict"
+        }
+      },
+      "params": {
+        "lookalikes": {
+          "type": "string[]",
+          "default": [
+            "ref-finance",
+            "aurora",
+            "near",
+            "meteor",
+            "burrow"
+          ],
+          "secret": true,
+          "description": "Brand names phishing contracts imitate"
+        }
+      },
+      "capabilities": [],
+      "fee_per_call": "10000",
+      "implementation": "runner/src/parts/contract-risk.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 1000,
+        "max_http_calls": 0,
+        "max_model_calls": 0,
+        "max_output_bytes": 32000
+      }
+    },
+    {
+      "id": "report.contract@1.0.0",
+      "name": "Contract Report",
+      "category": "sink",
+      "author": "scanlabs.testnet",
+      "summary": "Turns the facts and a verdict into a plain-language report: what to do, why, who can upgrade it and where its source is.",
+      "inputs": {
+        "facts": {
+          "type": "contract.facts"
+        },
+        "verdict": {
+          "type": "contract.verdict"
+        }
+      },
+      "outputs": {
+        "report": {
+          "type": "report"
+        }
+      },
+      "params": {},
+      "capabilities": [],
+      "fee_per_call": "10000",
+      "implementation": "runner/src/parts/contract-report.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 1000,
+        "max_http_calls": 0,
+        "max_model_calls": 0,
+        "max_output_bytes": 32000
+      }
+    },
+    {
+      "id": "plan.trim@1.0.0",
+      "name": "Concentration Trimmer",
+      "category": "transform",
+      "author": "riskdesk.testnet",
+      "summary": "For each token above your cap (percent of the wallet), selects just the excess to sell. Stablecoins are excluded by default.",
+      "inputs": {
+        "holdings": {
+          "type": "token.holdings"
+        },
+        "max_share": {
+          "type": "percent"
+        }
+      },
+      "outputs": {
+        "trim": {
+          "type": "token.holdings"
+        }
+      },
+      "params": {
+        "exclude_symbols": {
+          "type": "string[]",
+          "default": [
+            "USDC",
+            "USDT"
+          ],
+          "secret": true
+        },
+        "min_trade_usd": {
+          "type": "number",
+          "default": 1,
+          "secret": true
+        }
+      },
+      "capabilities": [],
+      "fee_per_call": "20000",
+      "implementation": "runner/src/parts/trim-plan.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 1000,
+        "max_http_calls": 0,
         "max_model_calls": 0,
         "max_output_bytes": 32000
       }

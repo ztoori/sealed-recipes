@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { loadCatalog } from '../core/src/codehash.js';
 import type { Recipe } from '../core/src/index.js';
 import { AgentMarketClient, type MarketJob } from '../server/src/agent-market.js';
-import { BASE, publish, verifiedRunner } from './lib/client.js';
+import { api, BASE, publish, verifiedRunner } from './lib/client.js';
 
 const arg = (k: string, d?: string) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
 const HANDLE = arg('handle', 'dropsmith')!;
@@ -58,15 +58,19 @@ async function tick() {
   }
   for (const j of await market.listJobs({ status: 'in_progress', tags: ['sealed-recipes'] })) {
     if (j.worker_agent_id !== me.agent_id || delivered.has(j.job_id)) continue;
-    delivered.add(j.job_id);
     const jt = jobTypeOf(j)!;
-    if (WRONG) { await market.submit(j.job_id, JSON.stringify({ recipe_id: WRONG })); say(`submitted ${WRONG} (deliberately wrong)`); continue; }
+    // published → submitted, each step idempotent: a failure leaves the job undelivered and the next poll retries it
+    if (WRONG) { await market.submit(j.job_id, JSON.stringify({ recipe_id: WRONG })); delivered.add(j.job_id); say(`submitted ${WRONG} (deliberately wrong)`); continue; }
     const recipe = structuredClone(templates.get(jt)!);
     recipe.meta.creator = me.near_account_id; // published from the account that won the bid
-    const { onchain } = await verifiedRunner(); // checks the runner's attestation before sealing to its key
-    const r = await publish(recipe, catalog, onchain.enc_pk_hex);
-    say(`awarded "${j.title}": published ${recipe.meta.ticker} sealed (tx ${r.tx}), submitting`);
+    const mine = (await api<{ ticker: string; creator: string }[]>('/api/listings')).some((l) => l.ticker === recipe.meta.ticker && l.creator === me.near_account_id);
+    if (!mine) {
+      const { onchain } = await verifiedRunner(); // checks the runner's attestation before sealing to its key
+      const r = await publish(recipe, catalog, onchain.enc_pk_hex);
+      say(`awarded "${j.title}": published ${recipe.meta.ticker} sealed (tx ${r.tx}), submitting`);
+    } else say(`awarded "${j.title}": ${recipe.meta.ticker} already published by us, submitting`);
     await market.submit(j.job_id, JSON.stringify({ recipe_id: recipe.meta.ticker }));
+    delivered.add(j.job_id);
   }
 }
 

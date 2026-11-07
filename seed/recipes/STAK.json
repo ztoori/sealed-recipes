@@ -1,0 +1,58 @@
+{
+  "srs": "1.0",
+  "kind": "recipe",
+  "meta": {
+    "ticker": "STAK",
+    "name": "Collect unstaked NEAR",
+    "creator": "stakehand.testnet",
+    "description": "Finds NEAR you unstaked and never withdrew across every validator, withdraws it with your approval, and flags validators that stopped validating or charge high fees."
+  },
+  "form": [
+    {
+      "id": "wallet",
+      "label": "Wallet",
+      "type": "near.account",
+      "required": true,
+      "placeholder": "bob.testnet"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stakes",
+      "part": "staking.positions@1.0.0",
+      "inputs": {
+        "account": "form.wallet"
+      },
+      "params": {},
+      "ui": {
+        "x": 0,
+        "y": 120
+      }
+    },
+    {
+      "id": "withdraw",
+      "part": "staking.withdraw@1.0.0",
+      "inputs": {
+        "account": "form.wallet",
+        "stakes": "stakes.stakes"
+      },
+      "params": {},
+      "ui": {
+        "x": 300,
+        "y": 120
+      }
+    }
+  ],
+  "output": "withdraw.receipts",
+  "listing": {
+    "price_per_run": "300000",
+    "reserve_bps": 1000,
+    "bond": "20000000",
+    "pricing": {
+      "price_floor": "200000",
+      "price_ceiling": "900000",
+      "target_runs": 2
+    }
+  },
+  "implements": "job.staking-claim@1.0.0"
+}

@@ -1,0 +1,130 @@
+{
+  "srs": "1.0",
+  "kind": "recipe",
+  "meta": {
+    "ticker": "TRIM",
+    "name": "Concentration cap",
+    "creator": "riskdesk.testnet",
+    "description": "Sells just the excess of any token above your cap into a stablecoin at a fresh address, privately. Scam tokens are filtered out first."
+  },
+  "form": [
+    {
+      "id": "wallet",
+      "label": "Wallet",
+      "type": "near.account",
+      "required": true,
+      "placeholder": "bob.testnet"
+    },
+    {
+      "id": "max_share",
+      "label": "Largest share any one token may have (%)",
+      "type": "percent",
+      "required": true,
+      "default": 25
+    },
+    {
+      "id": "target",
+      "label": "Sell into",
+      "type": "asset.id",
+      "required": true,
+      "default": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "options": [
+        "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "nep141:usdt.tether-token.near"
+      ]
+    },
+    {
+      "id": "recipient",
+      "label": "Send to a fresh address (generated in your browser)",
+      "type": "address.near",
+      "required": true,
+      "generator": "fresh-implicit"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "scan",
+      "part": "near.wallet-scanner@1.0.0",
+      "inputs": {
+        "account": "form.wallet"
+      },
+      "params": {},
+      "ui": {
+        "x": 0,
+        "y": 120
+      }
+    },
+    {
+      "id": "shield",
+      "part": "rules.spam-shield@1.0.0",
+      "inputs": {
+        "holdings": "scan.holdings"
+      },
+      "params": {},
+      "ui": {
+        "x": 260,
+        "y": 120
+      }
+    },
+    {
+      "id": "trim",
+      "part": "plan.trim@1.0.0",
+      "inputs": {
+        "holdings": "shield.clean",
+        "max_share": "form.max_share"
+      },
+      "params": {
+        "exclude_symbols": [
+          "USDC",
+          "USDT"
+        ],
+        "min_trade_usd": 2
+      },
+      "ui": {
+        "x": 520,
+        "y": 120
+      }
+    },
+    {
+      "id": "fresh",
+      "part": "addr.fresh-check@1.0.0",
+      "inputs": {
+        "recipient": "form.recipient"
+      },
+      "params": {},
+      "ui": {
+        "x": 520,
+        "y": 300
+      }
+    },
+    {
+      "id": "swap",
+      "part": "intents.confidential-swap@1.0.0",
+      "inputs": {
+        "tokens": "trim.trim",
+        "to": "fresh.fresh",
+        "target": "form.target"
+      },
+      "params": {
+        "slippage_bps": 80,
+        "batch_order": "largest-first"
+      },
+      "ui": {
+        "x": 800,
+        "y": 120
+      }
+    }
+  ],
+  "output": "swap.receipts",
+  "listing": {
+    "price_per_run": "600000",
+    "reserve_bps": 1000,
+    "bond": "20000000",
+    "pricing": {
+      "price_floor": "400000",
+      "price_ceiling": "1500000",
+      "target_runs": 2
+    }
+  },
+  "implements": "job.concentration-cap@1.0.0"
+}

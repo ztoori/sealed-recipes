@@ -66,3 +66,26 @@ test('bounty: a verifier that throws counts as a failed check (never accepts by 
   assert.equal(b.checks?.[0].detail, 'rpc down');
   } finally { m.srv.closeAllConnections(); m.srv.close(); }
 });
+
+test('bounty: transitions are explicit: only an open bounty can be awarded, and only once', async () => {
+  const { BOUNTY_TRANSITIONS } = await import('../server/src/bounties.js');
+  for (const s of ['accepted', 'rejected', 'completed', 'disputed', 'cancelled', 'closed', 'expired'] as const) assert.deepEqual(BOUNTY_TRANSITIONS[s], [], `${s} is final`);
+  const m = await market();
+  const owner = await m.reg('owner2'); const builder = await m.reg('worker2');
+  try {
+    const bounties = new Bounties(owner.c, async () => [{ name: 'a', ok: true, detail: '' }], '');
+    const b = await bounties.post({ job_type: JT, budget: '10', token: 'USDC', origin: '', by: 't' });
+    const bid = await builder.c.bid(b.market_job_id, { amount: '5', eta_seconds: 1, proposal: '' });
+    await bounties.tick();
+    await assert.rejects(bounties.award(b.id, 'nope'), /unknown bid/);
+    await bounties.award(b.id, bid.bid_id);
+    await assert.rejects(bounties.award(b.id, bid.bid_id), /only an open bounty/);
+    // two overlapping polls verify a delivery once
+    await builder.c.submit(b.market_job_id, '{"recipe_id":"X"}');
+    let calls = 0;
+    (bounties as any).verify = async () => { calls++; await new Promise((r) => setTimeout(r, 50)); return [{ name: 'a', ok: true, detail: '' }]; };
+    await Promise.all([bounties.tick(), bounties.tick()]);
+    assert.equal(calls, 1);
+    assert.equal(b.status, 'accepted');
+  } finally { m.srv.closeAllConnections(); m.srv.close(); }
+});

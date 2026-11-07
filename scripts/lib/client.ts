@@ -78,3 +78,30 @@ export function pickQuote(quotes: any[], policy: { requirePrivacy?: 'confidentia
     .filter((q) => q.ok && (!policy.requirePrivacy || q.listing.privacy === policy.requirePrivacy) && (!policy.maxRisk || order[q.listing.risk] <= order[policy.maxRisk]))
     .sort((a, b) => (policy.sort === 'price' ? priceOf(a) - priceOf(b) : policy.sort === 'value' ? Number(b.expected) - Number(a.expected) : net(b) - net(a)))[0];
 }
+
+/**
+ * Pays a chosen quote through the 1Click mock and follows the run's event stream to the end, approving wallet
+ * requests (as the buyer's demo wallet). Returns the final event and every event seen, opened with the reply key.
+ */
+export async function payAndRun(job: { sealed_job: unknown; reply: { secretKey: Uint8Array } }, q: any, buyer: string, opts: { approve?: boolean; onEvent?: (e: any) => void } = {}) {
+  const { open } = await import('../../core/src/index.js');
+  const r = await api<{ run_id: string; run_token: string }>('/api/runs/quote', { recipe_id: q.recipe_id, buyer, pay_asset: 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near', refund_to: '0xB0b0000000000000000000000000000000000001', sealed_inputs: job.sealed_job, signed_quote: signedQuote(q) });
+  await api(`/api/runs/${r.run_id}/pay?token=${r.run_token}`, {});
+  const res = await fetch(`${BASE}/api/runs/${r.run_id}/events?token=${r.run_token}`);
+  const reader = res.body!.getReader(); const dec = new TextDecoder(); let buf = '';
+  const events: any[] = []; let final: any;
+  for (let done = false; !done;) {
+    const { value, done: end } = await reader.read(); if (end) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      let e = JSON.parse(buf.slice(6, i)); buf = buf.slice(i + 2);
+      if (e.type === 'sealed') e = { ...e, ...open<{ type: string; data: any }>(e.data.envelope, job.reply.secretKey) };
+      events.push(e); opts.onEvent?.(e);
+      if (e.type === 'approval_required') await api(`/api/runs/${r.run_id}/approve?token=${r.run_token}`, { approved: opts.approve ?? true, transactions: e.data.transactions, sign_message: e.data.sign_message });
+      if (e.type === 'completed' || e.type === 'failed') { final = e; done = true; break; }
+    }
+  }
+  await reader.cancel().catch(() => {});
+  return { run_id: r.run_id, final, events, result: events.find((e) => e.type === 'result')?.data };
+}

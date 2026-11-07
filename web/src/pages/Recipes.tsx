@@ -1,120 +1,205 @@
 import { useEffect, useState } from 'react';
 import { nextPrice } from '../../../core/src/pricing';
 import { api, money, short, usd, usePoll } from '../api';
-import { useApp } from '../App';
+import { useApp, useStoryOnce } from '../App';
+import { Bounties } from '../components/Bounties';
 
 /**
- * Recipes: every listed recipe's market-driven price, public track record and the guarantee deposit that backs its quotes.
- * There is nothing to invest in here. A buyer pays for one run of a service; the creator posts collateral
- * that pays buyers when a run delivers less than its signed promise. Neither is a share of anything.
+ * Recipes: find a recipe (search, favorites), see its market-driven price, public track record and the guarantee
+ * deposit that backs its quotes, and get a quote. There is nothing to invest in here: a buyer pays for one run of a
+ * service, and the creator posts collateral that pays buyers when a run delivers less than its signed promise.
  */
-export function Recipes() {
-  const { ticker, setTicker, go } = useApp();
+const FAV_KEY = 'srs.favorites';
+function useFavorites(): [Set<string>, (t: string) => void] {
+  const [fav, setFav] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem(FAV_KEY) ?? '[]')); } catch { return new Set(); } });
+  const toggle = (t: string) => setFav((f) => {
+    const n = new Set(f); if (n.has(t)) n.delete(t); else n.add(t);
+    try { localStorage.setItem(FAV_KEY, JSON.stringify([...n])); } catch { /* storage unavailable: favorites last for this visit */ }
+    return n;
+  });
+  return [fav, toggle];
+}
+
+export function Recipes({ ticker: wanted }: { ticker?: string }) {
+  const { go, story } = useApp();
+  const once = useStoryOnce();
   const [listings] = usePoll<any[]>('/api/listings', 2500);
-  useEffect(() => { if (listings?.length && !listings.some((l) => l.ticker === ticker)) setTicker(listings[0].ticker); }, [listings, ticker]);
-  const [m, refresh] = usePoll<any>(ticker ? `/api/recipe/${ticker}` : null, 1500, [ticker]);
-  const rec = m?.record;
+  const [jobs] = usePoll<any[]>('/api/jobs', 5000);
+  const [q, setQ] = useState('');
+  const [fav, toggleFav] = useFavorites();
+  const jobName = (id?: string | null) => jobs?.find((j) => j.id === id)?.name ?? '';
+  const ticker = wanted && listings?.some((l) => l.ticker === wanted) ? wanted : listings?.[0]?.ticker;
+  const select = (t: string) => go({ page: 'recipes', ticker: t });
+
+  const match = (l: any) => {
+    const s = q.trim().toLowerCase(); if (!s) return true;
+    return [l.ticker, l.name, l.description, l.creator, jobName(l.implements), ...l.parts.map((p: string) => p.split('@')[0])].join(' ').toLowerCase().includes(s);
+  };
+  const shown = (listings ?? []).filter(match);
+  const favs = shown.filter((l) => fav.has(l.ticker));
+  const rest = shown.filter((l) => !fav.has(l.ticker));
+
+  // story step 2: the buyer searches, opens CLNP, then asks it for a quote
+  useEffect(() => {
+    if (story.step !== 2 || !listings?.some((l) => l.ticker === 'CLNP') || !once('find')) return;
+    const t1 = setTimeout(() => setQ('clean'), 700);
+    const t2 = setTimeout(() => select('CLNP'), 1700);
+    const t3 = setTimeout(() => go({ page: 'quote', ticker: 'CLNP' }), 5200);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [story.step, story.run, !!listings?.some((l) => l.ticker === 'CLNP')]);
+
+  const row = (l: any) => (
+    <li key={l.ticker} className={'rcp' + (l.ticker === ticker ? ' sel' : '')}>
+      <button className="star" aria-pressed={fav.has(l.ticker)} aria-label={(fav.has(l.ticker) ? 'Remove ' : 'Add ') + l.ticker + ' to favorites'} onClick={() => toggleFav(l.ticker)}>{fav.has(l.ticker) ? '★' : '☆'}</button>
+      <button className="pick" onClick={() => select(l.ticker)} aria-current={l.ticker === ticker ? 'true' : undefined}>
+        <span className="nm"><b>{l.name}</b><span className="tk">{l.ticker}</span></span>
+        <span className="small muted">{jobName(l.implements) || 'direct runs only'}</span>
+        <span className="meta small"><span>{money(l.record.pricePerRun)} per run</span><Trend h={l.record.history} />{l.record.keptPromise != null && <span className={l.record.keptPromise >= 1 ? 'gain' : 'loss'}>{Math.round(l.record.keptPromise * 100)}% of promise</span>}<span className="muted">{l.record.runs} {l.record.runs === 1 ? 'run' : 'runs'}</span></span>
+      </button>
+    </li>
+  );
 
   return (
     <div className="grid ex">
-      <section className="panel" aria-label="Listed recipes">
-        <header><h2>Listed recipes</h2><span className="muted small">{listings?.length ?? 0}</span></header>
-        <table>
-          <thead><tr><th>Recipe</th><th className="r">Per run</th><th className="r">Kept promise</th></tr></thead>
-          <tbody>
-            {(listings ?? []).map((l) => (
-              <tr key={l.ticker} className={'click' + (l.ticker === ticker ? ' sel' : '')} onClick={() => setTicker(l.ticker)}>
-                <td><b>{l.ticker}</b><div className="small muted">{l.name}</div></td>
-                <td className="r">{money(l.record.pricePerRun)}<Trend h={l.record.history} /></td>
-                <td className="r">{l.record.keptPromise == null ? <span className="muted">—</span> : `${Math.round(l.record.keptPromise * 100)}%`}<div className="small muted">{l.record.runs} {l.record.runs === 1 ? 'run' : 'runs'}</div></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="body small muted">
-          Prices are set by demand: each recipe's price per run rises when it's busy and falls when it's idle, inside a band its creator sets. You pay for one run, nothing more. Each creator posts a guarantee deposit: when a run delivers less than its signed quote promised, the shortfall is paid to you from it, in the same settlement.
-          {!listings?.some((l) => l.ticker === 'CLNP') && <p><button className="btn sm" onClick={() => go('compose')}>Compose “Clean up and protect”</button></p>}
+      <section className="grid" style={{ alignContent: 'start' }}>
+        <div className="panel" aria-label="Find a recipe">
+          <div className="body" style={{ paddingBottom: 6 }}>
+            <input className="search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search recipes, jobs, parts, creators" aria-label="Search recipes" />
+          </div>
+          {favs.length > 0 && <><div className="listhead">Favorites</div><ul className="rlist">{favs.map(row)}</ul></>}
+          <div className="listhead">{q ? `${shown.length} matching` : 'All recipes'}<span className="muted"> · {listings?.length ?? 0} listed</span></div>
+          <ul className="rlist">{rest.map(row)}</ul>
+          {listings && !shown.length && <div className="body small muted">No recipe matches “{q}”. If nobody offers what you need, request it below.</div>}
+          {listings && !listings.some((l) => l.ticker === 'CLNP') && !q && <div className="body small muted" style={{ borderTop: '1px solid var(--rule-soft)' }}>One more is not listed yet: “Clean up and protect” (CLNP). Play the demo story to watch a creator compose and publish it, or build it yourself in Compose.</div>}
         </div>
+        <RequestRecipe jobs={jobs} />
       </section>
 
       <section className="grid" style={{ minWidth: 0 }}>
-        {rec && m.listing && (
-          <div className="panel">
-            <div className="body">
-              <div className="row between wrap" style={{ alignItems: 'flex-start' }}>
-                <div>
-                  <div className="small muted">{ticker} · by {m.listing.creator} · v{m.onchain?.version ?? 1}</div>
-                  <h1 className="listing-name">{m.listing.name}</h1>
-                  <p className="muted" style={{ maxWidth: 640, margin: '6px 0 0' }}>{m.listing.description}</p>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div className="bigpx">{money(rec.pricePerRun)} <span className="small muted">per run now</span></div>
-                  <div className="small muted">{rec.pricing.fixed ? 'fixed price' : `band ${money(rec.pricing.floor)}–${money(rec.pricing.ceiling)}`}</div>
-                  <div className="small muted">{rec.runs} paid {rec.runs === 1 ? 'run' : 'runs'} · {money(rec.revenue)} billed</div>
-                  <button className="btn sm" style={{ marginTop: 8 }} onClick={() => go('run', ticker)}>Get a quote</button>
-                </div>
-              </div>
-            </div>
-            <PriceHistory rec={rec} />
-          </div>
-        )}
-        {rec && (
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-            <MarketPrice ticker={ticker} rec={rec} onDone={refresh} />
-            <div className="panel">
-              <header><h2>Track record</h2><span className="small muted">on-chain</span></header>
-              <dl className="kv body">
-                <dt>Successful runs</dt><dd>{rec.runs}</dd>
-                <dt>Refunded runs</dt><dd>{rec.failed}</dd>
-                <dt>Aborted before running</dt><dd>{rec.aborted}</dd>
-                <dt>Delivered vs promised</dt><dd>{rec.keptPromise == null ? 'no quoted runs yet' : `${(rec.keptPromise * 100).toFixed(0)}%`}</dd>
-                <dt>Paid to buyers from the deposit</dt><dd>{money(rec.deposit.paidToBuyers, 2)}</dd>
-                <dt>Version</dt><dd>v{m.onchain?.version ?? 1}{m.onchain?.pending_sealed_hash ? <div className="small"><span className="pill warn">v{(m.onchain.version ?? 1) + 1} announced</span> takes effect {new Date(Number(BigInt(m.onchain.update_effective_ns) / 1_000_000n)).toLocaleString()}. Runs already paid keep the version they paid for.</div> : null}</dd>
-                <dt>Settlement</dt><dd>{m.onchain?.settle_mode === 'checkpoint' ? 'per checkpoint: each part is paid as soon as it finishes; durable multi-step runs' : 'one receipt at the end of the run'}</dd>
-                <dt>Withdrawal risk</dt><dd>{m.listing?.risk ?? '—'}</dd>
-              </dl>
-            </div>
-            <Deposit ticker={ticker} rec={rec} deposits={m.deposits} onDone={refresh} />
-            <div className="panel">
-              <header><h2>Where each run’s price goes</h2></header>
-              <dl className="kv body">
-                <dt>Protocol</dt><dd>{money(rec.perRun.protocol, 4)}</dd>
-                <dt>Runner</dt><dd>{money(rec.perRun.runner, 4)}</dd>
-                {rec.perRun.parts.map((p: any, i: number) => <span key={i} style={{ display: 'contents' }}><dt>Part · {p.part.split('@')[0]}</dt><dd>{money(p.amount, 4)}</dd></span>)}
-                <dt>Creator</dt><dd>{money(rec.perRun.creator, 4)}</dd>
-                <dt>To the guarantee deposit</dt><dd>{money(rec.perRun.reserve, 4)} <span className="small muted">({rec.perRun.reserveBps / 100}% of the creator’s cut)</span></dd>
-              </dl>
-              <div className="body small muted" style={{ paddingTop: 0 }}>Sums to exactly {money(rec.perRun.price, 4)}; proved for every input in verification/.</div>
-            </div>
-          </div>
-        )}
-        {m && (
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-            <div className="panel">
-              <header><h2>Settlements</h2><span className="small muted">one receipt per paid run</span></header>
-              {m.settlements.length === 0 && <div className="body muted small">No paid runs yet. Run the recipe to see every party get paid in one receipt.</div>}
-              <table><tbody>
-                {m.settlements.slice(0, 8).map((x: any) => (
-                  <tr key={x.run_id}><td><span className="hash">{short(x.tx, 6, 4)}</span><div className="small muted">{x.payouts.length} payees{x.compensation !== '0' ? ` · ${usd(x.compensation)} paid to buyer` : ''}</div></td><td className="r">{usd(x.price, 2)}</td><td className="r small">{usd(x.reserve)} to deposit</td></tr>
-                ))}
-              </tbody></table>
-            </div>
-            <div className="panel">
-              <header><h2>What the marketplace can see</h2></header>
-              <div className="body grid" style={{ gap: 8 }}>
-                <div className="parts-strip">
-                  {m.listing?.parts.map((b: string, i: number) => (
-                    <span key={b + i} className="row" style={{ gap: 6 }}>{i > 0 && <span className="arrow">›</span>}<span className="blk">{b.split('@')[0]}<small>{b.split('@')[1]}</small></span></span>
-                  ))}
-                </div>
-                <div className="small">Form: {m.listing?.form.map((f: any) => f.label).join(', ')}</div>
-                <div className="sealed-box">Wiring, parameters and prompts are sealed to the runner. On-chain commitment <span className="hash">{short(m.onchain?.sealed_hash ?? '', 14, 8)}</span></div>
-              </div>
-            </div>
-          </div>
-        )}
+        {ticker && <RecipeDetail key={ticker} ticker={ticker} listings={listings ?? []} jobName={jobName} />}
       </section>
     </div>
+  );
+}
+
+/** Job types nobody serves yet: request one (open demand), and put a bounty on it for builders. */
+function RequestRecipe({ jobs }: { jobs?: any[] }) {
+  const { toast } = useApp();
+  const unserved = (jobs ?? []).filter((j) => !j.recipes.length);
+  const [open, setOpen] = useState<string | null>(null);
+  const [demand, refresh] = usePoll<{ job_type: string }[]>('/api/demand', 5000);
+  if (!unserved.length) return null;
+  const request = async (id: string) => {
+    try { await api('/api/demand', { job_type: id }); refresh(); setOpen(id); toast('Request recorded: builders see it as open demand'); } catch (e) { toast((e as Error).message, true); }
+  };
+  return (
+    <div className="panel">
+      <header><h2>Need something nobody offers?</h2></header>
+      <div className="body grid" style={{ gap: 8 }}>
+        <div className="small muted">These jobs have no recipe yet. Requesting one tells builders there is demand; a bounty pays an agent on NEAR AI Agent Market to build it.</div>
+        {unserved.map((j) => {
+          const n = (demand ?? []).filter((d) => d.job_type === j.id).length;
+          return (
+            <div key={j.id} className="jobreq">
+              <div><b>{j.name}</b><div className="small muted">{j.description}</div>{n > 0 && <div className="small">{n} request{n > 1 ? 's' : ''} so far</div>}</div>
+              <div className="row" style={{ gap: 6 }}>
+                <button className="btn ghost sm" onClick={() => request(j.id)}>Request it</button>
+                <button className="btn ghost sm" aria-expanded={open === j.id} onClick={() => setOpen(open === j.id ? null : j.id)}>{open === j.id ? 'Hide bounty' : 'Bounty'}</button>
+              </div>
+              {open === j.id && <div style={{ gridColumn: '1 / -1' }}><Bounties jobType={j.id} served={false} /></div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function RecipeDetail({ ticker, listings, jobName }: { ticker: string; listings: any[]; jobName: (id?: string | null) => string }) {
+  const { go } = useApp();
+  const [m, refresh] = usePoll<any>(`/api/recipe/${ticker}`, 1500, [ticker]);
+  const rec = m?.record;
+  const l = listings.find((x) => x.ticker === ticker);
+  const rivals = listings.filter((x) => x.ticker !== ticker && l?.implements && x.implements === l.implements);
+  if (!rec || !m.listing) return <div className="panel body muted">Loading {ticker}…</div>;
+  return (
+    <>
+      <div className="panel">
+        <div className="body">
+          <div className="row between wrap" style={{ alignItems: 'flex-start' }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="small muted">{ticker} · by {m.listing.creator} · v{m.onchain?.version ?? 1}</div>
+              <h1 className="listing-name">{m.listing.name}</h1>
+              <p className="muted" style={{ maxWidth: 640, margin: '6px 0 0' }}>{m.listing.description}</p>
+              {l?.implements && <div className="row wrap small" style={{ gap: 6, marginTop: 8 }}>
+                <span className="pill">does: {jobName(l.implements)}</span>
+                <span className={'pill ' + (m.listing.risk === 'low' ? 'ok' : m.listing.risk === 'high' ? 'bad' : 'warn')} title="How likely a part's model or service is withdrawn or changed (SRS-1 §2.1)">{m.listing.risk} withdrawal risk</span>
+                {m.listing.privacy === 'confidential' && <span className="pill sealed">confidential swaps</span>}
+              </div>}
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div className="bigpx">{money(rec.pricePerRun)} <span className="small muted">per run now</span></div>
+              <div className="small muted">{rec.pricing.fixed ? 'fixed price' : `band ${money(rec.pricing.floor)}–${money(rec.pricing.ceiling)}`}</div>
+              <div className="small muted">{rec.runs} paid {rec.runs === 1 ? 'run' : 'runs'} · {money(rec.revenue)} billed</div>
+              <button id="get-quote" className="btn" style={{ marginTop: 8 }} onClick={() => go({ page: 'quote', ticker })}>Get a quote</button>
+            </div>
+          </div>
+          {rivals.length > 0 && <div className="small" style={{ marginTop: 10 }}>
+            <span className="muted">Also does this job: </span>
+            {rivals.map((r) => <button key={r.ticker} className="chip" onClick={() => go({ page: 'recipes', ticker: r.ticker })}>{r.ticker} · {money(r.record.pricePerRun)}{r.record.keptPromise != null ? ` · ${Math.round(r.record.keptPromise * 100)}% of promise` : ''}</button>)}
+          </div>}
+        </div>
+        <PriceHistory rec={rec} />
+      </div>
+      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', alignItems: 'start' }}>
+        <MarketPrice ticker={ticker} rec={rec} onDone={refresh} />
+        <div className="panel">
+          <header><h2>Track record</h2><span className="small muted">on-chain</span></header>
+          <dl className="kv body">
+            <dt>Successful runs</dt><dd>{rec.runs}</dd>
+            <dt>Refunded runs</dt><dd>{rec.failed}</dd>
+            <dt>Aborted before running</dt><dd>{rec.aborted}</dd>
+            <dt>Delivered vs promised</dt><dd>{rec.keptPromise == null ? 'no quoted runs yet' : `${(rec.keptPromise * 100).toFixed(0)}%`}</dd>
+            <dt>Paid to buyers from the deposit</dt><dd>{money(rec.deposit.paidToBuyers, 2)}</dd>
+            <dt>Version</dt><dd>v{m.onchain?.version ?? 1}{m.onchain?.pending_sealed_hash ? <div className="small"><span className="pill warn">v{(m.onchain.version ?? 1) + 1} announced</span> takes effect {new Date(Number(BigInt(m.onchain.update_effective_ns) / 1_000_000n)).toLocaleString()}. Runs already paid keep the version they paid for.</div> : null}</dd>
+            <dt>Settlement</dt><dd>{m.onchain?.settle_mode === 'checkpoint' ? 'per checkpoint: each part is paid as soon as it finishes' : 'one receipt at the end of the run'}</dd>
+          </dl>
+        </div>
+        <Deposit ticker={ticker} rec={rec} deposits={m.deposits} onDone={refresh} />
+        <div className="panel">
+          <header><h2>Where each run’s price goes</h2></header>
+          <dl className="kv body">
+            <dt>Protocol</dt><dd>{money(rec.perRun.protocol, 4)}</dd>
+            <dt>Runner</dt><dd>{money(rec.perRun.runner, 4)}</dd>
+            {rec.perRun.parts.map((p: any, i: number) => <span key={i} style={{ display: 'contents' }}><dt>Part · {p.part.split('@')[0]}</dt><dd>{money(p.amount, 4)}</dd></span>)}
+            <dt>Creator</dt><dd>{money(rec.perRun.creator, 4)}</dd>
+            <dt>To the guarantee deposit</dt><dd>{money(rec.perRun.reserve, 4)} <span className="small muted">({rec.perRun.reserveBps / 100}% of the creator’s cut)</span></dd>
+          </dl>
+          <div className="body small muted" style={{ paddingTop: 0 }}>Sums to exactly {money(rec.perRun.price, 4)}; proved for every input in verification/.</div>
+        </div>
+        <div className="panel">
+          <header><h2>What the marketplace can see</h2></header>
+          <div className="body grid" style={{ gap: 8 }}>
+            <div className="parts-strip">
+              {m.listing?.parts.map((b: string, i: number) => (
+                <span key={b + i} className="row" style={{ gap: 6 }}>{i > 0 && <span className="arrow">›</span>}<button className="blk" title="Open this part's internals (all parts are public in this demo)" onClick={() => go({ page: 'compose', sub: 'part', part: b })}>{b.split('@')[0]}<small>{b.split('@')[1]}</small></button></span>
+              ))}
+            </div>
+            <div className="small">Buyer form: {m.listing?.form.map((f: any) => f.label).join(', ')}</div>
+            <div className="sealed-box">Wiring, parameters and prompts are sealed to the runner. On-chain commitment <span className="hash">{short(m.onchain?.sealed_hash ?? '', 14, 8)}</span></div>
+          </div>
+        </div>
+        <div className="panel">
+          <header><h2>Settlements</h2><span className="small muted">one receipt per paid run</span></header>
+          {m.settlements.length === 0 && <div className="body muted small">No paid runs yet. Get a quote and run it to see every party paid in one receipt.</div>}
+          <table><tbody>
+            {m.settlements.slice(0, 8).map((x: any) => (
+              <tr key={x.run_id}><td><span className="hash">{short(x.tx, 6, 4)}</span><div className="small muted">{x.payouts.length} payees{x.compensation !== '0' ? ` · ${usd(x.compensation)} paid to buyer` : ''}</div></td><td className="r">{usd(x.price, 2)}</td><td className="r small">{usd(x.reserve)} to deposit</td></tr>
+            ))}
+          </tbody></table>
+        </div>
+      </div>
+    </>
   );
 }
 

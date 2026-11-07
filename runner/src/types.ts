@@ -12,9 +12,22 @@ export interface Holding {
   usd: number;
   listed: boolean; // quoted by 1Click solvers
 }
+/** an access key as NEAR RPC view_access_key_list returns it, flattened (key.list) */
+export interface AccessKey { public_key: string; kind: 'full' | 'function-call'; receiver?: string; methods?: string[]; allowance?: string | null; nonce: number; action?: 'revoke' | 'review' | 'keep'; reason?: string }
+/** a delegation to a staking pool (stake.list) */
+export interface StakePosition { pool: string; staked: string; unstaked: string; can_withdraw: boolean; fee_pct: number; active: boolean }
+/** what a contract account exposes before you call it (contract.facts) */
+export interface ContractFacts { account: string; exists: boolean; has_code: boolean; code_hash?: string; storage_bytes?: number; full_access_keys: number; source: { version?: string; link?: string; standards?: { standard: string; version: string }[] } | null; listed_token: boolean }
+export interface ContractVerdict { risk: 'low' | 'medium' | 'high'; reasons: string[]; source: 'nearai-tee' | 'rules' }
+/** generic report item rendered by the buyer's client */
+export interface ReportItem { label: string; detail: string; tag?: 'ok' | 'warn' | 'bad' }
 export interface Flag { assetId: string; symbol: string; verdict: 'SCAM' | 'OK'; reason: string; source: 'nearai-tee' | 'allowlist' }
 
-export interface NearTx { receiverId: string; actions: { type: 'FunctionCall'; params: { methodName: string; args: Record<string, unknown>; gas: string; deposit: string } }[] }
+export type NearAction =
+  | { type: 'FunctionCall'; params: { methodName: string; args: Record<string, unknown>; gas: string; deposit: string } }
+  | { type: 'DeleteKey'; params: { publicKey: string } };
+/** wallet-selector / near-connect transaction shape (signAndSendTransactions) */
+export interface NearTx { receiverId: string; actions: NearAction[] }
 export interface ApprovalRequest { title: string; signer: string; transactions: NearTx[]; summary: { symbol: string; amount: string; usd: number; to: string }[];
   /** NEAR Intents: an off-chain NEP-413 message for the wallet to sign (e.g. one atomic bundle of swaps) */
   sign_message?: Nep413Payload; sign_summary?: string }

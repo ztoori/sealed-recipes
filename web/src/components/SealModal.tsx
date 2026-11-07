@@ -9,8 +9,16 @@ import { api, runnerAttestation, short } from '../api';
 const rand = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
 
 /** The "seal" moment: verify the runner, encrypt in this browser, publish only ciphertext + listing. */
+/**
+ * verifying → verified → sealed → publishing → published, with explicit failure states and retries:
+ * verify_failed (retry verify), publish_failed (retry publish with the same ciphertext).
+ */
+type Phase = 'verifying' | 'verify_failed' | 'verified' | 'sealed' | 'publishing' | 'publish_failed' | 'published';
+const STAGE: Record<Phase, number> = { verifying: 0, verify_failed: 0, verified: 1, sealed: 2, publishing: 2, publish_failed: 2, published: 3 };
+
 export function SealModal({ recipe, catalog, auto, onClose }: { recipe: Recipe; catalog: Catalog; auto: boolean; onClose: (published: boolean) => void }) {
-  const [stage, setStage] = useState(0); // 0 verify, 1 seal, 2 publish, 3 done
+  const [phase, setPhase] = useState<Phase>('verifying');
+  const stage = STAGE[phase];
   const [checks, setChecks] = useState<Check[]>([]);
   const [env, setEnv] = useState<SealedEnvelope>();
   const [encPk, setEncPk] = useState('');
@@ -18,17 +26,20 @@ export function SealModal({ recipe, catalog, auto, onClose }: { recipe: Recipe; 
   const [err, setErr] = useState('');
   const started = useRef(false);
 
-  const verify = async () => {
-    setErr('');
-    const nonce = rand();
-    const { attestation, onchain } = await runnerAttestation(nonce);
-    const v = verifyRunnerAttestation(attestation, { nonce, signing_pk: onchain.signing_pk, enc_pk_hex: onchain.enc_pk_hex, codehash: onchain.codehash });
-    setChecks(v.checks);
-    if (!v.ok) { setErr('Runner attestation failed. Do not seal to this key.'); return false; }
-    setEncPk(onchain.enc_pk_hex); setStage(1); return onchain.enc_pk_hex as string;
+  const verify = async (): Promise<string | false> => {
+    setErr(''); setPhase('verifying');
+    try {
+      const nonce = rand();
+      const { attestation, onchain } = await runnerAttestation(nonce);
+      const v = verifyRunnerAttestation(attestation, { nonce, signing_pk: onchain.signing_pk, enc_pk_hex: onchain.enc_pk_hex, codehash: onchain.codehash });
+      setChecks(v.checks);
+      if (!v.ok) { setErr('Runner attestation failed. Do not seal to this key.'); setPhase('verify_failed'); return false; }
+      setEncPk(onchain.enc_pk_hex); setPhase('verified'); return onchain.enc_pk_hex as string;
+    } catch (e) { setErr((e as Error).message); setPhase('verify_failed'); return false; }
   };
-  const doSeal = (pk: string) => { const e = seal(recipe, pk, 'recipe'); setEnv(e); setStage(2); return e; };
+  const doSeal = (pk: string) => { const e = seal(recipe, pk, 'recipe'); setEnv(e); setPhase('sealed'); return e; };
   const publish = async (e: SealedEnvelope) => {
+    setErr(''); setPhase('publishing');
     try {
       const listing = publicListing(recipe, catalog);
       // a second copy sealed to the creator's own key (derived from a wallet signature; local demo wallet here),
@@ -36,15 +47,15 @@ export function SealModal({ recipe, catalog, auto, onClose }: { recipe: Recipe; 
       const who = recipe.meta.creator;
       const creator_copy = seal(recipe, creatorKeyFromSignature(demoWalletSign(who, creatorKeyMessage(who))).publicKeyHex, 'creator-copy');
       const r = await api('/api/publish', { listing, sealed: e, bond: recipe.listing.bond ?? '0', settle_mode: recipe.listing.settle_mode ?? 'final', creator_copy });
-      setTx(r); setStage(3); return true;
-    } catch (x) { setErr((x as Error).message); return false; }
+      setTx(r); setPhase('published'); return true;
+    } catch (x) { setErr((x as Error).message); setPhase('publish_failed'); return false; }
   };
 
   useEffect(() => {
     if (started.current) return; started.current = true;
     (async () => {
-      const pk = await verify().catch((e) => { setErr(e.message); return false as const; });
-      if (typeof pk !== 'string' || !auto) return;
+      const pk = await verify();
+      if (!pk || !auto) return;
       await new Promise((r) => setTimeout(r, 1600));
       const e = doSeal(pk);
       await new Promise((r) => setTimeout(r, 2200));
@@ -75,10 +86,12 @@ export function SealModal({ recipe, catalog, auto, onClose }: { recipe: Recipe; 
           {tx && <div className="small"><span className="muted">publish_recipe</span><div className="hash">tx {tx.tx} · block {tx.height}</div></div>}
           {err && <div className="diag error">{err}</div>}
           <div className="row wrap">
-            {stage === 1 && !auto && <button className="btn seal" onClick={() => doSeal(encPk)}>Seal in this browser</button>}
-            {stage === 2 && !auto && env && <button className="btn" onClick={() => publish(env)}>Publish {recipe.meta.ticker}</button>}
-            {stage === 3 && <button className="btn" onClick={() => onClose(true)}>Open the listing</button>}
-            {stage < 3 && !auto && <button className="btn ghost" onClick={() => onClose(false)}>Cancel</button>}
+            {phase === 'verify_failed' && <button className="btn ghost" onClick={() => verify()}>Verify again</button>}
+            {phase === 'verified' && !auto && <button className="btn seal" onClick={() => doSeal(encPk)}>Seal in this browser</button>}
+            {(phase === 'sealed' || phase === 'publish_failed') && !auto && env && <button className="btn" onClick={() => publish(env)}>{phase === 'publish_failed' ? 'Try publishing again' : `Publish ${recipe.meta.ticker}`}</button>}
+            {phase === 'publishing' && <span className="small muted">Publishing…</span>}
+            {phase === 'published' && <button className="btn" onClick={() => onClose(true)}>Open the listing</button>}
+            {phase !== 'published' && phase !== 'publishing' && (!auto || phase.endsWith('failed')) && <button className="btn ghost" onClick={() => onClose(false)}>{phase === 'publish_failed' || phase === 'verify_failed' ? 'Back to editing' : 'Cancel'}</button>}
           </div>
         </div>
       </div>

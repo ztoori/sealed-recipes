@@ -48,6 +48,7 @@ const catalog = loadCatalog(ROOT);
 const tokens = JSON.parse(readFileSync(resolve(ROOT, 'fixtures/oneclick-tokens.json'), 'utf8')).tokens as Token[];
 const world = new World(resolve(ROOT, 'fixtures/wallets.json'), resolve(ROOT, 'fixtures/oneclick-tokens.json'));
 world.loadAirdrops(resolve(ROOT, 'fixtures/airdrops.json'));
+world.loadChainState(resolve(ROOT, 'fixtures/chain-state.json'));
 /** notice period before a new recipe version takes effect (24 h is the suggested mainnet value; short for the demo) */
 const UPDATE_DELAY_S = Number(env.SRS_UPDATE_DELAY_S ?? 30);
 /** v6 pricing period: 1 h suggested on mainnet; 2 min in the demo so prices visibly follow demand */
@@ -58,6 +59,8 @@ const ledger = new LocalLedger({ contractId: CONTRACT_ID, owner: 'srs-dao.testne
 type Ev = { seq: number; at: number; source: 'market' | 'intents' | 'runner' | 'chain'; type: string; data: Record<string, unknown> };
 /** `token` is a capability returned only to the buyer who requested the quote: it gates the event stream and approvals. */
 interface RunCtx { run_id: string; token: string; recipe_id: string; buyer: string; sealed_inputs: SealedEnvelope; inputs_hash: string; quote: QuoteResponse; events: Ev[]; listeners: Set<(e: Ev) => void>; started: boolean; approvalPending: boolean;
+  /** payment side of the run, explicit: quoted → deposit_sent (once) → delivered (the solver's ft_transfer_call reached the contract) */
+  payment: 'quoted' | 'deposit_sent' | 'delivered';
   /** durable runs: the latest checkpoint the runner stored (ciphertext sealed to the runner + its signature) */
   checkpoint?: CheckpointRecord;
   /** approvals relayed to the runner, by node: replayed on resume so the buyer is never asked to sign twice */
@@ -85,7 +88,7 @@ const mocks = mockRouter(world, tokens, {
           pushEv(r, 'chain', 'payment_rejected', { error: String((last?.data[0] as { reason?: string })?.reason ?? 'rejected'), refunded_to: r.buyer, tx: last?.tx_hash });
           return;
         }
-        if (r) pushEv(r, 'chain', 'run_requested', { tx: last?.tx_hash, height: ledger.height, amount: amountOut, solver: SOLVER, depositAddress });
+        if (r) { r.payment = 'delivered'; pushEv(r, 'chain', 'run_requested', { tx: last?.tx_hash, height: ledger.height, amount: amountOut, solver: SOLVER, depositAddress }); }
         if (r) void startRunner(r);
       } catch (e) { if (r) pushEv(r, 'chain', 'payment_rejected', { error: (e as Error).message }); }
       return;
@@ -306,6 +309,7 @@ app.get('/api/mode', (_, res) => j(res, {
   services: { fastnear: 'mock', rpc: 'mock', oneclick: 'fixture (frozen token sample)', nearai: 'mock (real secp256k1 signatures, no hardware quote)', tee: 'local-dev runner (no hardware quote)' },
   ai_signing_address: mocks.aiSigningAddress,
 }));
+app.get('/api/tokens', async (_, res) => { try { j(res, await mocks.oneclick.tokens()); } catch (e) { res.status(502).json({ error: (e as Error).message }); } });
 app.get('/api/catalog', (_, res) => j(res, { ...catalog, onchain: Object.fromEntries([...ledger.parts].map(([k, b]) => [k, { author: b.author, manifest_hash: b.manifest_hash, fee_per_call: b.fee_per_call, active: b.active }])) }));
 app.get('/api/listings', (_, res) => j(res, [...listings.values()].map((l) => ({ ...l, record: record(l.ticker), onchain: ledger.get_recipe(l.ticker) }))));
 app.get('/api/vault/:ticker', (req, res) => { const v = currentSealed(String(req.params.ticker)); v ? res.json({ envelope: v, sealed_hash: sealedHash(v) }) : res.status(404).json({ error: 'not found' }); });
@@ -368,6 +372,12 @@ app.get('/api/account/:account', (req, res) => {
     /** recipes this account created: what they earned and the guarantee deposit backing them */
     created: [...ledger.recipes.values()].filter((r) => r.creator === a).map((r) => ({ ticker: r.id, name: r.name, runs: r.runs, earned: settlementsOf(r.id).reduce((s, e) => s + BigInt(((e.data[0] as { payouts: { account_id: string; role: string; amount: string }[] }).payouts.find((p) => p.role === 'creator')?.amount) ?? 0), 0n), deposit_available: r.bond_available, deposit_locked: r.bond_locked })),
     wallet: world.tokensOf(a).map((t) => ({ ...t, ...world.meta.get(t.contract_id) })),
+    /** the account's own on-chain state, as a wallet would show it (local world): native NEAR, keys, delegations */
+    chain: {
+      native: String(world.native.get(a) ?? 0n),
+      keys: (world.accessKeys.get(a) ?? []).map((k) => ({ public_key: k.public_key, full: k.access_key.permission === 'FullAccess', receiver: (k.access_key.permission as { FunctionCall?: { receiver_id: string } }).FunctionCall?.receiver_id })),
+      stakes: [...world.stakes].flatMap(([pool, m]) => (m.has(a) ? [{ pool, staked: String(m.get(a)!.staked), unstaked: String(m.get(a)!.unstaked), can_withdraw: m.get(a)!.can_withdraw, active: world.pools.get(pool)?.active ?? false }] : [])),
+    },
   });
 });
 app.get('/api/intents/log', (_, res) => j(res, mocks.oneclick.log.slice(-60)));
@@ -379,6 +389,22 @@ const jobLog = new Map<string, number[]>();
 const openDemand: { job_type: string; at: string }[] = [];
 app.get('/api/jobs', (_, res) => j(res, (catalog.jobs ?? []).map((jt) => ({ ...jt, recipes: [...listings.values()].filter((l) => l.implements === jt.id).map((l) => l.ticker) }))));
 app.get('/api/demand', (_, res) => j(res, openDemand.slice(-50).reverse()));
+/** "Request a recipe": records open demand for a job type nobody serves yet. No inputs are sent, so nothing about a wallet leaks. */
+app.post('/api/demand', guard((req, res) => {
+  const { job_type } = req.body as { job_type: string };
+  if (!catalog.jobs?.some((jt) => jt.id === job_type)) throw new LedgerError('unknown job type');
+  const recent = openDemand.filter((d) => d.job_type === job_type && Date.now() - Date.parse(d.at) < 2000);
+  if (!recent.length) openDemand.push({ job_type, at: new Date().toISOString() });
+  j(res, { ok: true, requests: openDemand.filter((d) => d.job_type === job_type).length });
+}));
+/** Part internals for the part builder: every part in this demo is public, so its manifest and source are served. */
+app.get('/api/parts/:id/source', (req, res) => {
+  const m = catalog.parts.find((p) => p.id === req.params.id);
+  if (!m?.implementation || !/^runner\/src\/parts\/[a-z0-9-]+\.ts$/.test(m.implementation)) { res.status(404).json({ error: 'no public source for this part' }); return; }
+  const src = readFileSync(resolve(ROOT, m.implementation), 'utf8');
+  const helpers = [...src.matchAll(/from '\.\/([a-z0-9-]+)\.js'/g)].map((x) => x[1]);
+  j(res, { id: m.id, path: m.implementation, source: src, helpers, visibility: 'public' });
+});
 
 // ---- builder bounties on NEAR AI Agent Market (server/src/bounties.ts) ----
 // Live: AGENT_MARKET_URL=https://market.near.ai AGENT_MARKET_API_KEY=<key from POST /v1/agents/register>. Default: an
@@ -473,7 +499,7 @@ app.post('/api/runs/quote', guard(async (req, res) => {
   const qreq = runPaymentQuoteRequest({ originAsset: pay_asset, refundTo: refund_to || buyer, contractId: CONTRACT_ID, price: price.toString(), msg });
   const quote = await mocks.oneclick.quote(qreq);
   const token = randomBytes(24).toString('hex');
-  const ctx: RunCtx = { run_id, token, recipe_id, buyer, sealed_inputs, inputs_hash, quote, events: [], listeners: new Set(), started: false, approvalPending: false, approvals: {}, done: false };
+  const ctx: RunCtx = { run_id, token, recipe_id, buyer, sealed_inputs, inputs_hash, quote, events: [], listeners: new Set(), started: false, approvalPending: false, payment: 'quoted', approvals: {}, done: false };
   runs.set(run_id, ctx);
   pushEv(ctx, 'intents', 'quote', { request: qreq, quote: quote.quote, correlationId: quote.correlationId });
   j(res, { run_id, run_token: token, inputs_hash, msg, quote });
@@ -486,9 +512,12 @@ const runFor = (req: express.Request) => {
 };
 app.post('/api/runs/:id/pay', guard(async (req, res) => {
   const r = runFor(req);
+  // one deposit per run ticket: a second click, a retry or a replayed request must never send funds twice
+  if (r.payment !== 'quoted') throw new LedgerError('this run ticket is already paid');
+  r.payment = 'deposit_sent';
   const txHash = sha256Hex('pay|' + r.run_id + Date.now()).slice(0, 44);
   const dep = r.quote.quote.depositAddress!;
-  await mocks.oneclick.submitDeposit(dep, txHash);
+  try { await mocks.oneclick.submitDeposit(dep, txHash); } catch (e) { r.payment = 'quoted'; throw e; } // nothing was sent: the ticket can be paid again
   pushEv(r, 'intents', 'deposit_submitted', { txHash, depositAddress: dep, amountIn: r.quote.quote.amountInFormatted, asset: r.quote.quoteRequest.originAsset });
   // poll 1Click status like a client would; delivery triggers ft_on_transfer (see onDelivered)
   void (async () => {
@@ -509,18 +538,30 @@ app.post('/api/runs/:id/pay', guard(async (req, res) => {
 app.post('/api/runs/:id/approve', guard(async (req, res) => {
   const r = runFor(req); if (!r.approvalPending) throw new LedgerError('no approval pending');
   const approved = !!req.body?.approved;
-  const txs = (approved ? req.body.transactions ?? [] : []) as { receiverId: string; actions: { type: string; params: { methodName: string; args: { receiver_id: string; amount: string } } }[] }[];
+  const txs = (approved ? req.body.transactions ?? [] : []) as { receiverId: string; actions: { type: string; params: { methodName: string; publicKey: string; args: { receiver_id: string; amount: string } } }[] }[];
   const txHashes: string[] = [];
   for (const t of txs) {
     const a = t.actions?.[0];
     const m = a?.params?.methodName;
+    // DeleteKey actions on the buyer's own account (keys.revoke part)
+    if (t.actions.length >= 1 && t.actions.every((x) => x.type === 'DeleteKey') && t.receiverId === r.buyer) {
+      for (const x of t.actions) world.deleteKey(r.buyer, String(x.params.publicKey));
+      txHashes.push(sha256Hex(`delkey|${r.buyer}|${Date.now()}`).slice(0, 44));
+      continue;
+    }
+    // withdraw_all on a staking pool the buyer delegates to (staking.withdraw part)
+    if (t.actions.length === 1 && a?.type === 'FunctionCall' && m === 'withdraw_all' && world.stakes.has(t.receiverId)) {
+      world.withdrawAll(t.receiverId, r.buyer);
+      txHashes.push(sha256Hex(`withdraw|${t.receiverId}|${r.buyer}|${Date.now()}`).slice(0, 44));
+      continue;
+    }
     // airdrop claims: claim({receiver_id}) on a demo distributor (airdrop.claim part)
     if (t.actions.length === 1 && a?.type === 'FunctionCall' && m === 'claim' && world.airdrops.has(t.receiverId)) {
       world.claim(t.receiverId, r.buyer, String(a.params.args.receiver_id));
       txHashes.push(sha256Hex(`claim|${t.receiverId}|${a.params.args.receiver_id}|${Date.now()}`).slice(0, 44));
       continue;
     }
-    if (t.actions.length !== 1 || a.type !== 'FunctionCall' || (m !== 'ft_transfer' && m !== 'ft_transfer_call') || !/^\d+$/.test(a.params.args.amount)) throw new LedgerError('demo wallet only signs single ft_transfer / ft_transfer_call actions, and claim on a demo airdrop distributor');
+    if (t.actions.length !== 1 || a.type !== 'FunctionCall' || (m !== 'ft_transfer' && m !== 'ft_transfer_call') || !/^\d+$/.test(a.params.args.amount)) throw new LedgerError('demo wallet only signs ft_transfer / ft_transfer_call, claim on a demo airdrop distributor, withdraw_all on a staking pool, and DeleteKey on your own account');
     if (m === 'ft_transfer_call' && a.params.args.receiver_id !== 'intents.near') throw new LedgerError('demo wallet only deposits into intents.near with ft_transfer_call');
     world.debit(r.buyer, t.receiverId, BigInt(a.params.args.amount));
     if (m === 'ft_transfer_call') mocks.verifier.deposit(r.buyer, t.receiverId, BigInt(a.params.args.amount)); // deposit into the Verifier

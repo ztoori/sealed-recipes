@@ -50,6 +50,45 @@ export class World {
     this.credit(receiver, d.token, amount);
     return amount;
   }
+  // ---- native NEAR, access keys, contracts and staking (fixtures/chain-state.json) ----
+  native = new Map<string, bigint>();
+  accessKeys = new Map<string, { public_key: string; access_key: { nonce: number; permission: unknown } }[]>();
+  contracts = new Map<string, { code_hash: string; storage_usage: number; amount: string; full_access_keys: number; source: unknown }>();
+  /** pool -> delegator -> position */
+  stakes = new Map<string, Map<string, { staked: bigint; unstaked: bigint; can_withdraw: boolean }>>();
+  pools = new Map<string, { fee: [number, number]; active: boolean }>();
+  loadChainState(path: string) {
+    const d = JSON.parse(readFileSync(path, 'utf8')) as {
+      native: Record<string, string>; access_keys: Record<string, { public_key: string; access_key: { nonce: number; permission: unknown } }[]>;
+      contracts: Record<string, { code_hash: string; storage_usage: number; amount: string; full_access_keys: number; source: unknown }>;
+      staking: Record<string, { pool: string; staked: string; unstaked: string; can_withdraw: boolean }[]>; pools: Record<string, { fee: [number, number]; active: boolean }>;
+    };
+    for (const [a, v] of Object.entries(d.native)) { this.native.set(a, BigInt(v)); this.namedAccounts.add(a); }
+    for (const [a, v] of Object.entries(d.access_keys)) this.accessKeys.set(a, structuredClone(v));
+    for (const [a, v] of Object.entries(d.contracts)) { this.contracts.set(a, v); this.namedAccounts.add(a); }
+    for (const [a, v] of Object.entries(d.pools)) { this.pools.set(a, v); this.namedAccounts.add(a); }
+    for (const [acct, list] of Object.entries(d.staking)) for (const x of list) {
+      if (!this.stakes.has(x.pool)) this.stakes.set(x.pool, new Map());
+      this.stakes.get(x.pool)!.set(acct, { staked: BigInt(x.staked), unstaked: BigInt(x.unstaked), can_withdraw: x.can_withdraw });
+    }
+  }
+  /** a DeleteKey action signed by the account itself */
+  deleteKey(account: string, publicKey: string) {
+    const keys = this.accessKeys.get(account) ?? [];
+    const i = keys.findIndex((k) => k.public_key === publicKey);
+    if (i < 0) throw new Error(`${account} has no access key ${publicKey}`);
+    keys.splice(i, 1);
+  }
+  /** staking pool withdraw_all, called by the delegator: unstaked NEAR that finished unbonding returns to the account */
+  withdrawAll(pool: string, account: string) {
+    const p = this.stakes.get(pool)?.get(account);
+    if (!p) throw new Error(`${account} has no stake in ${pool}`);
+    if (!p.can_withdraw) throw new Error('The unstaked balance is not yet available due to unstaking delay');
+    const amount = p.unstaked;
+    p.unstaked = 0n;
+    this.native.set(account, (this.native.get(account) ?? 0n) + amount);
+    return amount;
+  }
   exists(account: string) { return this.namedAccounts.has(account) || this.balances.has(account); }
   credit(account: string, contract: string, amount: bigint) {
     if (!this.balances.has(account)) this.balances.set(account, new Map());

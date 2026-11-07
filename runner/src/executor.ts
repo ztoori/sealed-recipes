@@ -13,6 +13,15 @@ import { wait } from './parts/wait.js';
 import { mergeReceipts } from './parts/merge-receipts.js';
 import { airdropClaim } from './parts/airdrop-claim.js';
 import { intentsAtomic } from './parts/intents-atomic.js';
+import { accessKeyList } from './parts/access-keys.js';
+import { keyRisk } from './parts/key-risk.js';
+import { keysRevoke } from './parts/keys-revoke.js';
+import { stakingPositions } from './parts/staking-positions.js';
+import { stakingWithdraw } from './parts/staking-withdraw.js';
+import { contractFacts } from './parts/contract-facts.js';
+import { aiContractRisk, rulesContractRisk } from './parts/contract-risk.js';
+import { contractReport } from './parts/contract-report.js';
+import { trimPlan } from './parts/trim-plan.js';
 
 export const HANDLERS: Record<string, PartHandler> = {
   'near.wallet-scanner@1.0.0': walletScanner,
@@ -28,6 +37,16 @@ export const HANDLERS: Record<string, PartHandler> = {
   'swap.merge@1.0.0': mergeReceipts,
   'intents.atomic-swap@1.0.0': intentsAtomic,
   'airdrop.claim@1.0.0': airdropClaim,
+  'near.access-keys@1.0.0': accessKeyList,
+  'rules.key-risk@1.0.0': keyRisk,
+  'keys.revoke@1.0.0': keysRevoke,
+  'staking.positions@1.0.0': stakingPositions,
+  'staking.withdraw@1.0.0': stakingWithdraw,
+  'near.contract-facts@1.0.0': contractFacts,
+  'ai.contract-risk@1.0.0': aiContractRisk,
+  'rules.contract-risk@1.0.0': rulesContractRisk,
+  'report.contract@1.0.0': contractReport,
+  'plan.trim@1.0.0': trimPlan,
 };
 
 export const REAL_ENDPOINTS: Endpoints = {
@@ -63,6 +82,7 @@ export function validateInputs(form: FormField[], inputs: Record<string, unknown
     const v = inputs[f.id] ?? f.default;
     if (v === undefined || v === '') { if (f.required) errs.push(`${f.label} is required`); continue; }
     if (f.type === 'usd' && !(Number(v) >= 0)) errs.push(`${f.label} must be a positive number`);
+    if (f.type === 'percent' && !(Number(v) > 0 && Number(v) < 100)) errs.push(`${f.label} must be a percentage between 0 and 100`);
     if ((f.type === 'near.account' || f.type === 'address.near') && !/^[a-z0-9._-]{2,64}$/.test(String(v))) errs.push(`${f.label} is not a NEAR account`);
     if (f.options && !f.options.includes(String(v))) errs.push(`${f.label} must be one of ${f.options.join(', ')}`);
   }

@@ -1,0 +1,72 @@
+{
+  "srs": "1.0",
+  "kind": "recipe",
+  "meta": {
+    "ticker": "CHEK",
+    "name": "Contract check before you sign",
+    "creator": "sentinel.testnet",
+    "description": "Paste a contract before you connect your wallet: a private AI reads its on-chain facts and tells you whether to walk away."
+  },
+  "form": [
+    {
+      "id": "contract",
+      "label": "Contract you're about to use",
+      "type": "near.account",
+      "required": true,
+      "placeholder": "near-gift-claim.near"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "facts",
+      "part": "near.contract-facts@1.0.0",
+      "inputs": {
+        "contract": "form.contract"
+      },
+      "params": {},
+      "ui": {
+        "x": 0,
+        "y": 120
+      }
+    },
+    {
+      "id": "judge",
+      "part": "ai.contract-risk@1.0.0",
+      "inputs": {
+        "facts": "facts.facts"
+      },
+      "params": {
+        "policy": "You review NEAR contracts for phishing. High risk: no code, upgradable by a key holder with no published source, or a name that imitates a known app (ref-finance, aurora, meteor, burrow, near). Medium: upgradable or unpublished source. Low otherwise. Give short reasons. Answer JSON only."
+      },
+      "ui": {
+        "x": 280,
+        "y": 120
+      }
+    },
+    {
+      "id": "report",
+      "part": "report.contract@1.0.0",
+      "inputs": {
+        "facts": "facts.facts",
+        "verdict": "judge.verdict"
+      },
+      "params": {},
+      "ui": {
+        "x": 560,
+        "y": 120
+      }
+    }
+  ],
+  "output": "report.report",
+  "listing": {
+    "price_per_run": "120000",
+    "reserve_bps": 1000,
+    "bond": "0",
+    "pricing": {
+      "price_floor": "120000",
+      "price_ceiling": "400000",
+      "target_runs": 3
+    }
+  },
+  "implements": "job.contract-check@1.0.0"
+}

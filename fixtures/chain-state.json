@@ -1,0 +1,36 @@
+{
+  "_note": "Fictional on-chain state for the offline demo, served by the local NEAR RPC and FastNEAR mocks in the shapes the real services return (view_access_key_list, view_account, staking-pool get_account / get_reward_fee_fraction, validators, FastNEAR /v1/account/{id}/staking, NEP-330 contract_source_metadata). No real accounts.",
+  "native": {
+    "bob.testnet": "12500000000000000000000000",
+    "carol.testnet": "3100000000000000000000000"
+  },
+  "access_keys": {
+    "bob.testnet": [
+      { "public_key": "ed25519:9FfyT3s7Yt1ZQ4Gk5WbqT8pR2mJxH6nC1vLaE3oKdUi", "access_key": { "nonce": 112000000041, "permission": "FullAccess" } },
+      { "public_key": "ed25519:4AqZr8kP2nVx7Jt1Lw9sDe3Hc6YuMb5GfTo2NiQaRzKp", "access_key": { "nonce": 98000000007, "permission": "FullAccess" } },
+      { "public_key": "ed25519:7Hn2LqVd5Ws9Kx3Rt8Jc1Fy6Pa4Mz2Ub7Eg5To3NiQb", "access_key": { "nonce": 104000000215, "permission": { "FunctionCall": { "allowance": "250000000000000000000000", "receiver_id": "v2.ref-finance.near", "method_names": [] } } } },
+      { "public_key": "ed25519:2Ck8Vb4Nm6Xz1Lp9Qr3Ws5Ed7Tf2Gh8Jy4Ui6Ok1Pa", "access_key": { "nonce": 101000000003, "permission": { "FunctionCall": { "allowance": null, "receiver_id": "near-gift-claim.near", "method_names": [] } } } },
+      { "public_key": "ed25519:5Rt7Yu2Io4Pa6Sd8Fg1Hj3Kl5Zx7Cv9Bn2Mq4We6Rt8", "access_key": { "nonce": 87000000019, "permission": { "FunctionCall": { "allowance": "250000000000000000000000", "receiver_id": "old-nft-drop.near", "method_names": ["mint"] } } } },
+      { "public_key": "ed25519:8Ws3Ed5Rf7Tg9Yh2Uj4Ik6Ol8Pz1Xc3Vb5Nm7Qa9Sd2", "access_key": { "nonce": 110000000088, "permission": { "FunctionCall": { "allowance": "250000000000000000000000", "receiver_id": "social.near", "method_names": [] } } } }
+    ]
+  },
+  "contracts": {
+    "v2.ref-finance.near": { "code_hash": "AjD4YJaXgpiRdiArqnzyDi7Bkr1gJms9Z2w7Ev5esTKB", "storage_usage": 2140000, "amount": "41800000000000000000000000", "full_access_keys": 0, "source": { "version": "1.9.12", "link": "https://github.com/ref-finance/ref-contracts", "standards": [{ "standard": "nep330", "version": "1.1.0" }] } },
+    "social.near": { "code_hash": "5ztNdS3vJ4YwTWjPJxvn2Me4rfVZCTN2hT3m5w9mNrVk", "storage_usage": 9800000, "amount": "120000000000000000000000000", "full_access_keys": 1, "source": { "version": "0.12.0", "link": "https://github.com/NearSocial/social-db", "standards": [{ "standard": "nep330", "version": "1.1.0" }] } },
+    "near-gift-claim.near": { "code_hash": "3pXyQf7mN2rT9vK1wL5sZ8cH4jD6gB2aE9uY3oR7iP1x", "storage_usage": 61000, "amount": "1200000000000000000000000", "full_access_keys": 1, "source": null },
+    "ref-finance-airdrop.near": { "code_hash": "8bVn4Kq2Wd6Rs9Tm3Lx7Yc1Hf5Jz8Ap2Ue4Go6Ni9Qk", "storage_usage": 48000, "amount": "900000000000000000000000", "full_access_keys": 2, "source": null },
+    "plain-person.near": { "code_hash": "11111111111111111111111111111111", "storage_usage": 182, "amount": "5000000000000000000000000", "full_access_keys": 1, "source": null }
+  },
+  "staking": {
+    "bob.testnet": [
+      { "pool": "astro-stakers.poolv1.near", "staked": "5000000000000000000000000", "unstaked": "1800000000000000000000000", "can_withdraw": true },
+      { "pool": "zavodil.poolv1.near", "staked": "2000000000000000000000000", "unstaked": "700000000000000000000000", "can_withdraw": false },
+      { "pool": "ghostnode.poolv1.near", "staked": "3000000000000000000000000", "unstaked": "2400000000000000000000000", "can_withdraw": true }
+    ]
+  },
+  "pools": {
+    "astro-stakers.poolv1.near": { "fee": [1, 100], "active": true },
+    "zavodil.poolv1.near": { "fee": [1, 100], "active": true },
+    "ghostnode.poolv1.near": { "fee": [25, 100], "active": false }
+  }
+}

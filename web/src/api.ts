@@ -50,6 +50,7 @@ export const ACCOUNTS = [
 
 export const ASSET_LABEL: Record<string, string> = {
   'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1': 'USDC (NEAR)',
+  'nep141:usdt.tether-token.near': 'USDT (NEAR)',
   'nep141:wrap.near': 'wNEAR',
 };
 
