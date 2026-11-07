@@ -11,6 +11,7 @@ import { intentsSwap } from './parts/intents-swap.js';
 import { summaryReport } from './parts/summary-report.js';
 import { wait } from './parts/wait.js';
 import { mergeReceipts } from './parts/merge-receipts.js';
+import { airdropClaim } from './parts/airdrop-claim.js';
 import { intentsAtomic } from './parts/intents-atomic.js';
 
 export const HANDLERS: Record<string, PartHandler> = {
@@ -26,6 +27,7 @@ export const HANDLERS: Record<string, PartHandler> = {
   'time.wait@1.0.0': wait,
   'swap.merge@1.0.0': mergeReceipts,
   'intents.atomic-swap@1.0.0': intentsAtomic,
+  'airdrop.claim@1.0.0': airdropClaim,
 };
 
 export const REAL_ENDPOINTS: Endpoints = {

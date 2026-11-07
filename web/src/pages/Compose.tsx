@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Bounties } from '../components/Bounties';
 import { ReactFlow, Background, Controls, Handle, Position, applyNodeChanges, type Connection, type Edge, type Node, type NodeChange, type NodeProps, type EdgeChange, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { compatibleSwaps, swapPart, validateRecipe, withdrawalRisk, type PartManifest, type Catalog, type Recipe, type FormField } from '../../../core/src/srs';
 import { api, money, usd, usePoll } from '../api';
@@ -193,7 +194,7 @@ function ComposeInner() {
             ))}
           </div>
         ))}
-        <div style={{ padding: 10 }}><OpenDemand /></div>
+        <div style={{ padding: 10 }} className="grid"><OpenDemand /><Bounties /></div>
       </aside>
 
       <section className="panel canvas" onDragOver={(e) => e.preventDefault()} onDrop={onDrop} aria-label="Recipe canvas">

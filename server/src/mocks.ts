@@ -62,6 +62,14 @@ export function mockRouter(world: World, tokens: Token[], hooks: MockHooks): { r
       res.json({ jsonrpc: '2.0', id, result: { result: bytes, logs: [], block_height: 0 } });
       return;
     }
+    if (params?.request_type === 'call_function' && params.method_name === 'claimable') {
+      try {
+        const args = JSON.parse(Buffer.from(String(params.args_base64 ?? ''), 'base64').toString('utf8')) as { account_id: string };
+        const bytes = Array.from(new TextEncoder().encode(JSON.stringify(world.claimable(params.account_id, args.account_id))));
+        res.json({ jsonrpc: '2.0', id, result: { result: bytes, logs: [], block_height: 0 } });
+      } catch (e) { res.json({ jsonrpc: '2.0', id, error: { name: 'HANDLER_ERROR', cause: { name: 'METHOD_NOT_FOUND' }, code: -32000, message: (e as Error).message } }); }
+      return;
+    }
     res.status(400).json({ jsonrpc: '2.0', id, error: { message: 'unsupported in mock' } });
   });
 

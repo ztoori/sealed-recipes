@@ -29,6 +29,27 @@ export class World {
       if (!this.meta.has(c)) this.meta.set(c, { contract: c, symbol: t.symbol, name: t.symbol, decimals: t.decimals });
     }
   }
+  /** demo airdrop distributors (fixtures/airdrops.json): distributor -> token and unclaimed amounts per account */
+  airdrops = new Map<string, { token: string; eligible: Map<string, bigint> }>();
+  loadAirdrops(path: string) {
+    const d = JSON.parse(readFileSync(path, 'utf8')) as { distributors: { id: string; token: string; eligible: Record<string, string> }[] };
+    for (const x of d.distributors) { this.airdrops.set(x.id, { token: x.token, eligible: new Map(Object.entries(x.eligible).map(([a, v]) => [a, BigInt(v)])) }); this.namedAccounts.add(x.id); }
+  }
+  claimable(distributor: string, account: string) {
+    const d = this.airdrops.get(distributor);
+    if (!d) throw new Error(`${distributor} is not an airdrop distributor`);
+    return { token: d.token, amount: (d.eligible.get(account) ?? 0n).toString() };
+  }
+  /** claim({receiver_id}) signed by `account`: the distributor sends the account's allocation to `receiver` */
+  claim(distributor: string, account: string, receiver: string) {
+    const d = this.airdrops.get(distributor);
+    if (!d) throw new Error(`${distributor} is not an airdrop distributor`);
+    const amount = d.eligible.get(account) ?? 0n;
+    if (amount === 0n) throw new Error(`nothing to claim from ${distributor} for ${account}`);
+    d.eligible.set(account, 0n);
+    this.credit(receiver, d.token, amount);
+    return amount;
+  }
   exists(account: string) { return this.namedAccounts.has(account) || this.balances.has(account); }
   credit(account: string, contract: string, amount: bigint) {
     if (!this.balances.has(account)) this.balances.set(account, new Map());

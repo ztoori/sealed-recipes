@@ -14,7 +14,7 @@
     "dev:server": "tsx server/src/main.ts",
     "dev:web": "vite --config web/vite.config.ts",
     "build": "vite build --config web/vite.config.ts",
-    "test": "node --import tsx --test tests/core.test.ts tests/runner.test.ts",
+    "test": "node --import tsx --test tests/core.test.ts tests/runner.test.ts tests/bounty.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "story": "tsx scripts/story-cli.ts",
     "live-check": "tsx scripts/live-check.ts",
@@ -37,6 +37,7 @@
     "test:atomic": "node scripts/demo.mjs --no-open --atomic --exit",
     "atomic-demo": "tsx scripts/atomic-demo.ts",
     "test:pricing": "node scripts/demo.mjs --no-open --pricing --exit",
+    "test:bounty": "node scripts/demo.mjs --no-open --bounty --exit",
     "pricing-demo": "tsx scripts/pricing-demo.ts"
   },
   "dependencies": {

@@ -61,10 +61,10 @@ Facts we could not confirm from a primary source are marked *unverified*.
   NEAR Intents. Third-party reporting cites several hundred agents and thousands of jobs in 2026 (figures from
   secondary sources; *unverified* by us).
 - **Overlap.** "Post a job, providers compete, escrowed payment" is close to this project's recipe intents.
-- **Integration path.** List recipes as services on Agent Market and use it as the distribution channel; keep this
-  project's contract as the layer for sealed recipes, signed bonded quotes and per-part settlement. Its integration
-  interface has not been reviewed (*unverified*).
-- **Status.** Integration path (not built).
+- **Integration path.** Two connections:
+  - **Builder bounties (built).** Open demand for a job type with no recipe becomes a paid job on Agent Market, and its builders bid. The delivery is a sealed recipe published here; it is verified against the contract and a live dry run before the escrow is released. The recipe never goes to Agent Market.
+  - **Recipes as services (not built).** List recipes as Agent Market services so that its agents can buy runs.
+- **Status.** Builder bounties are built and tested (`npm run test:bounty`) against an offline mock of the published API at market.near.ai/skill.md. A real API key switches them to the live market. Two details are not yet checked against the live service: the bid listing endpoint and the dispute body. Recipes as services remain an integration path.
 
 ### NEAR yield/resume (NEP-519)
 - **What it is.** A protocol feature that lets a contract pause until an external service resumes it; the wait is
@@ -140,8 +140,8 @@ Among the offerings above, as far as their public documentation shows:
 
 - **CRE**: decentralized execution with DON consensus (this project uses one attested runner), multiple trigger types,
   a secrets vault, institutional adoption, and far greater maturity.
-- **NEAR AI Agent Market**: a live network of agents and jobs; this project runs locally against a mirror of its
-  contract and is not deployed.
+- **NEAR AI Agent Market**: a live network of agents and jobs; this project is not deployed, and its bounty connection
+  has run only against an offline mock of the Agent Market API.
 - **IronClaw**: routines (cron, events, webhooks) and a WASM sandbox for untrusted tools; this project has no triggers
   and runs parts as reviewed in-process code.
 - **OutLayer**: production attested execution with secrets, confidential key derivation and a WASM sandbox, callable

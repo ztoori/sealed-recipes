@@ -596,6 +596,55 @@
         "max_model_calls": 0,
         "max_output_bytes": 64000
       }
+    },
+    {
+      "id": "airdrop.claim@1.0.0",
+      "name": "Airdrop Claim",
+      "category": "action",
+      "author": "dropkit.testnet",
+      "summary": "Reads claimable({account_id}) on each listed distributor, then has the buyer's wallet sign claim({receiver_id}) to a fresh address and measures what arrived on FastNEAR.",
+      "inputs": {
+        "account": {
+          "type": "near.account"
+        },
+        "to": {
+          "type": "address.near.fresh"
+        }
+      },
+      "outputs": {
+        "receipts": {
+          "type": "swap.receipts"
+        }
+      },
+      "params": {
+        "distributors": {
+          "type": "string",
+          "default": "refdrop.demo.testnet,auroradrop.demo.testnet",
+          "secret": false
+        }
+      },
+      "capabilities": [
+        "net:rpc.mainnet.fastnear.com",
+        "net:api.fastnear.com",
+        "wallet:approve"
+      ],
+      "fee_per_call": "60000",
+      "implementation": "runner/src/parts/airdrop-claim.ts",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 60000,
+        "max_http_calls": 40,
+        "max_model_calls": 0,
+        "max_output_bytes": 32000
+      }
     }
   ],
   "disclosure_rules": {

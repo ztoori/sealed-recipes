@@ -8,7 +8,7 @@ Deadline: **Nov 14, 2026, 23:59 UTC** (6:59 pm Toronto). Submissions open Nov 1,
 
 - [ ] Tag `baseline-2026-10-31` exists. It marks the work done before the window opened; everything after it was built during the hackathon, as HACKATHON.md asks.
 - [ ] Push to a **public** GitHub repo (you do this; nothing was uploaded).
-- [ ] On a clean machine: `npm install && npm run test:e2e` ends with `✔ story complete`; `npm test` (27) and `npm run test:rust` (61) pass.
+- [ ] On a clean machine: `npm install && npm run test:e2e` ends with `✔ story complete`; `npm test` (41), `npm run test:rust` (105) and `npm run test:bounty` pass.
 - [ ] Strongly recommended: `NEAR_AI_API_KEY=… npm run live-check`, and deploy the contract to testnet (commands in `contracts/sealed-recipes/README.md`). Add the results to the README.
 - [ ] Post the demo on X (below) with `docs/media/demo.mp4` attached.
 - [ ] Create a **mainnet** NEAR account for the prize payout.

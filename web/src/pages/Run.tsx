@@ -6,6 +6,7 @@ import { verifyRunnerAttestation } from '../../../core/src/attestation';
 import { api, ASSET_LABEL, money, PAY_ASSETS, runnerAttestation, short, usd, usePoll } from '../api';
 import { useApp } from '../App';
 import { SettlementFlow } from '../components/Sankey';
+import { Bounties } from '../components/Bounties';
 
 const hex = (u: Uint8Array) => Array.from(u, (b) => b.toString(16).padStart(2, '0')).join('');
 const RUNNER_ID = 'tee-runner-1.testnet';
@@ -224,7 +225,8 @@ export function Run() {
       </section>
 
       <section className="grid" style={{ minWidth: 0 }}>
-        {openDemand && <div className="panel"><div className="body">No recipe does this job yet. It was recorded as <b>open demand</b>, which builders see in Compose.</div></div>}
+        {openDemand && <div className="panel"><div className="body">No recipe does this job yet. It was recorded as <b>open demand</b>, which builders see in Compose, and you can put a bounty on it below.</div></div>}
+        {job && <Bounties jobType={jobId} served={job.recipes.length > 0} />}
         {quotes && quotes.length > 0 && (
           <div className="panel" id="quotes">
             <header><h2>{(() => { const n = quotes.filter((q) => q.ok).length; return `${n} recipe${n === 1 ? '' : 's'} quoted`; })()}</h2><span className="small muted">from dry runs inside the sealed runner, each signed</span>
