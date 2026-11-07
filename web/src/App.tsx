@@ -40,7 +40,7 @@ const MENU: [ReturnType<typeof section>, string, Route][] = [
   ['recipes', 'Recipes', { page: 'recipes' }],
   ['compose', 'Compose', { page: 'compose', sub: 'recipe' }],
   ['wallet', 'Wallet', { page: 'wallet' }],
-  ['docs', 'Documentation', { page: 'docs', sub: 'trust' }],
+  ['docs', 'Documentation', { page: 'docs', sub: 'standard' }],
 ];
 
 export function App() {

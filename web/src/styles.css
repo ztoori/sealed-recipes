@@ -299,3 +299,31 @@ table.fixed td { overflow-wrap: anywhere; }
 .banner { border: 1px solid var(--wax-deep); background: #fdf4dc; border-radius: 6px; padding: 10px 14px; display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; font-size: 13px; }
 .banner b.big { font-family: var(--serif); font-size: 18px; font-weight: 500; }
 .jobreq { grid-template-columns: 1fr; }
+
+/* ---------- documentation › standard ---------- */
+.std-hero { border-top: 4px solid var(--wax); }
+.std-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.std-stats > div { border: 1px solid var(--rule-soft); border-radius: 4px; padding: 8px 10px; display: grid; }
+.std-stats b { font-size: 22px; }
+.std-stats span { font-size: 12px; color: var(--muted); }
+.std-docs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.std-text { grid-template-columns: 240px minmax(0, 1fr); align-items: start; }
+.toc { position: sticky; top: 70px; }
+.toc ol { margin: 0; padding: 8px 6px 8px 28px; display: grid; gap: 2px; font-size: 13px; }
+.toc button { background: none; border: 0; padding: 3px 4px; cursor: pointer; text-align: left; color: var(--ink-2); }
+.toc button:hover { color: var(--ink); text-decoration: underline; }
+.spec { padding: 6px 28px 24px; min-width: 0; line-height: 1.6; font-size: 14px; }
+.spec h1 { font-family: var(--serif); font-weight: 500; font-size: 30px; margin: 18px 0 8px; }
+.spec h2 { font-family: var(--serif); font-weight: 500; font-size: 23px; margin: 28px 0 8px; padding-top: 12px; border-top: 1px solid var(--rule-soft); scroll-margin-top: 70px; }
+.spec h3 { font-size: 15px; margin: 18px 0 6px; scroll-margin-top: 70px; }
+.spec p, .spec li { max-width: 860px; }
+.spec code, .std-hero code, table code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; background: #f3f6fa; border: 1px solid var(--rule-soft); border-radius: 3px; padding: 0 4px; overflow-wrap: anywhere; }
+.spec pre { background: #f6f8fb; border: 1px solid var(--rule-soft); border-radius: 4px; padding: 10px 12px; overflow: auto; }
+.spec pre code { background: none; border: 0; padding: 0; white-space: pre; overflow-wrap: normal; }
+.spec table { margin: 8px 0 14px; font-size: 13px; }
+.spec th, .spec td { border-bottom: 1px solid var(--rule-soft); }
+.spec td { overflow-wrap: anywhere; }
+.spec .repo { border-bottom: 1px dotted var(--muted); cursor: help; }
+.spec a { color: var(--ink-2); }
+@media (max-width: 1180px) { .std-stats { grid-template-columns: repeat(2, 1fr); } .std-docs { grid-template-columns: 1fr 1fr; } .std-text { grid-template-columns: 1fr; } .toc { position: static; } }
+.spec td:last-child code { white-space: nowrap; overflow-wrap: normal; }

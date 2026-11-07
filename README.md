@@ -24,7 +24,7 @@ Businesses and agents run on workflows that chain several tools, bots and AI cal
 | Requirement (from the brief) | How it is built here |
 |---|---|
 | Specialized builders deploy utility apps and bots | **Parts**: code, specialist agents or data sources, with typed ports, declared network capabilities, a per-call fee, **disclosure of model, instructions, harness and verification**, and **per-run resource limits**, registered on-chain ([standard/parts.json](standard/parts.json)) |
-| A no-code / low-code standard to compose and swap parts | **SRS-1** ([docs/SRS-1.md](docs/SRS-1.md)): a typed graph with subtyping, validation, drop-in swap search, a withdrawal-risk label and standard **job types**. **Compose › Recipe** is a no-code builder: pick a job, add parts, they wire themselves (a test rebuilds all 11 seed recipes this way). **Compose › Part** builds a part with live SRS-1 conformance checks |
+| A no-code / low-code standard to compose and swap parts | **SRS-1** ([docs/SRS-1.md](docs/SRS-1.md), and Documentation › Standard in the app), an open MIT-licensed standard with conformance checks and an adoption path: a typed graph with subtyping, validation, drop-in swap search, a withdrawal-risk label and standard **job types**. **Compose › Recipe** is a no-code builder: pick a job, add parts, they wire themselves (a test rebuilds all 11 seed recipes this way). **Compose › Part** builds a part with live SRS-1 conformance checks |
 | Users create recipes without patents or licences | The recipe is **sealed** (X25519 + XSalsa20-Poly1305) to the runner's attested key. Only `sha256(envelope)` goes on-chain. See [What the sealing protects](#what-the-sealing-protects-and-what-it-doesnt) for its limits |
 | A decentralized exchange where recipes are listed, bought and traded | **Recipe intents**: a buyer posts a job, every recipe that implements its type quotes from a sealed dry run, and the buyer (or an agent's policy) picks one. Recipes are listed and bought **per run**; what competes is the service, not an asset, so nothing here is a security (see [No investment features](#no-investment-features)) |
 | Attribution that pays everyone involved | **`report_run`**: an ed25519-signed runner report is verified on-chain and splits the payment in one receipt. It also compares delivery with the signed quote and compensates any shortfall from the recipe's **guarantee deposit** (a performance bond the creator posts) |
@@ -84,7 +84,7 @@ npm run demo            # starts runner :8787 + marketplace :8080, seeds the rec
 
 Then follow these steps. Each one says what you should see.
 
-The app has four sections: **Recipes** (find one and get a quote), **Compose** (build a recipe from parts with no code, or build a part), **Wallet**, and **Documentation** (Trust & privacy, Landscape). Every page has its own link (`#/recipes/CLNP`, `#/quote/STAK`, `#/compose/part/…`), so the back button works.
+The app has four sections: **Recipes** (find one and get a quote), **Compose** (build a recipe from parts with no code, or build a part), **Wallet**, and **Documentation** (the SRS-1 standard, Trust & privacy, Landscape). Every page has its own link (`#/recipes/CLNP`, `#/quote/STAK`, `#/compose/part/…`), so the back button works.
 
 1. **Open http://127.0.0.1:8080.** You land on **Recipes**: nine listed recipes with a search box and favorites (★). Below the list, *Need something nobody offers?* shows the one job with no recipe yet, *Claim my eligible airdrops*.
 2. **Click "Play the demo story"** (top right). The brief's four steps play automatically, with a caption for each:
@@ -107,7 +107,7 @@ The app has four sections: **Recipes** (find one and get a quote), **Compose** (
    - **TRIM** caps any token at a share of your wallet (use `dana.testnet`, about 48% NEAR): it sells only the excess, privately, into USDC at a fresh address.
 6. **Compose → Recipe** (no code). Pick a job, then add parts from the palette. *Suggested next* lists what fits, each part wires itself, and every input has a plain "comes from" list, including a fixed value. Select a part to see its settings (sealed), its withdrawal risk, and drop-in alternatives. For example, swap *Allowlist Shield* for *AI Spam Shield Pro* and the recipe turns **high** risk (closed model). *Ready to publish?* lists what is left in plain words. There is no "load" option: recipes are private.
 7. **Compose → Part** (for developers). Open any part to read its manifest and source (all parts are public in this demo), or build a new one. SRS-1 conformance checks run live on the manifest and the code. Registering puts the manifest hash on-chain, and the code ships after review in an audited runner release.
-8. **Documentation → Trust & privacy** shows what the marketplace stores (ciphertext), what the contract stores and what only the runner sees, the runner attestation (re-run with a new nonce), the exact JSON 1Click receives, and the contract's NEP-297 events.
+8. **Documentation** opens on **Standard (SRS-1)**: the full text of [docs/SRS-1.md](docs/SRS-1.md), rendered from the file, next to the live type registry, the job types with how many recipes serve each, and a conformance count of every part checked in the browser. §9 says how conformance is checked, and §10 how others can adopt and extend the standard. **Trust & privacy** shows what the marketplace stores (ciphertext), what the contract stores and what only the runner sees, the runner attestation (re-run with a new nonce), the exact JSON 1Click receives, and the contract's NEP-297 events.
 9. **An agent as the buyer** (with the demo running and the story done): `npm run agent`. The agent posts a job for `carol.testnet`, compares quotes against its policy (confidential only, maximum risk, price cap, approval cap), pays the winner, approves only within its limit, and checks delivery against the promise. No human in the loop.
 
 Headless version for CI or AI judges. It exits non-zero if any step fails:
@@ -412,7 +412,7 @@ verification/                 Z3 proofs (settlement, billing, guarantee deposits
 core/src/                     SRS-1 (parts, disclosure, job types), sealing, settlement, ledger mirror, job hashing, clients, attestation
 runner/                       sealed TEE runner: dry-run quotes, durable execution (checkpoints, resume), resource limits, 11 parts (9 implementation files)
 server/                       marketplace API (jobs, quotes, runs, track records) and local mocks of external services
-web/                          React UI: Recipes (search, favorites, Get a quote), Compose (Recipe, Part), Wallet, Documentation, story mode
+web/                          React UI: Recipes (search, favorites, Get a quote), Compose (Recipe, Part), Wallet, Documentation (Standard, Trust & privacy, Landscape), story mode
 standard/parts.json           SRS-1 part catalog (ports, capabilities, fees, disclosure, limits)
 standard/jobs.json            SRS-1 job types (inputs, output, value metric)
 seed/recipes/                 plaintext of the demo recipes (in the app they only ever travel sealed)

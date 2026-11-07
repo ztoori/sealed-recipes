@@ -188,3 +188,33 @@ A job with no implementing recipe is recorded as **open demand**, a signal for b
   - `"checkpoint"`: each part's fee is paid on-chain when the part finishes; the final receipt pays the rest.
 - **Versions.** A recipe's sealed graph can be replaced with notice (`update_sealed` → effective after the contract's `update_delay_ns`). Its parts list cannot change; a different parts list is a different recipe.
 
+
+## 9. Conformance
+
+A document conforms to SRS-1 when the reference checks accept it. The same functions run in the composer, the part builder, the runner and the test suite, so "conforms" means the same thing everywhere.
+
+| Document | Check | Where |
+|---|---|---|
+| Part manifest | `validatePartManifest`: id `<namespace>.<name>@<semver>`, a known category, author account, a one-sentence summary, lower_snake_case ports and params with standard types, at least one output, `net:<host>` or `wallet:approve` capabilities (only `action` parts may ask for signatures), an integer fee, a full disclosure (§2.1), and limits (§2.2) | [`core/src/partkit.ts`](../core/src/partkit.ts) |
+| Part source | `lintPartSource`: exports a `PartHandler`; uses `ctx.http`, never global `fetch`; no `process.env`, `require`, file system, `eval`; reads its declared inputs and returns every declared output; HTTP only with a `net:` capability; a part that asks for signatures handles `ctx.mode === "quote"` and saves and resumes state (§8); model calls go through the verified-chat helper | [`core/src/partkit.ts`](../core/src/partkit.ts) |
+| Recipe | `validateRecipe` (§3) | [`core/src/srs.ts`](../core/src/srs.ts) |
+| Job type | a recipe implementing it must match its inputs and output exactly (§7) | [`core/src/srs.ts`](../core/src/srs.ts) |
+
+The source checks are static. They catch common mistakes, not malicious code. What protects buyers at run time is the runner: capabilities and limits are enforced on every part, and a part only runs once its code is in an audited runner release whose code hash buyers verify.
+
+`npm test` runs the conformance suite: every part in the catalog passes both checks, and every seed recipe can be rebuilt in the composer from its job's form and its parts.
+
+## 10. Adopting SRS-1
+
+A marketplace for sealed recipes is only as useful as the number of parts, recipes and job types that speak the same format. SRS-1 is written to be adopted by anyone, not only this marketplace.
+
+- **Part builders** publish a manifest that conforms (§9) and code that follows the part interface. A part is paid its fee in every settlement of every recipe that uses it, on any marketplace that settles SRS-1 reports.
+- **Recipe creators** need no code: pick a job type, add parts, and the types decide what can connect.
+- **Wallets and agents** post job types and compare signed quotes; they never need to see a recipe. A job type is a public, versioned interface any client can implement.
+- **Other marketplaces and runners** can implement the same four documents, the quote message (§7) and the report message (§6). A recipe sealed to a conforming runner can be listed anywhere that verifies its attestation.
+
+**Versioning.** Every part, job type and the standard itself carry a semantic version. Within 1.x, changes are additive: new types, new optional fields, new job types. A breaking change to a part or job type is a new major version with a new id, and the old one stays valid, so published recipes never break.
+
+**Proposing changes.** New types and job types are proposed as SRS improvement proposals: the JSON definition, one recipe that implements it, and the conformance suite passing. Until a proposal is accepted, buyers can still request the job on a marketplace (open demand), and builders can be paid to build it (builder bounties). The proposal process is not yet run by an independent body; that is a step for after the first external implementations.
+
+**License.** The standard and its reference implementation are MIT licensed. Anyone may implement, extend or fork them.

@@ -188,7 +188,7 @@ function Builder() {
             );
           })}
         </div>
-        <div className="body small muted" style={{ paddingTop: 0 }}>Need a job that is not here? Job types are part of the SRS-1 standard (see Documentation); until one exists, buyers can request it on Recipes and post a bounty.</div>
+        <div className="body small muted" style={{ paddingTop: 0 }}>Need a job that is not here? Job types are part of the SRS-1 standard: <button className="linkbtn" onClick={() => go({ page: 'docs', sub: 'standard' })}>see how they are proposed</button>. Until one exists, buyers can request it on Recipes and post a bounty.</div>
       </div>
     );
   }

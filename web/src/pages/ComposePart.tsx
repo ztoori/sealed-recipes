@@ -153,7 +153,7 @@ export function ComposePart({ part }: { part?: string }) {
               <li><b>Disclosure.</b> Name the model, and say which layers are open, sealed or closed. It sets the withdrawal risk buyers see.</li>
               <li><b>Limits.</b> Time, HTTP calls, model calls and output size are capped per run.</li>
             </ul>
-            <div className="muted">Full text: docs/SRS-1.md in the repository.</div>
+            <button className="linkbtn" onClick={() => go({ page: 'docs', sub: 'standard' })}>Read the full standard (Documentation › Standard)</button>
           </div>
         </div>
       </aside>

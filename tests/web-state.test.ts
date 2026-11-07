@@ -4,9 +4,10 @@ import assert from 'node:assert/strict';
 import { parseRoute, routeHash } from '../web/src/route.js';
 
 test('route: every page round-trips through the URL hash', () => {
-  for (const h of ['#/recipes', '#/recipes/CLNP', '#/quote/STAK', '#/compose/recipe', '#/compose/part', '#/compose/part/ai.spam-shield%401.1.0', '#/wallet', '#/docs/trust', '#/docs/landscape']) assert.equal(routeHash(parseRoute(h)), h, h);
+  for (const h of ['#/recipes', '#/recipes/CLNP', '#/quote/STAK', '#/compose/recipe', '#/compose/part', '#/compose/part/ai.spam-shield%401.1.0', '#/wallet', '#/docs/standard', '#/docs/trust', '#/docs/landscape']) assert.equal(routeHash(parseRoute(h)), h, h);
   assert.deepEqual(parseRoute(''), { page: 'recipes' });
   assert.deepEqual(parseRoute('#/nonsense'), { page: 'recipes' });
+  assert.deepEqual(parseRoute('#/docs'), { page: 'docs', sub: 'standard' }, 'Documentation opens on the standard');
   assert.deepEqual(parseRoute('#/quote'), { page: 'recipes' }, 'a quote needs a recipe');
 });
 
