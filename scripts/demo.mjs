@@ -7,7 +7,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,8 +49,12 @@ async function waitFor(url, ms = 30000) {
   throw new Error('timeout waiting for ' + url);
 }
 
-if (!existsSync(resolve(root, 'web/dist/index.html'))) {
-  console.log('[demo] building web app (first run only)…');
+// rebuild the web app when there is no build, or when any of its sources is newer than the build (e.g. after git pull)
+const newest = (dir) => { let t = 0; for (const e of readdirSync(dir, { withFileTypes: true })) { const p = resolve(dir, e.name); t = Math.max(t, e.isDirectory() ? newest(p) : statSync(p).mtimeMs); } return t; };
+const built = existsSync(resolve(root, 'web/dist/index.html')) ? statSync(resolve(root, 'web/dist/index.html')).mtimeMs : 0;
+const sources = Math.max(...['web/src', 'core/src', 'standard', 'seed'].map((d) => newest(resolve(root, d))), statSync(resolve(root, 'web/index.html')).mtimeMs);
+if (sources > built) {
+  console.log(built ? '[demo] web app sources changed since the last build: rebuilding…' : '[demo] building web app (first run only)…');
   const b = spawnSync(node, [resolve(root, 'node_modules/vite/bin/vite.js'), 'build', '--config', 'web/vite.config.ts', '--logLevel', 'warn'], { cwd: root, stdio: 'inherit' });
   if (b.status) process.exit(b.status);
 }

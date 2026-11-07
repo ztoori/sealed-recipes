@@ -320,6 +320,15 @@ On Windows, build and run everything inside WSL (Ubuntu), not in PowerShell. The
    npm run demo            # opens http://127.0.0.1:8080 in your Windows browser
    ```
 
+**Getting a new version.** Your WSL copy does not update by itself when the folder on `C:` changes. Pull it, then reinstall in case dependencies changed:
+```bash
+cd ~/sealed-recipes
+git pull                # from /mnt/c/CMR/CC/sealed-recipes, where the clone came from
+npm install
+npm run demo            # rebuilds the web app automatically when its sources changed
+```
+If the browser still shows the old screens, reload with Ctrl+F5.
+
 If `npm` fails with "UNC paths are not supported" or `C:\Windows\scripts\...`, the shell is running Windows npm: WSL adds the Windows PATH, and Linux Node isn't loaded in that terminal yet. Run `source ~/.nvm/nvm.sh` or open a new terminal; `which npm` should show `~/.nvm/...`, not `/mnt/c/...`.
 
 WSL2 forwards `localhost` to Windows by default, so the Windows browser reaches the demo. If yours doesn't (custom `.wslconfig`), start it with `SRS_HOST=0.0.0.0 npm run demo` and open `http://<WSL IP>:8080` (`hostname -I` shows the IP).
