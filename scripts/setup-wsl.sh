@@ -45,6 +45,8 @@ say "System packages (apt)"
 PKGS="build-essential pkg-config libssl-dev ca-certificates curl git python3 python3-venv python3-pip unzip"
 [ "$WITH_TLA" = 1 ] && PKGS="$PKGS openjdk-17-jre-headless"
 [ "$WITH_MEDIA" = 1 ] && PKGS="$PKGS ffmpeg"
+# cargo-near links hidapi (Ledger support), which needs libudev when it has to be compiled from source
+[ "$WITH_WASM" = 1 ] && PKGS="$PKGS libudev-dev"
 MISSING=""; for p in $PKGS; do dpkg -s "$p" >/dev/null 2>&1 || MISSING="$MISSING $p"; done
 if [ -n "$MISSING" ]; then sudo apt-get update -y && sudo apt-get install -y $MISSING; else echo "all present"; fi
 
@@ -82,7 +84,13 @@ fi
 if [ "$WITH_WASM" = 1 ]; then
   say "wasm target + cargo-near (contract build)"
   rustup target add wasm32-unknown-unknown
-  have cargo-near || cargo install --locked cargo-near
+  if ! have cargo-near; then
+    # prebuilt binary first (seconds, no compiler needed); compile from source only if that fails
+    curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.sh | sh \
+      || cargo install --locked cargo-near
+    # shellcheck disable=SC1091
+    . "$HOME/.cargo/env"
+  fi
   cargo near --version
 fi
 if [ "$WITH_TLA" = 1 ]; then
