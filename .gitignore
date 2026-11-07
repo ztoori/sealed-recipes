@@ -8,3 +8,6 @@ docs/media/.video/
 .DS_Store
 archive/
 __pycache__/
+.venv/
+tools/
+node_modules.windows-backup/

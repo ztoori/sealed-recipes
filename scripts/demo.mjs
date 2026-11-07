@@ -7,7 +7,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -84,6 +84,9 @@ if (args.has('--story')) {
 }
 if (args.has('--exit')) shutdown(0);
 if (!args.has('--no-open') && !args.has('--exit') && !process.env.CI) {
-  const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', base]] : process.platform === 'darwin' ? ['open', [base]] : ['xdg-open', [base]];
+  // WSL: open the page in the Windows browser (WSL2 forwards localhost to Windows by default)
+  const wsl = process.platform === 'linux' && existsSync('/proc/version') && /microsoft/i.test(readFileSync('/proc/version', 'utf8'));
+  const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', base]] : process.platform === 'darwin' ? ['open', [base]]
+    : wsl ? ['cmd.exe', ['/c', 'start', '', base]] : ['xdg-open', [base]];
   try { spawn(cmd[0], cmd[1], { stdio: 'ignore', detached: true }).on('error', () => {}).unref(); } catch {}
 }

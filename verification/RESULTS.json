@@ -17,7 +17,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.011,
+   "seconds": 0.01,
    "detail": ""
   },
   {
@@ -37,7 +37,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.01,
+   "seconds": 0.005,
    "detail": ""
   },
   {
@@ -47,7 +47,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.002,
+   "seconds": 0.001,
    "detail": ""
   },
   {
@@ -67,7 +67,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.01,
+   "seconds": 0.006,
    "detail": ""
   },
   {
@@ -87,7 +87,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.012,
+   "seconds": 0.008,
    "detail": ""
   },
   {
@@ -107,7 +107,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.009,
+   "seconds": 0.005,
    "detail": ""
   },
   {
@@ -127,7 +127,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.011,
+   "seconds": 0.007,
    "detail": ""
   },
   {
@@ -142,96 +142,6 @@
   },
   {
    "module": "settlement[3p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout and the reserve are >= 0",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.01,
-   "detail": ""
-  },
-  {
-   "module": "settlement[3p]",
-   "theorem": "creator-keeps-remainder",
-   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[3p]",
-   "theorem": "caps",
-   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.01,
-   "detail": ""
-  },
-  {
-   "module": "settlement[3p]",
-   "theorem": "never-fails-when-fees-fit",
-   "statement": "fees <= price (publish minimum) and price < 2^128/10^4 => no overflow, Some(split)",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.002,
-   "detail": ""
-  },
-  {
-   "module": "settlement[4p]",
-   "theorem": "conservation",
-   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[4p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout and the reserve are >= 0",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.009,
-   "detail": ""
-  },
-  {
-   "module": "settlement[4p]",
-   "theorem": "creator-keeps-remainder",
-   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[4p]",
-   "theorem": "caps",
-   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.009,
-   "detail": ""
-  },
-  {
-   "module": "settlement[5p]",
-   "theorem": "conservation",
-   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[5p]",
    "theorem": "no-negative-payout",
    "statement": "every payout and the reserve are >= 0",
    "outcome": "proved",
@@ -241,6 +151,96 @@
    "detail": ""
   },
   {
+   "module": "settlement[3p]",
+   "theorem": "creator-keeps-remainder",
+   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[3p]",
+   "theorem": "caps",
+   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.007,
+   "detail": ""
+  },
+  {
+   "module": "settlement[3p]",
+   "theorem": "never-fails-when-fees-fit",
+   "statement": "fees <= price (publish minimum) and price < 2^128/10^4 => no overflow, Some(split)",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.001,
+   "detail": ""
+  },
+  {
+   "module": "settlement[4p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[4p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.006,
+   "detail": ""
+  },
+  {
+   "module": "settlement[4p]",
+   "theorem": "creator-keeps-remainder",
+   "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[4p]",
+   "theorem": "caps",
+   "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.006,
+   "detail": ""
+  },
+  {
+   "module": "settlement[5p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[5p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.005,
+   "detail": ""
+  },
+  {
    "module": "settlement[5p]",
    "theorem": "creator-keeps-remainder",
    "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
@@ -257,7 +257,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.011,
+   "seconds": 0.008,
    "detail": ""
   },
   {
@@ -277,7 +277,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.009,
+   "seconds": 0.006,
    "detail": ""
   },
   {
@@ -297,7 +297,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.011,
+   "seconds": 0.007,
    "detail": ""
   },
   {
@@ -317,7 +317,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.009,
+   "seconds": 0.006,
    "detail": ""
   },
   {
@@ -334,26 +334,6 @@
    "module": "settlement[7p]",
    "theorem": "caps",
    "statement": "protocol fee <= 10% of price; reserve <= remainder, and reserve == 0 when reserve_bps == 0",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.012,
-   "detail": ""
-  },
-  {
-   "module": "settlement[8p]",
-   "theorem": "conservation",
-   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
-   "outcome": "proved",
-   "expected": "proved",
-   "ok": true,
-   "seconds": 0.0,
-   "detail": ""
-  },
-  {
-   "module": "settlement[8p]",
-   "theorem": "no-negative-payout",
-   "statement": "every payout and the reserve are >= 0",
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
@@ -362,6 +342,26 @@
   },
   {
    "module": "settlement[8p]",
+   "theorem": "conservation",
+   "statement": "protocol + runner + parts + creator + reserve == price, to the unit",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.0,
+   "detail": ""
+  },
+  {
+   "module": "settlement[8p]",
+   "theorem": "no-negative-payout",
+   "statement": "every payout and the reserve are >= 0",
+   "outcome": "proved",
+   "expected": "proved",
+   "ok": true,
+   "seconds": 0.005,
+   "detail": ""
+  },
+  {
+   "module": "settlement[8p]",
    "theorem": "creator-keeps-remainder",
    "statement": "creator + reserve == remainder: the reserve is the creator's money, nobody else's",
    "outcome": "proved",
@@ -377,7 +377,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.021,
+   "seconds": 0.014,
    "detail": ""
   },
   {
@@ -427,7 +427,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.002,
+   "seconds": 0.001,
    "detail": ""
   },
   {
@@ -447,7 +447,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.002,
    "detail": ""
   },
   {
@@ -477,7 +477,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.002,
    "detail": ""
   },
   {
@@ -487,7 +487,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.002,
    "detail": ""
   },
   {
@@ -537,7 +537,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.001,
    "detail": ""
   },
   {
@@ -567,7 +567,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.002,
    "detail": ""
   },
   {
@@ -577,7 +577,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.002,
    "detail": ""
   },
   {
@@ -587,7 +587,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.007,
+   "seconds": 0.005,
    "detail": ""
   },
   {
@@ -597,7 +597,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.002,
    "detail": ""
   },
   {
@@ -607,7 +607,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.017,
+   "seconds": 0.01,
    "detail": ""
   },
   {
@@ -617,7 +617,7 @@
    "outcome": "counterexample",
    "expected": "counterexample",
    "ok": true,
-   "seconds": 0.007,
+   "seconds": 0.005,
    "detail": ""
   },
   {
@@ -627,7 +627,7 @@
    "outcome": "counterexample",
    "expected": "counterexample",
    "ok": true,
-   "seconds": 0.006,
+   "seconds": 0.004,
    "detail": ""
   },
   {
@@ -637,7 +637,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.003,
+   "seconds": 0.002,
    "detail": ""
   },
   {
@@ -647,7 +647,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.047,
+   "seconds": 0.032,
    "detail": ""
   },
   {
@@ -657,7 +657,7 @@
    "outcome": "proved",
    "expected": "proved",
    "ok": true,
-   "seconds": 0.005,
+   "seconds": 0.003,
    "detail": ""
   }
  ],

@@ -502,7 +502,9 @@ async function boot() {
   if (att.codehash !== audited) console.warn(`[server] WARNING runner codehash ${att.codehash.slice(0, 12)} != audited ${audited.slice(0, 12)} — UI will show the mismatch`);
   ledger.call('srs-dao.testnet', (l) => l.add_runner({ id: RUNNER_ID, signing_pk: att!.signing_pk, enc_pk_hex: att!.enc_pk_hex, codehash: audited, fee_per_run: '30000' }));
   for (const b of catalog.parts) ledger.call(b.author, (l) => l.register_part({ id: b.id, version: b.id.split('@')[1], fee_per_call: b.fee_per_call, manifest_hash: hashObject(b) }));
-  app.listen(PORT, '127.0.0.1', () => console.log(`[server] marketplace on http://127.0.0.1:${PORT}  (contract mirror ${CONTRACT_ID}, runner ${RUNNER})`));
+  // SRS_HOST=0.0.0.0 makes it reachable from outside the machine (e.g. WSL without localhost forwarding); default: local only
+  const HOST = env.SRS_HOST ?? '127.0.0.1';
+  app.listen(PORT, HOST, () => console.log(`[server] marketplace on http://${HOST}:${PORT}  (contract mirror ${CONTRACT_ID}, runner ${RUNNER})`));
   // keeper: apply ended pricing periods so price_updated events are timely (anyone may call update_price)
   setInterval(() => { for (const id of ledger.recipes.keys()) { try { ledger.call('keeper.srs.testnet', (l) => l.update_price({ id })); } catch { /* ignore */ } } }, 1000);
   // keeper: activate recipe versions whose notice period has passed (anyone may call apply_update)

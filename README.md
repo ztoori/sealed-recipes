@@ -75,18 +75,18 @@ npm run test:pricing    # SAFE with 15-second periods: 4 buyers pay in one perio
 
 ## Try it in two minutes (no keys, no network needed)
 
-Requirements: Node.js 20.6 or newer (22 LTS recommended). Rust is only needed for the contract tests.
+Requirements: Linux, macOS or WSL, and Node.js 20.6 or newer (22 LTS recommended). Rust is only needed for the contract tests. On Windows, build in WSL ([Building on WSL](#building-on-wsl)).
 
 ```bash
 npm install
-npm run demo            # starts runner :8787 + marketplace :8080, seeds three recipes, opens the browser
+npm run demo            # starts runner :8787 + marketplace :8080, seeds the recipes, opens the browser
 ```
 
 Then follow these steps. Each one says what you should see.
 
 1. **Open http://127.0.0.1:8080.** You land on **Post a job**, which lists four job types and how many recipes compete for each. *Claim my eligible airdrops* has none yet.
 2. **Click "Play the demo story"** (top right). The brief's four steps play automatically, with a caption for each:
-   1. **Compose.** Five parts snap together into *Clean up and protect* (CLNP). The seal dialog verifies the runner attestation: 6 checks pass, and "Hardware TDX quote" shows as skipped in local mode. The plaintext turns into ciphertext and gets a wax seal. `publish_recipe` returns a tx hash, and a $25 bond backs CLNP's quotes.
+   1. **Compose.** Five parts snap together into *Clean up and protect* (CLNP). The seal dialog verifies the runner attestation: 6 checks pass, and "Hardware TDX quote" shows as skipped in local mode. The plaintext turns into ciphertext and gets a wax seal. `publish_recipe` returns a tx hash, and a $25 guarantee deposit backs CLNP's quotes.
    2. **Post a job.**
       - As `bob.testnet`, a fresh address is generated in the browser and the job *Clean up my wallet* is sealed and posted.
       - Two recipes quote. **SWPR** expects $37.54 and promises $36.98, but it is *public* and also sweeps the wallet's wNEAR. **CLNP** expects $28.02 and promises $27.81, is *confidential* and its $25 guarantee deposit covers $25.00 of the promise.
@@ -236,6 +236,33 @@ npm run live-check      # optional, needs internet: real 1Click dry quotes (incl
                         # and with NEAR_AI_API_KEY a real TEE-signed NEAR AI Cloud completion, verified
 ```
 
+## Building on WSL
+
+On Windows, build and run everything inside WSL (Ubuntu), not in PowerShell. The scripts, the Rust contract build and the Z3/TLA+ tools all expect Linux.
+
+1. **Put the project in the WSL filesystem**, not on `C:`. Under `/mnt/c` npm and cargo are many times slower, and `node_modules` installed on Windows contain Windows binaries that fail in Linux.
+   ```bash
+   git clone /mnt/c/CMR/CC/sealed-recipes ~/sealed-recipes     # keeps the full history and archive tags
+   cd ~/sealed-recipes
+   ```
+2. **Install the toolchain** with one script. It is safe to re-run, uses `sudo` only for apt packages, and installs Node with nvm and Z3 in a project virtualenv (`.venv`).
+   ```bash
+   bash scripts/setup-wsl.sh             # Node 22, npm packages, Python + Z3
+   bash scripts/setup-wsl.sh --all       # + Rust, wasm target + cargo-near, Java + tla2tools.jar, ffmpeg + Playwright
+   ```
+   Options: `--with-rust` (contract tests), `--with-wasm` (contract build), `--with-tla` (TLC model check), `--with-media` (re-record the video).
+3. **Check, then build and run**:
+   ```bash
+   npm run doctor          # what is installed, what each npm script needs, how to fix what's missing
+   npm test && npm run verify && npm run test:rust
+   npm run build:wasm      # contract wasm via cargo-near -> contracts/sealed-recipes/target/near/
+   npm run demo            # opens http://127.0.0.1:8080 in your Windows browser
+   ```
+
+WSL2 forwards `localhost` to Windows by default, so the Windows browser reaches the demo. If yours doesn't (custom `.wslconfig`), start it with `SRS_HOST=0.0.0.0 npm run demo` and open `http://<WSL IP>:8080` (`hostname -I` shows the IP).
+
+The setup script was tested end to end on Ubuntu 24.04: from a fresh clone it installs everything, after which `npm test`, `npm run verify`, `npm run test:e2e` and `npm run test:rust` pass. `npm run build:wasm` couldn't be tested on our build machine, because it can't download the wasm target. If `cargo near` rejects the wasm for unsupported wasm features with a very new Rust, add a `rust-toolchain.toml` with `channel = "1.86"` in `contracts/sealed-recipes` and run it again.
+
 ## What the sealing protects, and what it doesn't
 
 Sealed Recipes protects a workflow **by default, without filing anything**. The law (copyright, trade secrets, terms of use) becomes the backup instead of the first line of defence.
@@ -337,7 +364,7 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 - **Durable storage is in-memory in the demo.** The vault and checkpoint store would be a database or IPFS in production, keyed by `sealed_hash` and run id. The runner and the contract already behave as if it were durable.
 - **One runner.** Runners are approved by the contract owner. A permissionless set of staked runners, and recipes sealed to several of them, are next.
 - **No triggers or schedules yet.** A run starts when a buyer pays. A workflow can wait inside a run (`time.wait`), but nothing starts a run on a timer or an on-chain event.
-- **Not deployed yet.** The contract has 105 unit tests and the same vectors as the mirror, but it was not built to wasm or deployed from our build machine (no wasm target, no NEAR RPC access). Deploy commands are in [contracts/sealed-recipes/README.md](contracts/sealed-recipes/README.md).
+- **Not deployed yet.** The contract has 105 unit tests and the same vectors as the mirror, but it was not built to wasm or deployed from our build machine (no wasm target, no NEAR RPC access). `npm run build:wasm` builds it on WSL or Linux. Deploy commands are in [contracts/sealed-recipes/README.md](contracts/sealed-recipes/README.md).
 - **No live chain adapter or wallet.** The server talks to the in-process mirror. A NEAR RPC adapter and near-connect are the main pieces missing for testnet.
 - **The runner is trusted to measure delivery.** Guarantee deposits pay out on the runner's signed `delivered` value. That is sound only as far as the runner is attested; on-chain DCAP verification of the runner is the next step.
 - **Quotes cost compute.** Dry runs are capped at 5 recipes per job and 12 jobs per minute per client. A small quote fee would be the on-chain version.
