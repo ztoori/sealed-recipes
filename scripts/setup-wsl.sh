@@ -104,6 +104,11 @@ if [ "$WITH_MEDIA" = 1 ]; then
   npx playwright install --with-deps chromium
 fi
 
+# WSL appends the Windows PATH, so a shell without nvm loaded picks up Windows node/npm (C:\Program Files\nodejs),
+# which then runs `npm run ...` from C:\Windows and fails with "UNC paths are not supported"
+if ! grep -q 'NVM_DIR' "$HOME/.bashrc" 2>/dev/null; then
+  printf '\nexport NVM_DIR="$HOME/.nvm"\n[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"\n' >> "$HOME/.bashrc"
+fi
 say "Check"
 node scripts/doctor.mjs || true
 cat <<'EOF'
@@ -117,3 +122,4 @@ EOF
 [ "$WITH_WASM" = 1 ] && echo "  npm run build:wasm  contract wasm -> contracts/sealed-recipes/target/near/"
 [ "$WITH_TLA" = 1 ] && echo "  npm run verify:tla  TLC model check (~10 min)"
 echo "Open a new terminal (or run: source ~/.nvm/nvm.sh; source ~/.cargo/env) so node and cargo are on PATH."
+echo "If 'which npm' ever shows a /mnt/c/... path, that is Windows npm: run 'source ~/.nvm/nvm.sh' (or open a new terminal)."
