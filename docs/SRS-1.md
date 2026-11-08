@@ -1,41 +1,53 @@
-# SRS-1: Sealed Recipe Spec (v1.0)
+# SRS-1: the Sealed Recipe Spec
 
-SRS-1 is an open format for building workflows ("recipes") out of other people's components ("parts") without writing code or prompts, and for selling runs of those workflows while their method stays secret. A recipe is a typed graph: the types decide what can connect, the buyer's form builds itself from what the parts need, and any part can be swapped for one that fits the same wires. Sealed to an attested runner, a recipe can be quoted, run and settled, with every part author paid in every run, and no one but its creator (and the attested runner, while it executes) can read it.
+**Build a workflow from other people's parts without writing code. Sell runs of it without showing how it works. Pay everyone who built a part, every time it runs.**
 
-| | |
-|---|---|
-| Version | 1.0 |
-| Reference implementation | [`core/src/srs.ts`](../core/src/srs.ts) (validator), [`runner/src/executor.ts`](../runner/src/executor.ts) (run semantics), [`core/src/partkit.ts`](../core/src/partkit.ts) (composer, manifest checks) |
-| Type vocabulary and registered parts | [`standard/parts.json`](../standard/parts.json) |
-| Example recipes | [`standard/examples/`](../standard/examples/) |
-| Conformance suite | `npm test`, in particular [`tests/srs.test.ts`](../tests/srs.test.ts) |
-| License | MIT |
+![From parts to a paid run: builders publish parts, a creator composes and seals a recipe, a buyer gets a signed quote, the runner executes it in sealed hardware, and one settlement pays everyone.](media/srs-flow.svg)
 
-MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. "The validator" is `validateRecipe`. Every rule given a validation code in this document is enforced by it, and the same function runs in the composer, the runner and the test suite.
+| Version | License | Reference implementation | Conformance suite |
+|---|---|---|---|
+| 1.0 | MIT | [`core/src/srs.ts`](../core/src/srs.ts), [`runner/src/executor.ts`](../runner/src/executor.ts), [`core/src/partkit.ts`](../core/src/partkit.ts) | `npm test`, chiefly [`tests/srs.test.ts`](../tests/srs.test.ts) |
+
+Types and parts live in [`standard/parts.json`](../standard/parts.json), example recipes in [`standard/examples/`](../standard/examples/). MUST, SHOULD and MAY follow RFC 2119. Every rule with a code below is enforced by `validateRecipe`, the same function in the composer, the runner and the tests.
 
 ## Why SRS-1
 
-Workflow tools already compose steps, and oracle networks already run workflows with attested results. Neither was built for a market in which a stranger's workflow runs on your wallet and you pay per run. That market needs four properties at once. SRS-1 is designed around them:
+> A stranger's workflow is about to run on your wallet. You should know what it can touch, what it costs and what it promises before it starts, and the people who built it should be paid. This format makes all of that true at once.
 
-1. **Composable without code.** Parts declare typed ports. A creator adds parts and the types wire them; whatever no part provides becomes a field on the buyer's form. Any node can be swapped for a catalog part that fits the same wires (§3.7).
-2. **Sealed, but checkable.** The method (wiring, conditions, settings and prompts) is encrypted to the runner. What a buyer needs in order to decide is public and derived by machine, never typed by the creator: the form, the parts, their capabilities, models and withdrawal risk, the result type and the price (§4, §5).
-3. **Quoted before it runs.** Every part has a read-only quote mode, so a recipe can be dry-run on a buyer's sealed inputs and return a signed price and, for recipes that deliver funds, a promise backed by the creator's deposit (§7).
-4. **Settled to every author.** The parts list is on-chain, the runner signs which parts were billed, and one settlement pays the protocol, the runner, every part author and the creator (§6).
+| You are | You get | Read |
+|---|---|---|
+| **A part builder** | Paid every time any recipe uses your part, on any market that settles SRS-1 | [§2](#2-part-manifest), [§11](#11-admission-of-parts) |
+| **A recipe creator** | A method you can sell without revealing it. No code, no prompt engineering | [§3](#3-recipe), [§5](#5-sealing-and-the-privacy-boundary) |
+| **A buyer or a wallet** | A signed price before you pay and, when funds move, a promise backed by a deposit | [§7](#7-quotes-and-guarantees) |
+| **An AI agent** | A typed form to fill and signed quotes to compare. You never need to read a recipe | [§10](#10-adopting-srs-1) |
+
+Four promises hold for every recipe:
+
+1. **It snaps together.** Parts declare typed ports. Add parts and the types do the wiring. Whatever no part provides becomes a question on the buyer's form.
+2. **It is sealed, and still checkable.** The method is encrypted. What a buyer needs in order to decide is public, and computed rather than claimed.
+3. **It is priced before it runs.** A read-only dry run on the buyer's sealed inputs returns a signed quote.
+4. **It pays by construction.** One settlement pays the protocol, the runner, every part author and the creator.
 
 | | n8n | Chainlink CRE | SRS-1 |
 |---|---|---|---|
 | Unit of composition | nodes in a JSON workflow | capabilities called from Go or TypeScript, compiled to WASM | typed parts in a JSON graph |
 | Who composes | a user in a visual editor | a developer | a creator, with no code and no prompt engineering |
 | Who can read a workflow | anyone with access to the instance | its owner and the nodes that run it | only its creator; the runner opens it inside a TEE |
-| Typing | untyped JSON items | the host language's types | nominal types with schemas, checked when composing and at every port while running (§1) |
-| Control flow | IF, Switch, Merge, Loop, error workflows, sub-workflows | anything code can express | conditions, alternatives and skip-on-error (§3.2–3.4); loops and nested recipes are not in this version (§13) |
-| Price known before running | not part of the format | not part of the format | a signed quote from a read-only dry run (§7) |
+| Typing | untyped JSON items | the host language's types | nominal types with schemas, checked when composing and at every port while running |
+| Control flow | IF, Switch, Merge, Loop, error workflows, sub-workflows | anything code can express | conditions, fallbacks and skip-on-error; loops and nested recipes are not in this version |
+| Price known before running | not part of the format | not part of the format | a signed quote from a read-only dry run |
 | Who is paid per run | no payment to node authors | node operators | every part author, the runner and the creator, in one settlement |
-| A step fails | the error workflow runs | handled in code | the buyer is refunded, or the node is skipped where the creator provided a fallback |
+| A step fails | the error workflow runs | handled in code | the buyer is refunded, or the node is skipped where the creator planned a fallback |
 
-### A recipe in one screen
+### A recipe at a glance
 
-[`standard/examples/ESCL.json`](../standard/examples/ESCL.json), shortened:
+![A recipe that escalates only when needed: cheap rules judge a contract, a private AI is asked only when the rules say medium or high risk, and the report prefers the AI's verdict.](media/srs-recipe.svg)
+
+- **Buyers see** one question, four parts, a low-risk label, a report and a price.
+- **Only the creator knows** that the AI is asked only when the rules are unsure, which brands the rules watch for, and what the AI is told.
+- **Every run settles the same way**, so the chain never shows what the rules concluded for a buyer.
+
+<details><summary>The recipe as JSON (standard/examples/ESCL.json, shortened)</summary>
 
 ```json
 { "srs": "1.0", "kind": "recipe",
@@ -51,16 +63,15 @@ Workflow tools already compose steps, and oracle networks already run workflows 
   "listing": { "price_per_run": "150000", "bill": "declared" } }
 ```
 
-- **The buyer sees** one form field, four parts (one private AI on an open-weights model in a TEE, so the recipe is labelled low withdrawal risk), a `report` result and a price.
-- **Sealed:** that the AI is consulted only when cheap rules are unsure or alarmed, which brands the rules watch for, what the AI is told, and that the report prefers the AI's verdict. That is the creator's edge: a careful second opinion where it matters, and a fast answer where it does not.
-- **Settlement:** with `bill: "declared"` every run pays the same four authors whether or not the AI ran, so nothing on-chain reveals what the rules concluded about this buyer's contract (§6.1).
-- **Checked before sealing:** the validator confirms that `risk` is a field of `contract.verdict` and that `medium` and `high` are values it can take (§3.2), that both alternatives for `verdict` have the type the report needs (§3.3), and that the result is present on every path (§3.5).
+</details>
 
 ## Conventions
 
-- **Canonical JSON.** `canonical(x)` is JSON with object keys sorted, no whitespace and `undefined` members omitted. Every hash in SRS-1 is the SHA-256 (hex) of canonical JSON ([`core/src/canonical.ts`](../core/src/canonical.ts)).
-- **Amounts** are decimal strings of integers in the payment token's smallest unit. The reference deployment settles in USDC (6 decimals): `"10000"` is $0.01.
-- **Identifiers.** References are split at their first `.`, so the names that start a reference cannot contain one.
+> Small rules that keep every hash, amount and name unambiguous.
+
+- **Canonical JSON.** `canonical(x)` sorts object keys, drops whitespace and omits `undefined` members. Every hash in SRS-1 is SHA-256, in hex, of canonical JSON ([`core/src/canonical.ts`](../core/src/canonical.ts)).
+- **Amounts** are integer strings in the payment token's smallest unit. The reference deployment settles in USDC, so `"10000"` is $0.01.
+- **Names.** A reference splits at its first `.`, so names that start a reference never contain one.
 
 | Name | Grammar | Example |
 |---|---|---|
@@ -68,73 +79,72 @@ Workflow tools already compose steps, and oracle networks already run workflows 
 | type | dot-separated lower-case segments | `address.near.fresh` |
 | type variable | one capital letter | `T` |
 | port, param | `[a-z_][a-z0-9_]*` | `max_share` |
-| node id, form field id, constant name | `[a-z][a-z0-9_]{0,31}` | `judge` |
-| ticker (the on-chain recipe id) | `[A-Z0-9]{3,6}` | `ESCL` |
+| node id, form field, constant | `[a-z][a-z0-9_]{0,31}` | `judge` |
+| ticker, the on-chain recipe id | `[A-Z0-9]{3,6}` | `ESCL` |
 | reference | `form.<field>`, `const.<name>` or `<node>.<port>` | `rules.verdict` |
-| binding | a reference, or a non-empty list of references | `["judge.verdict", "rules.verdict"]` |
+| binding | a reference, or a non-empty list of them | `["judge.verdict", "rules.verdict"]` |
 
 ## 1. Types
 
-Ports, form fields and constants are typed with named types from the catalog.
+> Types are how parts from strangers fit together safely, without anyone reading anyone's code.
 
-### 1.1 Nominal subtyping
+### 1.1 Subtyping
 
-A type may `extend` one parent:
+A type may extend one parent. A value of type `A` fits a port of type `B` when `A` is `B` or extends it.
 
 ```json
 "address.near":       { "extends": null },
-"address.near.fresh": { "extends": "address.near" }
+"address.near.fresh": { "extends": "address.near", "proof": true }
 ```
 
-A value of type `A` may be wired into a port of type `B` iff `A == B` or `A` transitively extends `B`. This is what makes swaps safe: a swap part that needs a *proven-fresh* address (`address.near.fresh`) cannot be fed a raw form field, but a part that accepts any `address.near` can take a fresh one. A type marked `"proof": true` can only come from a part output, never from the buyer's form or a constant (`type.proof`). `address.near.fresh` is such a type: the only way to obtain one is from a part that checks the chain (`addr.fresh-check`), so the type is a certificate, not a label.
+A swap that needs a proven-fresh address can't be fed a raw form field, while anything that takes an `address.near` happily takes a fresh one. A `proof` type can only come out of a part, never from the buyer or a constant (`type.proof`). Only `addr.fresh-check` produces `address.near.fresh`, so the type works as a certificate.
 
 ### 1.2 Value schemas
 
-A type MAY declare a `schema` in this subset of JSON Schema: `type` (`string`, `number`, `integer`, `boolean`, `object`, `array`, `null`), `enum`, `pattern`, `minimum`, `maximum`, `properties`, `required` and `items`. Other keywords are not part of SRS-1.
+A type MAY carry a schema, written in this subset of JSON Schema: `type`, `enum`, `pattern`, `minimum`, `maximum`, `properties`, `required`, `items`. A value of type `A` satisfies the schema of `A` and of every type it extends (`checkValue`).
 
 ```json
 "contract.verdict": { "extends": null, "description": "Risk verdict on a contract",
   "schema": { "type": "object", "required": ["risk", "reasons", "source"],
-              "properties": { "risk": { "type": "string", "enum": ["low", "medium", "high"] }, "reasons": { "type": "array", "items": { "type": "string" } } } } }
+              "properties": { "risk": { "type": "string", "enum": ["low", "medium", "high"] } } } }
 ```
 
-A value is of type `A` iff it satisfies the schema of `A` and of every type `A` extends (`checkValue`). Schemas are enforced in three places:
-- the validator checks every constant (`const.value`) and every field a condition names (`when.field`, `when.value`);
-- the runner checks every output of every part against the type of its port before any other part sees it. A part that returns anything else fails the run, and the buyer is refunded. A faulty or malicious part therefore cannot hand the next part a value that breaks its type's schema, in particular not a part that builds the transactions a buyer signs;
-- quote mode runs the same checks, so a part that returns ill-typed values usually fails at quote time, before anyone pays.
+| What is checked | When | Why it matters |
+|---|---|---|
+| constants, and every field a condition names | while composing | mistakes never reach a buyer |
+| every output of every part | while running, before the next part sees it | a faulty part can't hand a bad value to the part that builds a transaction |
+| the same checks, in quote mode | before anyone pays | most faults surface at quote time |
 
-Every catalog type declares a schema or inherits one.
+A part that returns something off-schema fails the run, and the buyer is refunded. Every standard type declares a schema or inherits one.
 
 ### 1.3 Type variables
 
-A manifest MAY declare type variables, and its ports MAY use them as types:
+One utility part can serve every type.
 
 ```json
 { "id": "util.pick@1.0.0", "type_params": { "T": { "extends": null } },
   "inputs": { "a": { "type": "T" }, "b": { "type": "T" } }, "outputs": { "out": { "type": "T" } } }
 ```
 
-In a recipe, each node binds each variable to the most specific type that every value wired to a port of that variable is assignable to (their join; with single inheritance, the nearest common ancestor). Alternatives in a binding all count. The node's outputs of that type have the bound type.
-
-- `util.pick(fresh, fresh)` outputs `address.near.fresh` and can feed a swap that requires a fresh address. `util.pick(fresh, raw)` outputs `address.near` and cannot.
-- If the wired types have no common ancestor, the validator reports `port.generic`. If the join is not within the variable's bound (`extends`), it reports `port.type`.
-- In a manifest, a variable MUST be used by at least one input (`type_params.unbound` otherwise), so a recipe can always bind it.
-
-Without variables every utility has to exist once per type: a merge typed for receipts merges only receipts, and a wait typed for holdings delays only holdings. With them, one merge, wait, pick or dedupe serves every type, and its author is paid in every domain that uses it.
+- Each node binds `T` to the most specific type every wired value fits: their nearest common ancestor. Fallbacks count too. Outputs typed `T` take that type.
+- `pick(fresh, fresh)` returns `address.near.fresh` and can feed a swap that needs one. `pick(fresh, raw)` returns `address.near` and cannot.
+- No common ancestor is `port.generic`. A binding outside the bound is `port.type`. A variable MUST appear on at least one input (`type_params.unbound`), so a recipe can always bind it.
 
 ### 1.4 The standard vocabulary
 
-| Group | Types (`extends`) | Buyer can type it |
+| Group | Types | The buyer can type it |
 |---|---|---|
-| Identities | `near.account`, `address.near`, `address.near.fresh` (address.near), `asset.id` | all but `address.near.fresh` (`proof`), which only a guard can produce |
+| Identities | `near.account`, `address.near`, `address.near.fresh`, `asset.id` | yes, except `address.near.fresh`, which only a part can prove |
 | Quantities | `usd`, `percent` | yes |
-| Wallet state | `token.holdings`, `key.list`, `stake.list`, `contract.facts` | no: read by source parts |
+| Wallet state | `token.holdings`, `key.list`, `stake.list`, `contract.facts` | no, parts read these |
 | Judgements | `token.flags`, `contract.verdict` | no |
 | Plans and results | `swap.plan`, `swap.receipts`, `report` | no |
 
-`swap.receipts` is the result type whose value a quote can promise and a bond can back (§7): receipts of value delivered to the buyer's recipient, which staking withdrawals and claimed drops also produce. The vocabulary grows by proposal (§10).
+`swap.receipts` is the one result whose value a quote can promise and a deposit can back (§7): value delivered to the buyer's recipient, from swaps, staking withdrawals or claimed drops. The vocabulary grows by proposal (§10).
 
 ## 2. Part manifest
+
+> A part says what it takes, what it returns, where it may reach and what it costs. The runner holds it to every word.
 
 ```json
 {
@@ -153,362 +163,374 @@ Without variables every utility has to exist once per type: a merge typed for re
 }
 ```
 
-- `id` is registered on-chain with `manifest_hash = sha256(canonical(manifest))`. A published id never changes meaning; a new behaviour is a new version.
-- `category` is one of `source` (reads the world from an identity), `guard` (narrows a value or certifies it, as `addr.fresh-check` does), `transform` (pure computation), `action` (changes the world) and `sink` (turns values into a report). Only `action` parts may declare `wallet:approve`.
-- `capabilities` are **enforced**. The runner gives each part an HTTP function that rejects hosts not declared as `net:<host>` (`guardedFetch`). `wallet:approve` means the part may ask the buyer to sign transactions. It can never sign them itself.
-- `params` are typed `string`, `number`, `boolean` or `string[]`. `secret: true` marks the creator's edge (prompts, thresholds, routing choices); those values exist only inside the sealed recipe.
-- `type_params` declares type variables (§1.3).
-- `fee_per_call` is paid to `author` for every node that uses the part, in every settlement that bills it (§6.1).
+| Field | What it means |
+|---|---|
+| `id` | Registered on-chain with `manifest_hash = sha256(canonical(manifest))`. New behaviour, new version |
+| `category` | `source` reads, `guard` narrows or certifies, `transform` computes, `action` changes the world, `sink` reports. Only an `action` may declare `wallet:approve` |
+| `capabilities` | Enforced. `net:<host>` is the only network the part gets (`guardedFetch`). `wallet:approve` lets it ask the buyer to sign, never sign for them |
+| `params` | `string`, `number`, `boolean` or `string[]`. `secret: true` marks the creator's edge, which exists only inside the sealed recipe |
+| `type_params` | Type variables (§1.3) |
+| `fee_per_call` | Paid to `author` for every node that uses the part, in every settlement that bills it (§6.1) |
 
 ### 2.1 Disclosure and withdrawal risk
 
-Every part declares where its value lives, in four layers, plus where it runs:
+Could this part be rebuilt if its supplier vanished? Every part answers in five fields.
 
 ```json
 "disclosure": {
   "model":        { "kind": "open-weights", "name": "Qwen/Qwen3-30B-A3B-Instruct-2507", "host": "NEAR AI Cloud (private, TEE)" },
-  "instructions": "sealed",
-  "harness":      "open",
-  "verification": "open",
-  "runtime":      "bundled"
+  "instructions": "sealed", "harness": "open", "verification": "open", "runtime": "bundled"
 }
 ```
 
-- `model.kind` is `none` (plain code), `open-weights` or `closed`.
-- `instructions` covers prompts and settings. `harness` covers tools, data lookups and retry logic. `verification` is how the part checks its own result. Each is `open` (published), `sealed` (escrowed to the TEE runner, so it can be rebuilt without anyone seeing it) or `closed` (held only by the supplier).
-- `runtime` is `bundled` (the code ships inside the attested runner image, pinned by hash) or `remote` (the supplier operates it as a service).
-
-Parts MUST disclose their model. Parts on open-weights models carry low withdrawal risk, because anyone can re-host the weights. Parts on closed models carry high withdrawal risk, because the provider can retire, change or reprice the model at any time. A part is only truly rebuildable if every layer is open or sealed. `withdrawalRisk()` derives the label:
-
-| Risk | Rule |
+| Field | Values |
 |---|---|
-| **high** | closed model, or a remote part with a closed harness or closed verification |
-| **medium** | remote part whose layers are all open or sealed (rebuildable, but the operator can stop the service) |
-| **low** | bundled part with no model or an open-weights model |
+| `model.kind` | `none` (plain code), `open-weights`, `closed`. Every part MUST disclose its model |
+| `instructions`, `harness`, `verification` | prompts and settings; tools, lookups and retries; how the part checks itself. Each is `open` (published), `sealed` (escrowed to the runner, rebuildable unseen) or `closed` (held by the supplier) |
+| `runtime` | `bundled` (ships in the attested runner, pinned by hash) or `remote` (run by the supplier) |
 
-A recipe's risk is the highest risk of its parts. The validator warns (`part.closed-model`) when a recipe uses a closed model, and the risk is shown on every listing and quote.
+| Risk | When |
+|---|---|
+| **high** | a closed model, or a remote part with a closed harness or closed verification |
+| **medium** | a remote part whose layers are all open or sealed: rebuildable, but its operator can stop it |
+| **low** | a bundled part with no model or an open-weights model |
 
-### 2.2 Per-run resource limits
+Open weights can be re-hosted by anyone. A closed model can be retired, changed or repriced by its provider overnight. A recipe carries the highest risk of its parts, shown on every listing and quote, and the validator warns on closed models (`part.closed-model`).
+
+### 2.2 Per-run limits
 
 ```json
 "limits": { "max_ms": 20000, "max_http_calls": 12, "max_model_calls": 2, "max_output_bytes": 32000 }
 ```
 
-The runner enforces these for every part ([`runner/src/limits.ts`](../runner/src/limits.ts)): wall time (excluding time spent waiting for the buyer's wallet), HTTP calls, calls to model endpoints, and output size. A part that goes over fails the run (or is skipped, if the recipe allows it, §3.4). The buyer's price is fixed before the run, so a runaway part can never produce a surprise bill.
+Wall time (wallet waits excluded), HTTP calls, model calls and output size, enforced by the runner ([`runner/src/limits.ts`](../runner/src/limits.ts)). Past a limit the part fails (§3.4). The price was fixed before the run, so a runaway part never becomes a surprise bill.
 
 ## 3. Recipe
+
+> A recipe is a typed graph of parts. The creator makes the choices; the types check them.
 
 ```json
 {
   "srs": "1.0", "kind": "recipe",
-  "meta":   { "ticker": "CLNP", "name": "Clean up and protect", "creator": "chef.testnet", "description": "…" },
-  "form":   [ { "id": "wallet", "label": "Wallet to clean", "type": "near.account", "required": true },
-              { "id": "recipient", "label": "Fresh address", "type": "address.near", "generator": "fresh-implicit" } ],
-  "nodes":  [ { "id": "scan",  "part": "near.wallet-scanner@1.0.0", "inputs": { "account": "form.wallet" }, "params": {} },
-              { "id": "fresh", "part": "addr.fresh-check@1.0.0",    "inputs": { "recipient": "form.recipient" } }, "…" ],
-  "consts": { "usdc": { "type": "asset.id", "value": "nep141:…" } },
-  "output": "swap.receipts",
+  "meta":    { "ticker": "CLNP", "name": "Clean up and protect", "creator": "chef.testnet", "description": "…" },
+  "form":    [ { "id": "wallet", "label": "Wallet to clean", "type": "near.account", "required": true },
+               { "id": "recipient", "label": "Fresh address", "type": "address.near", "generator": "fresh-implicit" } ],
+  "nodes":   [ { "id": "scan",  "part": "near.wallet-scanner@1.0.0", "inputs": { "account": "form.wallet" } },
+               { "id": "fresh", "part": "addr.fresh-check@1.0.0",    "inputs": { "recipient": "form.recipient" } }, "…" ],
+  "consts":  { "usdc": { "type": "asset.id", "value": "nep141:…" } },
+  "output":  "swap.receipts",
   "listing": { "price_per_run": "750000", "reserve_bps": 1000, "bond": "25000000" }
 }
 ```
 
-| Field | Meaning |
+| Field | What it holds |
 |---|---|
-| `srs` | the spec version the recipe is written for: `"1.0"` |
-| `form` | what the buyer is asked: typed fields, at most 6 recommended (`form.long`). `generator: "fresh-implicit"` lets the buyer's browser generate a new address |
-| `nodes` | each uses one catalog part, binds every input, and sets params (`params` may be omitted). Optional: `when` (§3.2), `on_error` (§3.4) |
-| `consts` | typed fixed values; checked against their type's schema |
-| `output` | the result: a binding (§3.1). Its type is the recipe's `output_type` |
+| `srs` | the spec version: `"1.0"` |
+| `form` | the buyer's questions, typed. Six at most is the guidance (`form.long`). `generator: "fresh-implicit"` makes a new address in the buyer's browser |
+| `nodes` | one catalog part each, every input bound, params optional. A node MAY add `when` (§3.2) and `on_error` (§3.4) |
+| `consts` | fixed values, checked against their type's schema |
+| `output` | the result, a binding (§3.1). Its type is the recipe's `output_type` |
 | `listing` | price and collateral (§4), `settle_mode` (§8), `bill` (§6.1) |
 
 ### 3.1 References and bindings
 
-A reference is `form.<field>`, `const.<name>` or `<node>.<port>`. A binding is one reference, or a list of references (§3.3). Node inputs and the recipe's `output` are bindings; a condition reads one reference. Nodes may be declared in any order: execution follows dependencies (§3.5).
+A reference points at a value: `form.<field>`, `const.<name>` or `<node>.<port>`. A binding is one reference or a list of them (§3.3). Inputs and the `output` are bindings; a condition reads one reference. Nodes may be written in any order. Dependencies decide when each runs.
 
 ### 3.2 Conditions
 
-A node with `when` runs only if its condition holds:
+A node with `when` runs only if its test holds.
 
 ```json
 "when": { "ref": "rules.verdict", "match": { "risk": ["medium", "high"] } }
 ```
 
-A condition has exactly one test (`when.shape`):
-
 | Test | Holds when |
 |---|---|
-| `"is": "nonempty"` (default) | the value is present and not an empty list, an empty object, `null` or `""` |
-| `"is": "empty"` | the opposite; a value that is absent because its node was skipped is empty |
-| `"match": { field: [values] }` | the value is an object, and each listed field has one of the listed values |
-| `"some": { field: [values] }` | the value is a list, and at least one item matches every listed field |
+| `"is": "nonempty"` (default) | there is a value, and it is not an empty list, an empty object, `null` or `""` |
+| `"is": "empty"` | the opposite. A value from a skipped part counts as empty |
+| `"match": { field: [values] }` | an object whose field has one of the values |
+| `"some": { field: [values] }` | a list with at least one item whose field has one of the values |
 
-`"not": true` negates the test; that is how a recipe writes the *else* branch. The validator resolves `ref` (`when.ref`), checks that `match` reads an object type and `some` a list type, and checks every field and value against the type's schema (`when.field`, `when.value`). A condition on a type without a schema is allowed with a warning (`when.unchecked`).
+One test per condition (`when.shape`). `"not": true` flips it, which is how a recipe writes *else*. The validator resolves `ref` (`when.ref`) and checks each field and value against the type's schema (`when.field`, `when.value`); a type with no schema gets a warning (`when.unchecked`).
 
-Conditions are expressed over typed values that parts produce, not as code or text expressions. That keeps them checkable when composing, editable in a no-code UI and impossible to use as an escape hatch: a condition can choose whether a part runs, never what it does.
+Conditions read typed values, never code or free text. They can decide whether a part runs, never what it does.
 
-### 3.3 Alternatives
+### 3.3 Fallbacks
 
-A binding that lists several references takes the first one that is present when the node runs:
+A list takes the first value that is there.
 
 ```json
 "inputs": { "verdict": ["judge.verdict", "rules.verdict"] }
 ```
 
-Every alternative MUST be assignable to the port's type (`port.type`); for a port typed with a variable, every alternative counts towards its binding (§1.3). Repeats are not allowed (`port.alternatives`). The node depends on every node its alternatives name. A recipe `output` may list alternatives too; its `output_type` is their join.
+Every entry MUST fit the port (`port.type`) and appear once (`port.alternatives`). The node waits for all of them. An `output` may list fallbacks too; its type is their nearest common ancestor.
 
 ### 3.4 Skipping on error
 
-`"on_error": "skip"` lets a run continue when that node's part fails: it throws, exceeds a limit (§2.2) or returns a value that is not of its declared type (§1.2). The node is then skipped (§3.5). The default, `"fail"`, fails the run and refunds the buyer.
+`"on_error": "skip"` lets a run go on without a part that throws, breaks a limit (§2.2) or returns an off-schema value (§1.2). The default, `"fail"`, stops the run and refunds the buyer.
 
-A part with `wallet:approve` MUST NOT be skipped on error (`node.on_error`): once it has asked the buyer to sign, funds may already have moved, and continuing would build the rest of the run on an unknown state.
+A part with `wallet:approve` MUST NOT skip (`node.on_error`). Once it has asked the buyer to sign, funds may have moved, and nothing after it should build on an unknown state.
 
-### 3.5 Execution semantics
+### 3.5 How a run executes
 
-The runner ([`execute`](../runner/src/executor.ts)) MUST behave as follows; quotes (§7) use the same steps in quote mode.
+The runner MUST follow these steps ([`execute`](../runner/src/executor.ts)). Quotes take the same steps in read-only mode (§7).
 
-1. Validate the recipe and the buyer's inputs against the form. Order the nodes topologically; ties keep declaration order, so the order is deterministic.
-2. A reference is **present** if it names a form field, a constant, or an output of a node that ran. A binding resolves to its first present reference.
-3. For each node in order:
-   - if an input binding has no present reference, the node is **skipped**;
-   - otherwise, if it has a condition that does not hold on the resolved value of `ref` (an absent value is "empty", §3.2), it is skipped;
-   - otherwise its part runs with the resolved inputs and with params set to the manifest defaults overridden by the node's params, under its limits. Each declared output MUST be present and of its port's type (§1.2). If the part fails, the node is skipped when it has `on_error: "skip"`, and the run fails otherwise.
-4. The result is the first present reference of `output`. If none is present, the run fails.
-5. A run that succeeds is reported `ok` and bills parts as in §6.1. A run that fails bills nothing and refunds the buyer.
+1. Validate the recipe and the buyer's inputs. Order the nodes by dependency; ties keep the written order.
+2. A reference is **present** when it names a form field, a constant, or the output of a part that ran. A binding takes its first present reference.
+3. For each node: skip it if an input has nothing present, or if its condition does not hold. Otherwise run the part, with the manifest's default params overlaid by the node's, under its limits. Every output MUST be present and on-schema. If the part fails, skip it when `on_error` is `"skip"`, and fail the run otherwise.
+4. The result is the first present reference of `output`. If there is none, the run fails.
+5. A run that succeeds reports `ok` and bills as in §6.1. A run that fails bills nothing and refunds the buyer.
 
-Skipping spreads: a node that needs a value only a skipped node could provide (with no present alternative) is skipped too, so a branch that does not run does nothing downstream. The validator computes the nodes that may be skipped (`optional` in its result) and warns when the result itself may be absent (`recipe.output-optional`). It recognises the two shapes in which one of two alternatives always runs, provided neither node can be skipped for another reason: a fallback (`b` has `when: { "ref": "a.<port>", "is": "empty" }`) and an if / else (`a` and `b` have the same test on the same value, one with `not: true`).
+Skipping travels downstream: a part that needs a skipped value, with no fallback, is skipped as well. The validator lists the parts that may be skipped and warns when the result itself might be missing (`recipe.output-optional`). It knows two shapes that always leave one fallback present: a fallback that runs when its primary is empty (`"is": "empty"` on the primary's output), and an if/else pair with the same test, one side negated.
 
-Common shapes, with the n8n node that does the same job:
-
-| Pattern | n8n | SRS-1 |
-|---|---|---|
-| If / else | IF | two nodes, one with `when` and one with the same `when` and `not: true`, joined by a binding with both as alternatives |
-| Switch | Switch | several nodes with `match` on different values of one verdict |
-| Escalate only when needed | IF, then Merge | [`ESCL`](../standard/examples/ESCL.json): `match` on the cheap verdict, alternatives in the report |
-| Fall back when a provider fails | error output or error workflow | [`FALL`](../standard/examples/FALL.json): `on_error: "skip"`, a fallback with `is: "empty"`, alternatives |
-| Act only if something needs doing | IF before an action | `when: { "ref": "risk.risky", "some": { "action": ["revoke"] } }` on the action node |
-| Merge two streams | Merge | a part with two inputs (`swap.merge`), or a generic one (§1.3) |
-| Wait | Wait | `time.wait`, durable across runner restarts (§8) |
+| To build | Do this |
+|---|---|
+| If / else | two parts with the same `when`, one with `"not": true`, joined by a fallback list |
+| Switch | several parts, each with `match` on a different value of one verdict |
+| Escalate only when needed | `match` on the cheap verdict, then a fallback list in the report ([`ESCL`](../standard/examples/ESCL.json)) |
+| Survive a provider outage | `on_error: "skip"`, a backup part with `"is": "empty"`, a fallback list ([`FALL`](../standard/examples/FALL.json)) |
+| Act only when needed | `"some": { "action": ["revoke"] }` on the acting part |
+| Merge two streams | a part with two inputs, or a generic one (§1.3) |
+| Wait | `time.wait`, which survives runner restarts (§8) |
 
 ### 3.6 Validation rules
 
-All enforced by `validateRecipe` ([`core/src/srs.ts`](../core/src/srs.ts)). Errors block sealing; warnings are shown to the creator.
+Errors block sealing. Warnings are shown to the creator. All live in `validateRecipe` ([`core/src/srs.ts`](../core/src/srs.ts)).
 
-| Code | Severity | Rule |
+| Code | Level | Rule |
 |---|---|---|
-| `srs.version` | error | `srs` is `"1.0"`, `kind` is `"recipe"` |
-| `meta.ticker`, `meta.name` | error | ticker `^[A-Z0-9]{3,6}$` (the on-chain recipe id); a name |
-| `form.id`, `form.duplicate`, `form.type` | error | field ids match the identifier grammar, are unique and have known types |
+| `srs.version` | error | `srs` is `"1.0"` and `kind` is `"recipe"` |
+| `meta.ticker`, `meta.name` | error | a ticker matching `^[A-Z0-9]{3,6}$`, and a name |
+| `form.id`, `form.duplicate`, `form.type` | error | field ids follow the grammar, are unique and use known types |
 | `type.proof` | error | no form field or constant has a `proof` type (§1.1) |
-| `form.long`, `form.unused` | warning | at most 6 fields (*one short form, no chat*); every field is used |
-| `const.id`, `const.type`, `const.value` | error | constant names match the grammar; types are known; values satisfy the type's schema |
-| `listing.price`, `listing.reserve`, `listing.bond`, `listing.pricing`, `listing.settle_mode`, `listing.bill` | error | positive integer price; `reserve_bps` in 0–10000; integer bond; `price_floor ≤ price_per_run ≤ price_ceiling` and `target_runs ≥ 1`; known modes |
-| `recipe.empty`, `node.id`, `node.duplicate`, `node.reserved`, `node.part` | error | at least one node; node ids match the grammar, are unique, are not `form` or `const`, and use catalog parts |
-| `port.unwired`, `port.ref`, `port.alternatives` | error | every input is bound; every reference resolves; lists are non-empty without repeats |
-| `port.type`, `port.generic` | error | every alternative is assignable to its port; type variables bind within their bounds (§1.3) |
-| `port.extra`, `param.missing` | warning | a binding for a port the part does not have; an unset secret param with no default |
+| `form.long`, `form.unused` | warning | six fields at most; every field used |
+| `const.id`, `const.type`, `const.value` | error | names follow the grammar; types are known; values are on-schema |
+| `listing.price`, `listing.reserve`, `listing.bond`, `listing.pricing`, `listing.settle_mode`, `listing.bill` | error | a positive integer price; `reserve_bps` from 0 to 10000; an integer bond; `price_floor ≤ price_per_run ≤ price_ceiling` with `target_runs ≥ 1`; known modes |
+| `recipe.empty`, `node.id`, `node.duplicate`, `node.reserved`, `node.part` | error | at least one node; ids follow the grammar, are unique and aren't `form` or `const`; parts exist |
+| `port.unwired`, `port.ref`, `port.alternatives` | error | every input bound; every reference resolves; lists non-empty, without repeats |
+| `port.type`, `port.generic` | error | every entry fits its port; type variables bind within their bounds |
+| `port.extra`, `param.missing` | warning | a binding for a port the part lacks; an unset secret param with no default |
 | `when.shape`, `when.ref`, `when.field`, `when.value` | error | §3.2 |
-| `when.unchecked` | warning | the condition reads a type without a schema |
-| `node.on_error` | error | `on_error` is `fail` or `skip`, and never `skip` on a signing part (§3.4) |
-| `graph.cycle` | error | the graph is acyclic |
-| `recipe.output` | error | the result binding resolves and its alternatives have a common type |
-| `recipe.output-optional` | warning | on some runs the result may be skipped (the run would fail and be refunded) |
-| `node.deadend` | warning | a node whose output nothing reads (it is still billed) |
-| `bill.reveals-branch` | warning | `bill: "executed"` with nodes that may be skipped (§6.1) |
-| `param.secret-egress` | warning | a secret param is set on a part that can reach a host outside the confidential set (§5.4) |
+| `when.unchecked` | warning | the condition reads a type with no schema |
+| `node.on_error` | error | `fail` or `skip`, and never `skip` on a signing part |
+| `graph.cycle` | error | no cycles |
+| `recipe.output` | error | the result resolves, and its fallbacks share a type |
+| `recipe.output-optional` | warning | on some runs the result may be missing, so the run would refund |
+| `node.deadend` | warning | nothing reads a part's output, yet it is still billed |
+| `bill.reveals-branch` | warning | `bill: "executed"` with parts that may be skipped (§6.1) |
+| `param.secret-egress` | warning | a secret param on a part that can reach a host outside the confidential set (§5.4) |
 | `part.closed-model` | warning | a part runs on a closed model (§2.1) |
 
-The validator also returns the execution order, the billable parts, the union of capabilities, the sum of part fees, the risk, the resolved type of every node output and the set of nodes that may be skipped.
+It also returns the run order, the billable parts, every capability, the total part fees, the risk, the type of every output and the parts that may be skipped.
 
 ### 3.7 Drop-in swaps
 
-`compatibleSwaps(recipe, nodeId)` returns every catalog part that can replace a node **without rewiring**: the candidate has an existing binding for each of its inputs, still has every output the recipe reads from the node, and substituting it introduces no new validation error. So every existing wire must be assignable to the candidate's inputs (contravariant), and every consumer, condition included, must accept the candidate's outputs (covariant), with type variables bound as usual. `swapPart` carries over matching params and fills the new part's defaults. A swap changes the parts list, so a published recipe that swaps a part is published as a new recipe (§8).
+`compatibleSwaps(recipe, nodeId)` finds every part that can replace a node without rewiring: it accepts the existing inputs, provides every output the recipe reads, and introduces no new validation error. Conditions and fallbacks count as readers. `swapPart` keeps the matching params and fills the rest with defaults. A swap changes the parts list, so a published recipe with a swapped part is published as a new recipe (§8).
 
 ## 4. Public listing
 
-`publicListing(recipe)` is the only recipe-derived data the marketplace and the chain receive:
-`ticker, name, creator, description, form, parts, capabilities, output_type, price_per_run, pricing, reserve_bps, interface_hash`, plus the risk, disclosure and privacy labels, which are recomputed from the parts and never taken from the creator (`labelsFromParts`).
+> Everything the market sees. Enough to choose, never enough to copy.
 
-- `parts` is the recipe's parts as a **sorted multiset**: one entry per node, in lexicographic order. The contract needs the multiset to bill and to check reports (§6); the order is part of the method and stays sealed.
-- `interface_hash = sha256(canonical({form, parts, output_type}))` identifies what a buyer interacts with, independently of how the recipe works inside.
-- Wiring, conditions, params and constants are **not** included.
+`publicListing(recipe)` is the only recipe-derived data the marketplace and the chain receive: `ticker, name, creator, description, form, parts, capabilities, output_type, price_per_run, pricing, reserve_bps, interface_hash`, plus risk, disclosure and privacy labels recomputed from the parts (`labelsFromParts`), never taken from the creator.
 
-`listing.pricing` (`{price_floor, price_ceiling, target_runs}`) makes the price market-driven: `price_per_run` is the starting list price, which then follows paid runs per period inside the band. Omitted, the price is fixed. `listing.reserve_bps` (0–10000) is the share of the creator's cut of each run that is added to the recipe's guarantee deposit instead of paid out. `listing.bond` is the deposit the creator posts at publish. Both are the creator's own collateral; a listing has no shares, supply or other investment fields.
+| Field | Why it looks this way |
+|---|---|
+| `parts` | a sorted multiset, one entry per node. The contract needs it to bill and to check reports; the run order is part of the method and stays sealed |
+| `interface_hash` | `sha256(canonical({form, parts, output_type}))`: what a buyer interacts with, apart from how it works |
+| `pricing` | `{price_floor, price_ceiling, target_runs}`. The price follows paid runs inside the band; without it the price is fixed |
+| `reserve_bps`, `bond` | the creator's own collateral: the deposit posted at publish, and the share of each run that tops it up. No shares, no supply, no investment fields |
+
+Wiring, conditions, params and constants are not in the listing.
 
 ## 5. Sealing and the privacy boundary
 
+> Only the creator can read a recipe. The runner opens it inside sealed hardware, only to run it.
+
+![Who can read what: only the creator and the runner see the method; only the buyer and the runner see the buyer's data; the marketplace holds ciphertext; everyone else sees hashes and the listing.](media/srs-privacy.svg)
+
 ### 5.1 Envelopes
 
-`seal(payload, runnerEncPk, purpose)` produces an `srs-seal-v1` envelope: an anonymous NaCl box (ephemeral X25519 key, XSalsa20-Poly1305) over `canonical({salt, payload})`. The random salt stops anyone from confirming a guessed recipe against the on-chain hash. On-chain commitment: `sealed_hash = sha256(canonical(envelope))`. Buyer inputs are sealed the same way, and their hash is the run's `inputs_hash`.
+`seal(payload, runnerEncPk, purpose)` makes an `srs-seal-v1` envelope: an anonymous NaCl box (ephemeral X25519, XSalsa20-Poly1305) over `canonical({salt, payload})`. The salt stops anyone from confirming a guess against the hash. On-chain, only `sealed_hash = sha256(canonical(envelope))`. Buyer inputs are sealed the same way and hashed into `inputs_hash`.
 
-The creator's client seals a second copy of each published version (purpose `creator-copy`) to a key only the creator can re-derive: `X25519 secret = sha256("srs-creator-key-v1" || signature)`, where the signature is the creator's wallet signing a fixed NEP-413 message ([`core/src/creator.ts`](../core/src/creator.ts)). Ed25519 signatures are deterministic, so the creator can reopen and edit any version from any device, and nothing is stored in the browser.
+The creator's browser also seals a copy of each version to the creator alone (purpose `creator-copy`). Its key is `sha256("srs-creator-key-v1" || signature)`, where the signature is the creator's wallet signing a fixed NEP-413 message ([`core/src/creator.ts`](../core/src/creator.ts)). The signature is deterministic, so the creator can reopen any version on any device, and nothing is stored in a browser.
 
 ### 5.2 Who can read what
 
-| Party | Recipe method (wiring, conditions, params, constants) | Buyer's inputs and result | Public listing |
+| Party | The method | The buyer's inputs and result | The listing |
 |---|---|---|---|
-| Creator | yes, from the creator copy | no | yes |
-| Runner (attested TEE) | yes, only in memory, only for a paid run or a quote | yes, same | yes |
-| Buyer | no | yes, sealed to a one-time `reply_to` key from their browser | yes |
-| Marketplace operator | no: stores ciphertext only (a test checks the server never imports the decryption function) | no | yes |
-| Chain and the public | `sealed_hash` only | `inputs_hash`, a salted `output_hash`, the billed parts and, if the buyer chose a bonded quote, the quote's values | yes |
-| Part authors | no; their code receives only its own inputs and params | only what their part is given | yes |
-| Hosts a part calls | only what that part sends them (§5.4) | same | — |
-| Reviewers | no | no | yes |
+| Creator | yes, its own sealed copy | no | yes |
+| Runner, in a TEE | in memory, for a paid run or a quote | the same | yes |
+| Buyer | no | their own, sealed to a one-time `reply_to` key | yes |
+| Marketplace | ciphertext only; a test checks the server never imports the decryption function | ciphertext only | yes |
+| The chain, and everyone | `sealed_hash` | `inputs_hash`, a salted `output_hash`, the billed parts, and a bonded quote's values if the buyer chose one | yes |
+| Part authors | no; their code sees only its own inputs and params | only what their part is given | yes |
+| Hosts a part calls | only what that part sends them (§5.4) | the same | |
 
-### 5.3 What the public data reveals
+### 5.3 What the public data gives away
 
-Sealing hides a recipe's text, not what can be inferred from its interface. Typed ports are what make composition no-code, and they also constrain how parts can be wired: for a short linear recipe, often only one wiring of its public parts validates, uses every form field and has no dead ends. The sealed edge of such a recipe is in its params, constants and conditions: the prompt a classifier is given, the thresholds, the brands on a watch list, the slippage, which branch handles which case. SRS-1 is designed so that this is where the value lives, and conditions and alternatives (§3.2, §3.3) add sealed decisions that the interface does not constrain.
-
-The format keeps the method and the buyer's data out of every public channel it controls:
+Sealing hides the text of a recipe, not what its interface implies. Types constrain wiring, so a short linear recipe often has only one wiring that validates. That is by design: the edge lives in what the interface can't reveal. The prompt a classifier is given, the thresholds, the brands on a watch list, the slippage, which case takes which branch.
 
 | Channel | What is public |
 |---|---|
-| The parts in the listing and in reports | a sorted multiset, never the execution order (§4) |
-| Events while a run executes | step `i` of `n` only, for run and skipped steps alike; part names, node ids, logs and results are sealed to the buyer |
-| Approvals relayed by the marketplace | keyed by step number, not by node id |
-| Which branch ran for a buyer | nothing, by default: `bill: "declared"` (§6.1) |
-| The result | `output_hash`, salted with a value only the buyer receives, so a short result (a verdict) cannot be confirmed by guessing (§6) |
+| parts, in the listing and in reports | a sorted multiset, never the run order (§4) |
+| events while a run executes | step `i` of `n`, for run and skipped steps alike. Names, node ids, logs and results are sealed to the buyer |
+| approvals relayed by the marketplace | keyed by step number, not node id |
+| which branch ran for a buyer | nothing, by default (§6.1) |
+| the result | `output_hash`, salted with a value only the buyer receives (§6) |
 
-What remains observable, by design or by physics: the number of steps; how long each step takes (a skipped step finishes at once); in `checkpoint` settlement mode, when each part is billed (§8); the values of a bonded quote, which the contract must enforce (§7); and the requests a part makes to the hosts it declares.
+Still visible, by design or by physics: the number of steps, how long each takes (a skipped one is instant), billing times in `checkpoint` mode (§8), a bonded quote's values (§7), and the requests a part sends to its declared hosts.
 
-### 5.4 Secret params and egress
+### 5.4 Secret params
 
-A secret param is only as private as the hosts its part can reach. The validator warns (`param.secret-egress`) when a node sets a secret param on a part that can reach a host outside the confidential set: public NEAR data hosts (read-only; the request carries no secret) and NEAR AI Cloud's attested private inference (`CONFIDENTIAL_HOSTS` in [`core/src/srs.ts`](../core/src/srs.ts)). Parts that send data to any new host are admitted only after human review (§11), which asks specifically whether that data needs to leave the runner.
+A secret is only as private as the hosts its part can reach. The validator warns (`param.secret-egress`) when a secret param sits on a part that can reach beyond the confidential set: public NEAR data hosts and NEAR AI Cloud's attested inference (`CONFIDENTIAL_HOSTS`). Parts that send data anywhere new are admitted only after human review, which asks whether that data needs to leave at all (§11).
 
 ## 6. Execution and report
 
-The runner takes the recipe id from the paid run and refuses to execute unless `sha256(sealed recipe) == run.sealed_hash` (the snapshot taken at payment), `sha256(sealed inputs) == run.inputs_hash`, and the run is `Pending`. Before executing, it also checks that the decrypted recipe uses exactly the parts listed on-chain; the public trust labels are computed from that list. The sealed inputs carry a one-time `reply_to` key from the buyer's browser; everything the runner reports about the run, except coarse progress (§5.3), is sealed to it.
+> One signed line settles a run.
 
-It executes the recipe as in §3.5, then signs:
+Before it runs anything, the runner checks three things against the chain: `sha256(sealed recipe) == run.sealed_hash`, `sha256(sealed inputs) == run.inputs_hash`, and the run is `Pending`. It also checks that the decrypted recipe uses exactly the parts listed on-chain, the list every public label is computed from. Then it executes (§3.5) and signs:
 
 ```
 srs-run-v3|<contract>|<run_id>|<recipe_id>|<ok|fail|abort>|<output_hash>|<delivered>|<parts_used,…>
 ```
 
-- `output_hash = sha256(canonical({run_id, salt, output}))`. The random `salt` is sealed to the buyer with the output, so the buyer can check the commitment and nobody else can test guesses against it.
-- `parts_used` is the sorted multiset of billed parts (§6.1); empty for `fail` and `abort`.
-- `ok` settles; `fail` and `abort` refund the buyer and release any locked cover (`abort` means the runner chose not to execute, §7, and is counted separately from failures). Once a run is verified as paid, pending and assigned to it, the runner signs a report on every exit path, so a buyer never waits for the reclaim timeout.
+| Field | Meaning |
+|---|---|
+| `output_hash` | `sha256(canonical({run_id, salt, output}))`. The salt reaches only the buyer, sealed with the output, so only the buyer can check it |
+| `parts_used` | the sorted multiset of billed parts (§6.1); empty for `fail` and `abort` |
+| outcome | `ok` settles. `fail` and `abort` refund the buyer and release any locked cover. `abort` means the runner chose not to start (§7) |
 
-`report_run` verifies the signature with `env::ed25519_verify`. `parts_used` must be a sub-multiset of the recipe's registered parts, so a runner cannot bill parts the recipe does not contain.
+`report_run` verifies the signature with `env::ed25519_verify` and requires `parts_used` to be a sub-multiset of the recipe's registered parts, so no runner can bill a part the recipe lacks. Once a run is verified as paid, pending and its own, the runner signs a report on every exit path. Nobody waits for a timeout.
 
 ### 6.1 Billing
 
-`listing.bill` decides which parts an `ok` run pays:
+| `listing.bill` | Who is paid on an `ok` run | Trade-off |
+|---|---|---|
+| `"declared"` (default) | every part, whether it ran or was skipped | every settlement looks the same, so nobody learns which branch ran. The creator covers the fees of parts that didn't run; the buyer's price never changes |
+| `"executed"` | only the parts that ran | the creator keeps more, but each settlement shows which branch ran (`bill.reveals-branch`) |
 
-- `"declared"` (default): every node, run or skipped. Every successful run of a recipe produces the same settlement, so the chain shows nothing about which branch ran for a buyer. The creator pays for privacy with the fees of parts that did not run; the buyer's price is unchanged.
-- `"executed"`: only the nodes that ran. The creator keeps more of the price when optional branches are expensive, but each settlement reveals which ones ran, and the validator warns (`bill.reveals-branch`).
-
-For a recipe without conditions or `on_error`, every node runs and both modes bill the same parts.
+Without conditions or `on_error`, every part runs, and both bill the same.
 
 ## 7. Quotes and guarantees
 
-A recipe's **bond** (shown to users as its *guarantee deposit*) is collateral the creator posts; it pays buyers shortfalls and nothing else.
+> Before paying, a buyer knows the price and, when funds move, the least they will receive.
 
-A buyer asks one recipe for a quote on their own inputs, filled in from the recipe's public form (§4). A buyer or an agent may ask several recipes and compare; nothing in the format groups recipes or makes them answer together.
+![From a question to a guarantee: seal inputs, dry run, choose, pay, re-check, settle.](media/srs-quote.svg)
 
-**Value delivered.** A recipe whose result type is `swap.receipts` (or a subtype) has a measurable value: what reached the buyer's recipient, in payment-token units. Only such a recipe can promise a value in its quote and back the promise with its bond. Any other recipe (a report, a key cleanup) quotes its price alone, with `expected = promised = cover = 0`.
+A recipe whose result is `swap.receipts` delivers a measurable value: what reached the buyer's recipient, in payment-token units. Only such a recipe can promise a value and back it with its **bond**, shown to buyers as a *guarantee deposit*: collateral the creator posts, which pays shortfalls and nothing else. Any other recipe quotes its price alone, with `expected = promised = cover = 0`.
 
-1. **Seal.** The buyer seals `{inputs, salt, reply_to}` once to the attested runner, with `job_hash = sha256(canonical({inputs, salt}))`. ("Job" is the buyer's sealed request; the name is kept in the contract.) The random salt means the on-chain hash cannot be brute-forced back to the wallet. One sealed request can be sent to several recipes.
-2. **Quote.** The runner checks the recipe against its on-chain hash and the request against `job_hash`. It then runs the recipe in **quote mode**: read-only, swaps priced with dry 1Click quotes, no approvals. For a recipe with a value delivered, `expected` comes from expected outputs and `promised` from the post-slippage minimums. The runner signs
-   `srs-quote-v3|<contract>|<recipe>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<price>|<expected>|<promised>|<cover>|<expires_ns>`,
-   where `inputs_hash` is the hash of the sealed request the buyer will pay with, `price` is the recipe's current market price (locked for this request), and `cover = min(promised, bond_available)`. A request may carry a `max_price`: a recipe listed above it is not asked to quote. The whole quote is sealed to `reply_to`; the marketplace relays ciphertext, and the buyer's client checks the signature before paying.
-3. **Choose.** The buyer, or an agent's policy, weighs expected value, promise, price, privacy, withdrawal risk and the on-chain track record.
-4. **Pay.** The signed quote rides in the run payment's `customRecipientMsg` (so its values become public; paying without a quote is always allowed and keeps them private). The contract checks the price (in the recipe's band, at most the buyer's `max_price`), then, in order: `job_hash` format, recipe version, runner active, signature, expiry, single use, `cover ≤ promised`, `bond_available ≥ cover`; then it locks `cover`.
-5. **Re-check.** Right before executing, the runner re-prices the run in quote mode. If the fresh promise is below 98% of the quoted one (the wallet changed), it signs `abort`: the buyer is refunded and the cover goes back to the bond.
-6. **Settle.** The runner measures `delivered` (for bonded runs, credited with any value the buyer withheld after the re-check: drained funds or deposits smaller than asked count at their quoted minimum, so the bond insures the market, not the buyer's own choices) and signs `srs-run-v3|…|ok|…|<delivered>|…`. The contract pays `min(max(0, promised − delivered), cover)` to the buyer from the locked cover, updates the recipe's track record and releases the rest.
+1. **Seal.** The buyer seals `{inputs, salt, reply_to}` once, with `job_hash = sha256(canonical({inputs, salt}))`. The salt keeps the hash from being traced back to a wallet. One sealed request can go to any number of recipes.
+2. **Quote.** The runner checks the recipe and the request against their hashes and dry-runs the recipe: read-only, swaps priced with dry 1Click quotes, no approvals. `expected` comes from expected outputs, `promised` from post-slippage minimums, and `cover = min(promised, bond_available)`. It signs<br>`srs-quote-v3|<contract>|<recipe>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<price>|<expected>|<promised>|<cover>|<expires_ns>`<br>with `price` locked for this request. A request may carry `max_price`; recipes above it are not asked. The quote is sealed to `reply_to`, and the buyer's client checks the signature before paying.
+3. **Choose.** By expected value, promise, price, privacy, withdrawal risk and track record.
+4. **Pay.** The signed quote travels in the payment's `customRecipientMsg`, which makes its values public; paying without a quote keeps them private. The contract checks the price against the band and `max_price`, then, in order: `job_hash` format, recipe version, runner active, signature, expiry, single use, `cover ≤ promised`, `bond_available ≥ cover`. Then it locks `cover`.
+5. **Re-check.** Just before running, the runner prices the run again. A fresh promise below 98% of the quoted one means the wallet changed: it signs `abort`, the buyer is refunded and the cover returns to the bond.
+6. **Settle.** The runner measures `delivered`, counting anything the buyer withheld after the re-check at its quoted minimum, so the bond insures the market, not the buyer's own choices. The contract pays `min(max(0, promised − delivered), cover)` to the buyer, updates the track record and releases the rest.
 
-Conditions are evaluated in quote mode exactly as in a run, so a quote prices the branch the run would take on the buyer's inputs at quote time. For a recipe that delivers value, the re-check in step 5 catches any change in the wallet that lowers the promise, whichever branch it causes.
+Conditions behave the same in a quote as in a run, so a quote prices the branch the buyer's inputs would take.
 
-## 8. Durable parts, settlement modes and versions
+## 8. Durable runs, settlement modes and versions
 
-- **Durable parts.** A part that performs an irreversible step must call `ctx.saveState(state)` before it, and resume from `ctx.resumeState` when the runner restarts mid-part. Approvals relayed before a restart arrive as `ctx.priorApproval` and are valid only for the saved state. Waiting goes through `ctx.wait(ms)`, which does not count against `max_ms`. `intents.*-swap` and `time.wait` follow this contract; pure parts need nothing. Checkpoints record skipped nodes too, so a resumed run takes the same branches.
-- **Settlement mode.** A recipe declares `listing.settle_mode`:
-  - `"final"` (default): one receipt at the end;
-  - `"checkpoint"`: each part's fee is paid on-chain when the part finishes; the final receipt pays the rest, including (with `bill: "declared"`) skipped nodes. Checkpoints make long runs safe for part authors, at the cost of revealing on-chain when each part finished (§5.3).
-- **Versions.** A recipe's sealed graph can be replaced with notice (`update_sealed` → effective after the contract's `update_delay_ns`). Its parts list cannot change; a different parts list is a different recipe.
+> Long runs survive restarts, and nobody is asked to sign twice.
+
+| Piece | How it works |
+|---|---|
+| **Durable parts** | A part about to do something irreversible calls `ctx.saveState(state)` first, and resumes from `ctx.resumeState` after a restart. Approvals given before a restart arrive as `ctx.priorApproval`. `ctx.wait(ms)` pauses without counting against `max_ms`. Checkpoints record skipped parts too, so a resumed run takes the same branches |
+| **`settle_mode: "final"`** (default) | one receipt at the end |
+| **`settle_mode: "checkpoint"`** | each part's fee is paid on-chain when it finishes, and the final receipt pays the rest, skipped parts included. Safer for authors of long runs, at the cost of showing when each part finished (§5.3) |
+| **Versions** | `update_sealed` replaces the sealed graph after the contract's notice period (`update_delay_ns`). The parts list cannot change; different parts make a different recipe |
 
 ## 9. Conformance
 
-A document conforms to SRS-1 when the reference checks accept it. The same functions run in the composer, the part builder, the runner and the test suite, so "conforms" means the same thing everywhere.
+> One set of checks, run the same way everywhere.
 
 | Document | Check | Where |
 |---|---|---|
-| Part manifest | `validatePartManifest`: id `<namespace>.<name>@<semver>`, a known category, author account, a one-sentence summary, lower_snake_case ports and params with the spec's types, type variables that are single capitals with known bounds and are bound by an input (§1.3), at least one output, `net:<host>` or `wallet:approve` capabilities (only `action` parts may ask for signatures), an integer fee, a full disclosure (§2.1), and limits (§2.2) | [`core/src/partkit.ts`](../core/src/partkit.ts) |
-| Part source | `lintPartSource`: exports a `PartHandler`; uses `ctx.http`, never global `fetch`; no `process.env`, `require`, file system, `eval`; reads its declared inputs and returns every declared output; HTTP only with a `net:` capability; a part that asks for signatures handles `ctx.mode === "quote"` and saves and resumes state (§8); model calls go through the verified-chat helper | [`core/src/partkit.ts`](../core/src/partkit.ts) |
-| Part source, security | `securityScan`: imports only the runner helpers and `node:crypto`; no dynamic `import()`, `require`, `process`, global object, `eval` or `Function`, prototype or reflection tricks, WebAssembly, workers or network functions; no text decoded at run time or hidden in escapes; every host the code names is declared; code that builds transactions declares `wallet:approve` | [`core/src/review.ts`](../core/src/review.ts) |
+| Part manifest | `validatePartManifest`: id grammar, a known category, an author account, a one-line summary, lower_snake_case ports and params with known types, well-formed type variables (§1.3), at least one output, `net:` or `wallet:approve` capabilities (signing only for actions), an integer fee, a full disclosure (§2.1) and limits (§2.2) | [`core/src/partkit.ts`](../core/src/partkit.ts) |
+| Part source | `lintPartSource`: exports a `PartHandler`; uses `ctx.http`, never `fetch`; no `process.env`, `require`, file system or `eval`; reads its inputs and returns every output; a signing part handles quote mode and saves and resumes state (§8); model calls go through the verified-chat helper | [`core/src/partkit.ts`](../core/src/partkit.ts) |
+| Part source, security | `securityScan`: only runner helpers and `node:crypto` imported; no dynamic `import()`, `require`, `process`, global object, `eval`, `Function`, reflection tricks, WebAssembly, workers or raw network; no hidden or decoded text; every host named is declared; code that builds transactions declares `wallet:approve` | [`core/src/review.ts`](../core/src/review.ts) |
 | Recipe | `validateRecipe` (§3.6) | [`core/src/srs.ts`](../core/src/srs.ts) |
 | Part output, at run time | `checkValue` against the port's type (§1.2) | [`runner/src/executor.ts`](../runner/src/executor.ts) |
 
-The source checks are static. They catch common mistakes and the usual escapes, not every malicious idea. What protects buyers at run time is admission (§11): every part's code is in a runner release whose code hash buyers verify, open parts run in a sandbox, parts that send data somewhere new or ask buyers to sign are read by appointed reviewers first, and every value a part returns is type-checked before another part sees it.
+Static checks catch mistakes and the usual escapes, not every malicious idea. At run time buyers are protected by admission (§11): audited runner code, a sandbox for open parts, human review for parts that reach somewhere new or ask for signatures, and a type check on every value a part returns.
 
-`npm test` runs the conformance suite: every part in the catalog passes the manifest and source checks; every seed recipe and every example validates; every seed recipe can be rebuilt in the composer from a blank recipe by adding its parts; and [`tests/srs.test.ts`](../tests/srs.test.ts) covers each composition rule, including the runner's behaviour on skipped, failing and ill-typed parts.
+`npm test` runs it all: every part passes the manifest and source checks, every seed recipe and example validates, every seed recipe can be rebuilt in the composer from scratch, and [`tests/srs.test.ts`](../tests/srs.test.ts) covers each composition rule, including how the runner treats skipped, failing and off-schema parts.
 
 ## 10. Adopting SRS-1
 
-A marketplace for sealed recipes is only as useful as the number of parts and recipes that speak the same format. SRS-1 is written to be adopted by anyone, not only this marketplace.
+> The format is open. Anything that speaks it can join the market.
 
-- **Part builders** publish a manifest that conforms (§9) and code that follows the part interface, admitted by tier (§11). A part is paid its fee in every settlement of every recipe that uses it, on any marketplace that settles SRS-1 reports.
-- **Recipe creators** need no code: add parts, and the types decide what can connect; a value no part provides is asked from the buyer, so the form builds itself. Conditions, fallbacks and skip-on-failure are chosen from menus built from the same types and schemas, so the composer only offers logic the validator accepts.
-- **Wallets and agents** read a recipe's public form, seal their inputs and ask for signed quotes; they never need to see a recipe.
-- **Other marketplaces and runners** can implement the same three documents, the quote message (§7) and the report message (§6). A recipe sealed to a conforming runner can be listed anywhere that verifies its attestation.
+| You build | You implement |
+|---|---|
+| **Parts** | a manifest that conforms (§9) and code that follows the part interface, admitted by tier (§11). Your fee is paid in every settlement of every recipe that uses the part |
+| **Recipes** | nothing. Add parts and the types decide what connects; values no part provides become the buyer's questions; conditions, fallbacks and skip-on-failure are picked from menus built from the same types, so the composer only offers logic the validator accepts |
+| **Wallets and agents** | read a public form, seal inputs, compare signed quotes. A recipe never has to be read |
+| **Marketplaces and runners** | the three documents, the quote message (§7) and the report message (§6). A recipe sealed to a conforming runner can be listed anywhere that verifies its attestation |
 
-**Versioning.** Every part and the spec itself carry a semantic version. Within 1.x, changes are additive: new types, new optional fields, new optional features gated by the `srs` field. A breaking change to a part is a new major version with a new id, and the old one stays valid, so published recipes never break.
+**For an agent, a run is five steps.**
 
-**Proposing changes.** New types are proposed as SRS improvement proposals: the JSON definition with its schema, one part and one recipe that use it, and the conformance suite passing. The proposal process is not yet run by an independent body; that is a step for after the first external implementations.
+1. Read the listing: `form`, `output_type`, `risk`, `capabilities`, the price band.
+2. Verify the runner's attestation, then seal `{inputs, salt, reply_to}` to its key.
+3. Ask one or more recipes for quotes, with a `max_price`.
+4. Check each quote's signature and pick one by your own policy.
+5. Pay with the quote attached, read the sealed result, and check it against `output_hash` with the salt you receive.
 
-**License.** The spec and its reference implementation are MIT licensed. Anyone may implement, extend or fork them.
+**Versioning.** Parts and the spec carry semantic versions. Within 1.x every change is additive: new types, new optional fields, new optional features gated by the `srs` field. A breaking change to a part is a new major version with a new id, and the old one stays valid, so published recipes never break.
+
+**Proposals.** A new type arrives as a proposal: its JSON definition with a schema, one part and one recipe that use it, and a passing conformance suite. An independent body will run proposals once there are external implementations.
+
+**License.** MIT, for the spec and its reference implementation.
 
 ## 11. Admission of parts
 
-A part is code that runs inside other people's sealed recipes, on buyers' wallets. Recipe creators cannot read it in the runner and buyers cannot see the recipe, so a malicious part is a real attack. How much a part must prove before it runs depends on what its manifest lets it do (`partTier`):
+> The more a part can do, the more it must prove before it runs.
 
-| Tier | When | What admits it | How it runs |
+A part runs inside other people's sealed recipes, on buyers' wallets. Nobody can watch it there, so admission happens first, and what a part must prove depends on what its manifest lets it do (`partTier`).
+
+| Tier | When | Admitted by | Runs |
 |---|---|---|---|
-| **Open** | Pure, or reads only public NEAR data from the known hosts (`api.fastnear.com`, `rpc.mainnet.fastnear.com`, `1click.chaindefuser.com`) | The automated checks pass. No human review | In the sandbox |
-| **Reviewed** | Sends buyer data somewhere new: an AI model, a remote service, or any other host | Automated checks and **one** appointed reviewer | In the runner |
-| **Signing** | Asks the buyer to sign transactions (`wallet:approve`) | Automated checks and **two independent** appointed reviewers | In the runner |
+| **Open** | pure, or reads only public NEAR data from the known hosts (`api.fastnear.com`, `rpc.mainnet.fastnear.com`, `1click.chaindefuser.com`) | the automated checks | in the sandbox |
+| **Reviewed** | sends buyer data somewhere new: a model, a service, any other host | automated checks and **one** appointed reviewer | in the runner |
+| **Signing** | asks the buyer to sign (`wallet:approve`) | automated checks and **two independent** appointed reviewers | in the runner |
 
-The spec is what makes this tractable. A reviewer does not have to work out what a part might do: the manifest says it, and the questions become whether the code does only that. Typed ports with schemas, declared hosts, a single network primitive (`ctx.http`), read-only quotes and declared limits turn most of a review into checks a machine can run. People are only needed where a sandbox cannot judge: whether data sent to a new host is necessary, whether a model's output can steer the part, and above all whether a transaction is the one the buyer meant to sign.
+The manifest is what makes review tractable. A reviewer doesn't have to guess what a part might do; the manifest says it, and the question is whether the code does only that. Typed ports with schemas, declared hosts, one network primitive, read-only quotes and declared limits turn most of a review into checks a machine runs. People judge only what a sandbox can't: whether data needs to go somewhere new, whether a model's output could steer the part, and above all whether a transaction is the one the buyer meant to sign.
 
-**Automated checks** (every submission, every tier; `runChecks`):
-1. manifest conformance (§9), the static source checks and the security scan;
-2. a behaviour test in the sandbox, once as a quote and once as a run, with sample values for each input type. HTTP calls are answered by local mocks of the declared hosts only; every wallet request is recorded and declined. A violation fails the checks: reaching an undeclared host, asking for a signature or saving state during a quote, missing or mistyped outputs, or running past `max_ms`. The report shows the hosts reached and the transactions the part asked the buyer to sign, for the reviewer.
+| Step | What happens |
+|---|---|
+| **Automated checks** (`runChecks`) | Manifest conformance, the static source checks and the security scan (§9). Then a behaviour test in the sandbox, once as a quote and once as a run, against mocks of the declared hosts only, with every wallet request recorded and declined. Reaching an undeclared host, signing or saving state in a quote, missing or off-type outputs, or overrunning `max_ms` fails it. The report shows the reviewer every host reached and every transaction requested |
+| **Sandbox** ([`runner/src/sandbox.ts`](../runner/src/sandbox.ts)) | One compiled file in its own process, with Node's permission model on (it can read only itself: no writes, child processes, workers or addons), no code generation from strings, and its network and `process` escapes removed. `ctx.http` is its only channel, relayed and counted by the runner. It is killed at `max_ms`. Open parts never receive secrets. The production target is the same contract as a fuel-metered WASM module inside the TEE |
+| **Review** | Reviewers are appointed by the owner (`standard/reviewers.json`). Each confirms the tier's checklist (`checklistFor`) and signs `srs-part-review-v1|<submission>|<part>|<manifest hash>|<code hash>|<reviewer>|<verdict>|<checklist>`. Nobody reviews their own part, a signing part needs two different reviewers, and every review is public and named |
+| **Release log** | Admitted parts ship in a runner release (`npm run release:parts`), each with a record in `standard/reviews.json`: tier, manifest hash as reviewed, code hash, basis (`genesis`, `automated` or `review` with its signatures) and the automated report's hash. The log and the reviewer set sit inside the runner's code hash, so verifying the runner's attestation also verifies who admitted every part |
+| **Enforcement** | At start the runner checks every part against its record (`verifyRecord`). A part that doesn't match is refused, a recipe that uses it fails before anything runs, and the buyer is refunded. Open parts never load in the runner's own process |
 
-**The sandbox** (`runner/src/sandbox.ts`). The part is compiled to one file, refusing any import outside the runner helpers. It runs in its own process with Node's permission model on (it can read only that file; no writes, child processes, workers or native addons), code generation from strings disabled, and its network functions and `process` escapes removed before it loads. Its only channel is IPC: `ctx.http` is relayed to the runner, which checks declared hosts and counts calls. The process is killed at `max_ms` (time waiting for the wallet excluded), so even a tight loop stops. Open parts never receive secrets. The production target is the same contract as a WASM module with fuel metering inside the TEE.
-
-**Review.** The owner appoints the reviewers (`standard/reviewers.json`). A reviewer confirms each item of the tier's checklist (`checklistFor`) and signs `srs-part-review-v1|<submission>|<part>|<manifest hash>|<code hash>|<reviewer>|<verdict>|<checklist>` with their wallet key. A reviewer never reviews their own part, and the two approvals for a signing part must come from different reviewers. Any reviewer can request changes; the author then submits a new version. Reviews are public, with the reviewer's name on them.
-
-**Release log.** Admitted parts ship in a runner release cut by the owner (`npm run release:parts`). Each part gets a record in `standard/reviews.json`: its tier, the hash of the manifest as reviewed (without `implementation`), the hash of its code, the basis (`genesis` for parts shipped before this process, `automated` for open parts, `review` with the signed approvals), and the hash of the automated report. The release log and the reviewer set are inside the runner's code hash, so a buyer who verifies the runner's attestation has also verified who admitted every part.
-
-**Enforcement.** At start the runner checks every catalog part against its record (`verifyRecord`): the manifest and code must be exactly what was admitted, under its tier's rule, with valid signatures from appointed reviewers. A part that fails is refused: a recipe that uses it fails before anything runs, and the buyer is refunded. Open parts admitted on the automated checks never load in the runner's own process.
-
-**Decentralizing it.** Appointed reviewers are a permissioned step; the release log makes it auditable, not permissionless. The path from here: the owner becomes a multisig or DAO; reviewers build a public record and later post a stake that is slashed if a part they approved is shown to be malicious; several independent runners pin their own releases, and creators choose which runner seals their recipe; reproducible builds let anyone confirm the released code hash matches the reviewed code. The open tier is already permissionless.
+**Toward permissionless.** The open tier already is. For the rest, the path runs through a multisig or DAO as owner, reviewers who post stake that is slashed if a part they approved proves malicious, several independent runners pinning their own releases, and reproducible builds that let anyone match the released code to the reviewed code.
 
 ## 12. How many parts the spec supports
 
-There are three answers.
+> No ceiling. Every new type opens a new market.
 
-**The format: no limit.** Part ids are namespaced and versioned, and the type vocabulary is open (§10). Nothing in SRS-1 caps the number of parts, or the number of nodes in a recipe; only the buyer's form has a recommended size.
+| Measure | Answer |
+|---|---|
+| **The format** | No limit. Part ids are namespaced and versioned, the vocabulary is open (§10), and nothing caps the nodes in a recipe |
+| **Interfaces over the 15 standard types** | 110,160 slots: 816 input combinations (up to three inputs) × 135 output combinations (one or two outputs). Any number of builders can fill each slot. Parts in one slot are drop-in swaps (§3.7), so they compete on fee, risk and track record inside recipes already selling. A part with a type variable fills many slots at once |
+| **Recipes** | Combinatorial. Each recipe multiplies by its wirings, conditions, params and the drop-in parts for each node: five nodes with three competing parts each is 3⁵ = 243 variants from swaps alone |
 
-**Interfaces over the standard vocabulary: 110,160 slots.** A part's interface is the multiset of its input types and the multiset of its output types. Over the 15 standard types (§1.4), parts with up to three inputs and one or two outputs have 816 × 135 = 110,160 distinct interfaces. Each is a slot that any number of builders can fill. Parts in the same slot are drop-in swaps (§3.7), so they compete on fee, risk and track record inside recipes that are already selling, and a better part reaches buyers without anyone rewiring a recipe. A part with type variables (§1.3) fills many slots at once.
-
-**Recipes: combinatorial.** Every slot multiplies the recipes that can use it. A recipe's variants multiply by its possible wirings, conditions, params and constants, and by the drop-in parts available for each node: a five-node recipe with three competing parts per slot has 3⁵ = 243 variants from swaps alone.
-
-What grows the space fastest is a new type, not a new part. A type gives parts a new kind of value to exchange, and a type that some part produces and another consumes opens a market for both. Some types that would each unlock a family of parts and recipes (proposals, not in the catalog):
+New types grow the space fastest. A type that one part produces and another consumes opens a market for both. Some that would each unlock a family of parts:
 
 | Proposed type | Produced by | Consumed by | A recipe it enables |
 |---|---|---|---|
 | `nft.holdings` | an NFT scanner | a spam-NFT burner, a floor-price reporter | clean spam NFTs out of a wallet |
-| `storage.deposits` | a storage-deposit reader | a `storage_withdraw` / `storage_unregister` action | reclaim NEAR locked in storage deposits of unused tokens |
+| `storage.deposits` | a storage-deposit reader | a `storage_withdraw` / `storage_unregister` action | reclaim NEAR locked in unused token storage |
 | `price.series` | a price-history source | a timing guard, a DCA planner | buy only below the 30-day average |
-| `tx.history` | an indexer source | an anomaly guard, a cost-basis report | flag unusual outflows, then lock down keys |
+| `tx.history` | an indexer | an anomaly guard, a cost-basis report | flag unusual outflows, then lock down keys |
 
 ## 13. Not in this version, and why
 
-Every feature is weighed against the four properties at the top of this document: a recipe must stay checkable when composed, quotable before it runs, bounded in cost, and settleable to each part author.
+> A feature earns its place only if recipes stay checkable, quotable, bounded in cost and payable to every author.
 
-- **Nested recipes** (a recipe used as a part). The most valuable next step: creators would build on other creators' recipes, the inner creator would be paid per use, and the outer creator would never see the inner method. It needs an interface manifest derived from the public listing (form fields become input ports, the result becomes the output port), expansion inside the runner, the inner parts added to the outer multiset for billing, and a contract change to pay the inner creator. Planned for the next minor version.
-- **Loops and per-item execution.** n8n runs a node once per item. SRS-1 parts take lists and handle items themselves, so billable calls equal nodes and the price is known before the run. A future `map` over a list port needs a declared maximum number of items, so that quotes and limits stay bounded, and per-item billing in the report.
-- **Triggers and standing orders.** n8n and CRE start workflows on schedules, webhooks and chain events. Here every run is paid for and every action is approved in the buyer's wallet. Unattended runs first need pre-authorised spending (for example a function-call key with an allowance, or a signed standing intent), which is a wallet question before it is a format one. Meanwhile an agent can ask for quotes and pay on its own schedule (§10).
-- **Free-form expressions.** n8n lets any field hold a JavaScript expression. SRS-1 does not, on purpose: an expression is code inside the sealed recipe that no reviewer reads and the validator cannot type. Computation belongs in parts, where it is admitted, limited and paid.
-- **Several results.** A recipe has one result type: it is what the listing promises and what a quote measures. Results are combined by a part.
+| Feature | Why it waits | What it needs |
+|---|---|---|
+| **Nested recipes** | The most valuable next step: creators building on creators, the inner creator paid per use, the inner method still sealed | an interface manifest derived from the listing, expansion inside the runner, the inner parts added to the bill, and a contract change to pay the inner creator |
+| **Loops, per-item runs** | Parts take whole lists, so billed calls equal nodes and the price is known in advance | a `map` over a list port with a declared maximum, and per-item billing |
+| **Triggers, standing orders** | Every run is paid for and every action approved in the buyer's wallet | pre-authorised spending, such as a key with an allowance or a signed standing intent. Until then, an agent can quote and pay on its own schedule (§10) |
+| **Free-form expressions** | An expression is code no reviewer reads and no validator can type. Computation belongs in parts, where it is admitted, limited and paid | nothing; this is a choice |
+| **Several results** | One result type is what a listing promises and a quote measures | combine results with a part |

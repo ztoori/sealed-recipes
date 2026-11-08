@@ -777,3 +777,35 @@ pre.code.diff .del { background: rgba(242, 104, 124, 0.12); color: #ffb3c0; }
 .fnode .when-handle { background: #f0b44c; border-color: #f0b44c; width: 7px; height: 7px; }
 .react-flow__edge.when-edge .react-flow__edge-text { fill: #f0b44c; font-size: 11px; }
 .react-flow__edge.when-edge .react-flow__edge-textbg { fill: var(--bg-2); }
+
+/* the spec, rendered: a mark per section, a one-line purpose, diagrams inline */
+.spec > h1:first-child, .spec > h1:first-child + p { display: none; }
+.spec h2 { display: flex; align-items: center; gap: 12px; }
+.spec h2 .secmark { flex: none; width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: var(--wax-bg); border: 1px solid rgba(240, 180, 76, 0.35); color: var(--wax); }
+.spec h2 .sectitle { flex: 1; min-width: 0; }
+.spec h2 .secnum { font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .04em; border: 1px solid var(--line-2); border-radius: 999px; padding: 2px 9px; }
+.spec blockquote { margin: 6px 0 20px; padding: 12px 18px; border-left: 3px solid var(--wax); border-radius: 0 12px 12px 0; background: linear-gradient(90deg, var(--wax-bg), transparent 85%); }
+.spec blockquote p { margin: 0; max-width: 70ch; font-family: var(--serif); font-size: 19px; line-height: 1.45; color: var(--ink); }
+.spec .figure { margin: 16px 0 20px; }
+.spec .figure svg { display: block; width: 100%; height: auto; border-radius: 18px; }
+.spec details { margin: 8px 0 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-2); }
+.spec details > summary { cursor: pointer; padding: 10px 14px; font-size: 13px; color: var(--ink-2); }
+.spec details[open] > summary { border-bottom: 1px solid var(--line); }
+.spec details pre { margin: 0; border: 0; border-radius: 0 0 12px 12px; }
+.spec table { width: 100%; border-collapse: collapse; }
+.spec th { text-align: left; font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.spec ol > li::marker { color: var(--wax); font-weight: 700; }
+.toc-list button { display: flex; align-items: center; gap: 8px; }
+.toc-list button .ic { color: var(--muted); flex: none; }
+.toc-list button:hover .ic { color: var(--wax); }
+.toc ol.toc-list { list-style: none; padding-left: 12px; }
+.spec .lvl { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.spec .lvl.error { color: var(--loss); background: var(--loss-bg); }
+.spec .lvl.warning { color: var(--wax-2); background: var(--wax-bg); }
+.spec table.compare th:last-child, .spec table.compare td:last-child { color: var(--ink); background: var(--wax-bg); padding-left: 12px; }
+.spec table.compare th:last-child { color: var(--wax-2); border-radius: 10px 10px 0 0; }
+.spec table.compare td:first-child { color: var(--muted); font-size: 12.5px; }
+.spec ol.promises { list-style: none; padding: 0; margin: 12px 0 22px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; counter-reset: promise; }
+.spec ol.promises > li { counter-increment: promise; position: relative; max-width: none; padding: 40px 16px 14px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--bg-2); font-size: 13.5px; line-height: 1.5; }
+.spec ol.promises > li::before { content: '0' counter(promise); position: absolute; top: 12px; left: 16px; font-family: var(--serif); font-size: 20px; color: var(--wax); }
+.spec ol.promises > li strong { display: block; font-size: 15px; margin-bottom: 4px; }

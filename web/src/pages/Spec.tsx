@@ -1,4 +1,6 @@
+/// <reference types="vite/client" />
 import { useMemo } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { Marked, type Tokens } from 'marked';
 import spec from '../../../docs/SRS-1.md?raw';
 import type { Catalog } from '../../../core/src/srs';
@@ -12,10 +14,27 @@ import { TierTable } from '../components/Admission';
  * Documentation › Spec: SRS-1, the format every part and recipe here is written in. The full text is
  * docs/SRS-1.md itself (rendered, not copied), next to the type vocabulary and the admission tiers it defines.
  */
+/** the diagrams in docs/media, inlined so they render in the app exactly as on GitHub */
+const FIGURES = import.meta.glob('../../../docs/media/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+const figure = (href: string) => Object.entries(FIGURES).find(([k]) => k.endsWith('/' + href.split('/').pop()))?.[1];
+/** each section's mark, in the page and in the contents */
+const SECTION_ICON: Record<string, string> = { why: 'sparkles', conventions: 'sliders', '1': 'link', '2': 'box', '3': 'compose', '4': 'eye', '5': 'lock', '6': 'cpu', '7': 'receipt', '8': 'clock', '9': 'shieldCheck', '10': 'globe', '11': 'shield', '12': 'layers', '13': 'flag' };
+const sectionKey = (title: string) => title.match(/^(\d+)\./)?.[1] ?? title.split(' ')[0].toLowerCase();
+const iconFor = (title: string) => SECTION_ICON[sectionKey(title)] ?? 'docs';
 const slug = (s: string) => s.toLowerCase().replace(/<[^>]+>/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const md = new Marked({
   renderer: {
-    heading(this: any, t: Tokens.Heading) { const text = this.parser.parseInline(t.tokens); return `<h${t.depth} id="srs-${slug(t.text)}">${text}</h${t.depth}>`; },
+    heading(this: any, t: Tokens.Heading) {
+      const text = this.parser.parseInline(t.tokens);
+      if (t.depth !== 2) return `<h${t.depth} id="srs-${slug(t.text)}">${text}</h${t.depth}>`;
+      const n = t.text.match(/^(\d+)\.\s*(.*)$/);
+      const mark = renderToStaticMarkup(<Icon name={iconFor(t.text) as never} size={18} />);
+      return `<h2 id="srs-${slug(t.text)}"><span class="secmark">${mark}</span><span class="sectitle">${n ? n[2] : text}</span>${n ? `<span class="secnum">§${n[1]}</span>` : ''}</h2>`;
+    },
+    image(t: Tokens.Image) {
+      const svg = figure(t.href);
+      return svg ? `<figure class="figure" aria-label="${t.text.replace(/"/g, '&quot;')}">${svg}</figure>` : `<img src="${t.href}" alt="${t.text}">`;
+    },
     // links into the repository become file references (the repository is the source of truth); web links open normally
     link(this: any, t: Tokens.Link) {
       const text = this.parser.parseInline(t.tokens);
@@ -26,10 +45,18 @@ const md = new Marked({
   },
 });
 
+/** small visual touches on the rendered text: level pills, the comparison column, the four promises as cards */
+function polish(html: string): string {
+  return html
+    .replace(/<td>(error|warning)<\/td>/g, (_m, l) => `<td><span class="lvl ${l}">${l}</span></td>`)
+    .replace(/<table>(\s*<thead>(?:(?!<\/thead>)[\s\S])*<th>SRS-1<\/th>)/, '<table class="compare">$1')
+    .replace(/(<p>Four promises hold for every recipe:<\/p>\s*)<ol>/, '$1<ol class="promises">');
+}
+
 export function Spec() {
   const { go } = useApp();
   const [cat] = usePoll<Catalog>('/api/catalog', 60000);
-  const html = useMemo(() => md.parse(spec) as string, []);
+  const html = useMemo(() => polish(md.parse(spec) as string), []);
   const toc = useMemo(() => [...spec.matchAll(/^## (.+)$/gm)].map((m) => ({ id: 'srs-' + slug(m[1]), label: m[1] })), []);
   const parts = cat?.parts ?? [];
   const download = () => {
@@ -46,7 +73,7 @@ export function Spec() {
             <div style={{ maxWidth: 820 }}>
               <div className="tags" style={{ marginTop: 0 }}><span className="tag"><Icon name="globe" size={13} />Open spec</span><span className="tag">v1.0</span><span className="tag">MIT</span></div>
               <h1 className="listing-name">SRS-1: the Sealed Recipe Spec</h1>
-              <p className="lede">One shared format, so parts from different builders snap together into recipes, and every builder is paid in one settlement. <Tip wide>A part declares its typed inputs and outputs, what it may reach and what it discloses. A recipe wires parts together and is sealed. A signed quote prices one buyer’s sealed inputs. A listing is all the market ever sees. The spec is open so other marketplaces, runners, wallets and agents can adopt it.</Tip></p>
+              <p className="lede">Build a workflow from other people’s parts without writing code. Sell runs of it without showing how it works. Everyone who built a part is paid, every time it runs. <Tip wide>Parts declare what they take, return, reach and cost. A recipe wires them together and is sealed to the runner. A signed quote prices one buyer’s sealed inputs before they pay. The listing is all the market ever sees. The spec is open, so any marketplace, runner, wallet or agent can speak it.</Tip></p>
             </div>
             <div className="row wrap" style={{ gap: 6 }}>
               <button className="btn primary" onClick={() => go({ page: 'compose', sub: 'part' })}><Icon name="code" size={15} />Build a part</button>
@@ -84,7 +111,7 @@ export function Spec() {
       <div className="grid std-text">
         <nav className="panel toc" aria-label="Spec contents">
           <header><Icon name="docs" size={16} className="hd-ic" /><h2>Contents</h2></header>
-          <ol>{toc.map((t) => <li key={t.id}><button onClick={() => jump(t.id)}>{t.label.replace(/^\d+\.\s*/, '')}</button></li>)}</ol>
+          <ol className="toc-list">{toc.map((t) => <li key={t.id}><button onClick={() => jump(t.id)}><Icon name={iconFor(t.label) as never} size={14} />{t.label.replace(/^\d+\.\s*/, '')}</button></li>)}</ol>
           <div className="small muted" style={{ padding: '0 16px 14px' }}>Rendered from docs/SRS-1.md</div>
         </nav>
         <article className="panel spec" onClick={(e) => { const a = (e.target as HTMLElement).closest('a[data-anchor]'); if (a) { e.preventDefault(); jump(a.getAttribute('data-anchor')!); } }}

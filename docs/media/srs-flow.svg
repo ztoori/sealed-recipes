@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 300" width="960" height="300" role="img" aria-labelledby="t d">
+  <title id="t">From parts to a paid run</title>
+  <desc id="d">Builders publish parts. A creator composes them into a recipe with no code and seals it. A buyer gets a signed quote, the runner executes the recipe inside sealed hardware, and one settlement pays everyone.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1l8 4-8 4" fill="none" stroke="#56658a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+  </defs>
+  <rect x="0.5" y="0.5" width="959" height="299" rx="18" fill="#111a2c" stroke="#212d47"/>
+  <text x="32" y="38" fill="#8592ae" font-family="Archivo, 'Segoe UI', system-ui, sans-serif" font-size="11.5" font-weight="600" letter-spacing="1.6">FROM PARTS TO A PAID RUN</text>
+  <g font-family="Archivo, 'Segoe UI', system-ui, sans-serif" text-anchor="middle">
+    <g fill="#8592ae" font-size="10.5" font-weight="600" letter-spacing="1.2">
+      <text x="90" y="72">BUILDER</text><text x="246" y="72">CREATOR</text><text x="402" y="72">CREATOR’S BROWSER</text>
+      <text x="558" y="72">BUYER OR AGENT</text><text x="714" y="72">RUNNER · TEE</text><text x="870" y="72">CONTRACT</text>
+    </g>
+    <g stroke="#56658a" stroke-width="1.6" marker-end="url(#a)">
+      <line x1="126" y1="112" x2="208" y2="112"/><line x1="282" y1="112" x2="364" y2="112"/><line x1="438" y1="112" x2="520" y2="112"/>
+      <line x1="594" y1="112" x2="676" y2="112"/><line x1="750" y1="112" x2="832" y2="112"/>
+    </g>
+    <g stroke-width="1.8">
+      <circle cx="90" cy="112" r="31" fill="#172238" stroke="#79a8ff"/><circle cx="246" cy="112" r="31" fill="#172238" stroke="#a98bff"/>
+      <circle cx="402" cy="112" r="31" fill="#2a2312" stroke="#f0b44c"/><circle cx="558" cy="112" r="31" fill="#172238" stroke="#79a8ff"/>
+      <circle cx="714" cy="112" r="31" fill="#172238" stroke="#a98bff"/><circle cx="870" cy="112" r="31" fill="#10271f" stroke="#3ccb9a"/>
+    </g>
+    <g fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <g transform="translate(75 97) scale(1.25)" stroke="#79a8ff"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></g>
+      <g transform="translate(231 97) scale(1.25)" stroke="#a98bff"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.5 6h9M6.3 8.2l4.4 7.6M17.7 8.2l-4.4 7.6"/></g>
+      <g transform="translate(387 97) scale(1.25)" stroke="#f0b44c"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/><path d="M12 15v2"/></g>
+      <g transform="translate(543 97) scale(1.25)" stroke="#79a8ff"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/></g>
+      <g transform="translate(699 97) scale(1.25)" stroke="#a98bff"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M10 10h4v4h-4z"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></g>
+      <g transform="translate(855 97) scale(1.25)" stroke="#3ccb9a"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.6"/></g>
+    </g>
+    <g fill="#e9edf6" font-size="15" font-weight="650">
+      <text x="90" y="170">Build parts</text><text x="246" y="170">Compose</text><text x="402" y="170">Seal</text>
+      <text x="558" y="170">Quote</text><text x="714" y="170">Run</text><text x="870" y="170">Settle</text>
+    </g>
+    <g fill="#8592ae" font-size="12.5">
+      <text x="90" y="191">Typed, priced,</text><text x="90" y="207">openly declared</text>
+      <text x="246" y="191">No code. The types</text><text x="246" y="207">do the wiring</text>
+      <text x="402" y="191">Encrypted to the</text><text x="402" y="207">runner, nobody else</text>
+      <text x="558" y="191">A signed price</text><text x="558" y="207">before paying</text>
+      <text x="714" y="191">Opened only inside</text><text x="714" y="207">sealed hardware</text>
+      <text x="870" y="191">Every author paid</text><text x="870" y="207">in one receipt</text>
+    </g>
+  </g>
+  <g font-family="Archivo, 'Segoe UI', system-ui, sans-serif" font-size="13">
+    <rect x="32" y="234" width="438" height="40" rx="20" fill="#10271f" stroke="#2f6e58"/>
+    <g transform="translate(48 243) scale(0.9)" fill="none" stroke="#3ccb9a" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></g>
+    <text x="78" y="259" fill="#3ccb9a" font-weight="650">Public</text>
+    <text x="128" y="259" fill="#bcc5da">the form, the parts, the price, the risk labels</text>
+    <rect x="490" y="234" width="438" height="40" rx="20" fill="#2a2312" stroke="#7a5a22"/>
+    <g transform="translate(506 243) scale(0.9)" fill="none" stroke="#f0b44c" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></g>
+    <text x="536" y="259" fill="#f0b44c" font-weight="650">Sealed</text>
+    <text x="590" y="259" fill="#bcc5da">the wiring, the conditions, the prompts</text>
+  </g>
+</svg>
