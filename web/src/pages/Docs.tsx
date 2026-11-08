@@ -6,9 +6,10 @@ import { Spec } from './Spec';
 import { PricingGuide } from './PricingGuide';
 import { ComposeRecipeGuide } from './ComposeRecipeGuide';
 import { ComposePartGuide } from './ComposePartGuide';
+import { RunnerGuide } from './RunnerGuide';
 import { Icon } from '../icons';
 
-/** Documentation: the spec, where the project sits, how to trust it, how prices move, and how to build recipes and parts. */
+/** Documentation: the spec, where the project sits, how to trust it, how prices move, and how to build recipes and parts, and how the runner runs them. */
 const TABS: [DocsSub, string, string][] = [
   ['spec', 'docs', 'Spec (SRS-1)'],
   ['landscape', 'globe', 'Landscape'],
@@ -16,6 +17,7 @@ const TABS: [DocsSub, string, string][] = [
   ['pricing', 'trend', 'Price & demand'],
   ['compose-recipe', 'compose', 'Compose Recipe'],
   ['compose-part', 'box', 'Compose Part'],
+  ['runner', 'cpu', 'Runner · TEE'],
 ];
 
 export function Docs({ sub }: { sub: DocsSub }) {
@@ -25,7 +27,7 @@ export function Docs({ sub }: { sub: DocsSub }) {
       <div className="subnav" role="tablist" aria-label="Documentation">
         {TABS.map(([id, icon, label]) => <button key={id} role="tab" aria-selected={sub === id} onClick={() => go({ page: 'docs', sub: id })}><Icon name={icon} size={16} />{label}</button>)}
       </div>
-      {sub === 'spec' ? <Spec /> : sub === 'landscape' ? <Landscape /> : sub === 'trust' ? <Trust /> : sub === 'pricing' ? <PricingGuide /> : sub === 'compose-recipe' ? <ComposeRecipeGuide /> : <ComposePartGuide />}
+      {sub === 'spec' ? <Spec /> : sub === 'landscape' ? <Landscape /> : sub === 'trust' ? <Trust /> : sub === 'pricing' ? <PricingGuide /> : sub === 'compose-recipe' ? <ComposeRecipeGuide /> : sub === 'compose-part' ? <ComposePartGuide /> : <RunnerGuide />}
     </div>
   );
 }

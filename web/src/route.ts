@@ -1,6 +1,6 @@
 /**
  * Navigation as one explicit state, mirrored in the URL hash so every page can be linked and the back button works.
- *   #/ (landing)   #/recipes[/TICKER]   #/quote/TICKER   #/compose/recipe   #/compose/part[/PART_ID]   #/compose/review[/SUBMISSION_ID]   #/wallet   #/docs/spec|landscape|trust|pricing|compose-recipe|compose-part (#/docs/standard still opens the spec)
+ *   #/ (landing)   #/recipes[/TICKER]   #/quote/TICKER   #/compose/recipe   #/compose/part[/PART_ID]   #/compose/review[/SUBMISSION_ID]   #/wallet   #/docs/spec|landscape|trust|pricing|compose-recipe|compose-part|runner (#/docs/standard still opens the spec)
  */
 export type Route =
   | { page: 'home' }
@@ -10,7 +10,7 @@ export type Route =
   | { page: 'wallet' }
   | { page: 'docs'; sub: DocsSub };
 
-export const DOCS_SUBS = ['spec', 'landscape', 'trust', 'pricing', 'compose-recipe', 'compose-part'] as const;
+export const DOCS_SUBS = ['spec', 'landscape', 'trust', 'pricing', 'compose-recipe', 'compose-part', 'runner'] as const;
 export type DocsSub = (typeof DOCS_SUBS)[number];
 
 export function parseRoute(hash: string): Route {
