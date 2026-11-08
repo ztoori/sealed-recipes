@@ -1,5 +1,5 @@
 /**
- * SRS-1.1 conformance: grammar, listing checks, value schemas, type variables, conditions, alternatives, on_error,
+ * SRS-1 conformance of recipe composition: grammar, listing checks, value schemas, type variables, conditions, alternatives, on_error,
  * declared billing, the sorted public parts list and the runner's behaviour on skipped and failing nodes.
  */
 import { test } from 'node:test';
@@ -19,11 +19,11 @@ const errors = (r: Recipe, cat: Catalog = catalog) => validateRecipe(r, cat).dia
 
 // ---- a small catalog of test parts (pure stubs) to exercise the format itself
 const stub = (id: string, inputs: PartManifest['inputs'], outputs: PartManifest['outputs'], extra: Partial<PartManifest> = {}): PartManifest => ({
-  id, name: id, category: 'transform', author: 'test.testnet', summary: 'a test part used by the SRS-1.1 conformance suite', inputs, outputs, params: {}, capabilities: [], fee_per_call: '1000',
+  id, name: id, category: 'transform', author: 'test.testnet', summary: 'a test part used by the SRS-1 conformance suite', inputs, outputs, params: {}, capabilities: [], fee_per_call: '1000',
   disclosure: { model: { kind: 'none' }, instructions: 'open', harness: 'open', verification: 'open', runtime: 'bundled' }, limits: { max_ms: 2000, max_http_calls: 0, max_model_calls: 0, max_output_bytes: 10000 }, ...extra,
 });
 const T: Catalog = {
-  srs: '1.1', kind: 'part-catalog',
+  srs: '1.0', kind: 'part-catalog',
   types: catalog.types,
   parts: [
     stub('t.pick@1.0.0', { a: { type: 'T' }, b: { type: 'T' } }, { out: { type: 'T' } }, { type_params: { T: { extends: null } } }),
@@ -39,20 +39,20 @@ const T: Catalog = {
   ],
 };
 const base = (nodes: Recipe['nodes'], output: Recipe['output'], over: Partial<Recipe> = {}): Recipe => ({
-  srs: '1.1', kind: 'recipe', meta: { ticker: 'TEST', name: 'test', creator: 'chef.testnet', description: '' },
+  srs: '1.0', kind: 'recipe', meta: { ticker: 'TEST', name: 'test', creator: 'chef.testnet', description: '' },
   form: [{ id: 'wallet', label: 'Wallet', type: 'near.account', required: true }, { id: 'to', label: 'To', type: 'address.near' }],
   nodes, output, listing: { price_per_run: '100000' }, ...over,
 });
 
-test('SRS-1.1: every seed recipe and every spec example validates, and 1.0 recipes are unchanged by 1.1', () => {
-  for (const f of readdirSync(new URL('../seed/recipes', import.meta.url))) { const r = seed(f.replace('.json', '')); assert.ok(validateRecipe(r, catalog).ok, f); assert.equal(r.srs, '1.0'); }
+test('SRS-1: every seed recipe and every spec example validates', () => {
+  for (const f of readdirSync(new URL('../seed/recipes', import.meta.url))) assert.ok(validateRecipe(seed(f.replace('.json', '')), catalog).ok, f);
   for (const f of readdirSync(new URL('../standard/examples', import.meta.url))) {
     const v = validateRecipe(example(f.replace('.json', '')), catalog);
     assert.ok(v.ok, f + ': ' + JSON.stringify(v.diagnostics.filter((d) => d.severity === 'error')));
   }
 });
 
-test('SRS-1.1 grammar: ids that would break references, unknown or ill-typed constants, impossible listings', () => {
+test('SRS-1 grammar: ids that would break references, unknown or ill-typed constants, impossible listings', () => {
   const r = seed('CLNP');
   assert.ok(errors({ ...r, nodes: r.nodes.map((n) => (n.id === 'dust' ? { ...n, id: 'du.st' } : n)) }).includes('node.id'));
   assert.ok(errors({ ...r, form: r.form.map((f, i) => (i === 0 ? { ...f, id: 'Wallet!' } : f)) }).includes('form.id'));
@@ -62,9 +62,8 @@ test('SRS-1.1 grammar: ids that would break references, unknown or ill-typed con
     assert.ok(errors({ ...r, listing: listing as never }).includes(code), code);
 });
 
-test('SRS-1.1 features need srs "1.1", so a 1.0 runner never misreads a 1.1 recipe', () => {
-  const e = example('ESCL');
-  assert.deepEqual([...new Set(errors({ ...e, srs: '1.0' }))], ['srs.feature']);
+test('a recipe declares the spec version it was written for', () => {
+  assert.deepEqual([...new Set(errors({ ...example('ESCL'), srs: '2.0' as never }))], ['srs.version']);
 });
 
 test('value schemas: a type checks its own schema and every parent schema', () => {

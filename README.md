@@ -258,7 +258,7 @@ npm run verify:tla      # also the TLC model check (~10 min; Java + tla2tools.ja
 
 ```bash
 npm test                # 71 TypeScript tests: SRS-1 conformance of every part, part admission (tiers, security scan, sandbox, signed release records), all 10 seed recipes rebuilt in the composer, a recipe built from a blank canvas, the web app's state machines; settlement, bond and pricing vectors; quote signatures and expiry;
-                        # event parity with the contract; SRS-1 typing, swaps, value delivered and withdrawal risk; SRS-1.1 conditions, alternatives, schemas, type variables, billing privacy;
+                        # event parity with the contract; SRS-1 typing, swaps, value delivered and withdrawal risk; conditions, alternatives, schemas, type variables, billing privacy;
                         # sealing; per-part resource limits; EIP-191; 1Click shapes; attestation; capability guard; code hash
 npm run test:rust       # 105 Rust tests for the NEAR contract (same vectors, conformance with the proved models,
                         # market pricing, versions with notice, checkpoints and partial settlement)

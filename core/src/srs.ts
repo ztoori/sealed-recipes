@@ -41,7 +41,7 @@ export interface PartManifest {
   category: 'source' | 'guard' | 'transform' | 'action' | 'sink';
   author: string;
   summary: string;
-  /** SRS-1.1 §1.3: type variables (single capital letters). A port typed "T" accepts any type within T's bound. */
+  /** SRS-1 §1.3: type variables (single capital letters). A port typed "T" accepts any type within T's bound. */
   type_params?: Record<string, { extends: string | null }>;
   inputs: Record<string, PortSpec>;
   outputs: Record<string, PortSpec>;
@@ -54,7 +54,7 @@ export interface PartManifest {
 }
 
 /**
- * SRS-1.1 §1.2: the value schema of a type, a small subset of JSON Schema. A value of type A must satisfy the schema
+ * SRS-1 §1.2: the value schema of a type, a small subset of JSON Schema. A value of type A must satisfy the schema
  * of A and of every type A extends. The runner checks every part output against it (a part that returns something
  * else fails the run and the buyer is refunded), and the validator checks constants and conditions against it.
  */
@@ -69,10 +69,10 @@ export interface Schema {
   items?: Schema;
 }
 
-/** `proof: true` (SRS-1.1 §1.1): a value of this type can only come from a part that establishes it, never from the buyer's form or a constant. */
+/** `proof: true` (SRS-1 §1.1): a value of this type can only come from a part that establishes it, never from the buyer's form or a constant. */
 export interface TypeDef { description: string; extends: string | null; schema?: Schema; proof?: boolean }
 
-export interface Catalog { srs: '1.0' | '1.1'; kind: 'part-catalog'; types: Record<string, TypeDef>; parts: PartManifest[] }
+export interface Catalog { srs: '1.0'; kind: 'part-catalog'; types: Record<string, TypeDef>; parts: PartManifest[] }
 
 export interface FormField {
   id: string;
@@ -85,12 +85,12 @@ export interface FormField {
   generator?: 'fresh-implicit';
 }
 
-/** A reference ("form.x" | "const.x" | "<node>.<port>"), or (SRS-1.1 §3.3) a list of references: the first one present. */
+/** A reference ("form.x" | "const.x" | "<node>.<port>"), or (SRS-1 §3.3) a list of references: the first one present. */
 export type Binding = string | string[];
 /** field → accepted values */
 export type Match = Record<string, (string | number | boolean | null)[]>;
 /**
- * SRS-1.1 §3.2: a node runs only when its condition holds. Exactly one test:
+ * SRS-1 §3.2: a node runs only when its condition holds. Exactly one test:
  *  - `is`: "nonempty" (default) or "empty" (an empty list, an object with no keys, null, absent or "");
  *  - `match`: the value is an object and every listed field has one of the listed values;
  *  - `some`: the value is a list and at least one item matches every listed field.
@@ -104,9 +104,9 @@ export interface RecipeNode {
   inputs: Record<string, Binding>;
   /** may be omitted: {} */
   params: Record<string, unknown>;
-  /** SRS-1.1 §3.2 */
+  /** SRS-1 §3.2 */
   when?: When;
-  /** SRS-1.1 §3.4: "skip" lets the recipe continue without this node if its part fails. Not allowed on parts that ask for signatures. */
+  /** SRS-1 §3.4: "skip" lets the recipe continue without this node if its part fails. Not allowed on parts that ask for signatures. */
   on_error?: 'fail' | 'skip';
   ui?: { x: number; y: number };
 }
@@ -119,12 +119,12 @@ export interface Listing {
   reserve_bps?: number;
   bond?: string;
   settle_mode?: 'final' | 'checkpoint';
-  /** SRS-1.1 §6.1: "declared" (default) bills every node on success, run or skipped, so settlements do not reveal which branch ran */
+  /** SRS-1 §6.1: "declared" (default) bills every node on success, run or skipped, so settlements do not reveal which branch ran */
   bill?: 'declared' | 'executed';
 }
 
 export interface Recipe {
-  srs: '1.0' | '1.1';
+  srs: '1.0';
   kind: 'recipe';
   meta: { ticker: string; name: string; creator: string; description: string };
   form: FormField[];
@@ -146,14 +146,14 @@ export interface ValidationResult {
   partFees: bigint;
   outputType?: string;
   risk: Risk;
-  /** SRS-1.1: resolved type of every node output ("<node>.<port>" → type), with type variables bound */
+  /** SRS-1: resolved type of every node output ("<node>.<port>" → type), with type variables bound */
   portTypes: Record<string, string>;
-  /** SRS-1.1: nodes that may be skipped at run time (a condition, on_error: skip, or a skipped required input) */
+  /** SRS-1: nodes that may be skipped at run time (a condition, on_error: skip, or a skipped required input) */
   optional: string[];
   bill: 'declared' | 'executed';
 }
 
-export const SPEC_VERSIONS = ['1.0', '1.1'] as const;
+export const SPEC_VERSION = '1.0';
 export const TICKER_RE = /^[A-Z0-9]{3,6}$/;
 /** node ids, form field ids and constant names: they appear inside references, so they cannot contain "." */
 export const ID_RE = /^[a-z][a-z0-9_]{0,31}$/;
@@ -233,9 +233,9 @@ export function checkValue(types: Record<string, TypeDef>, type: string, v: unkn
 }
 
 /** The schema that applies to a field: the most specific type that declares one. */
-const schemaOf = (types: Record<string, TypeDef>, type: string): Schema | undefined => ancestors(types, type).map((t) => types[t]?.schema).find(Boolean);
+export const schemaOf = (types: Record<string, TypeDef>, type: string): Schema | undefined => ancestors(types, type).map((t) => types[t]?.schema).find(Boolean);
 
-/** Evaluates a node condition (SRS-1.1 §3.2) against a resolved value. */
+/** Evaluates a node condition (SRS-1 §3.2) against a resolved value. */
 export function evalWhen(w: When, v: unknown): boolean {
   const empty = (x: unknown) => x === undefined || x === null || x === '' || (Array.isArray(x) && x.length === 0) || (typeof x === 'object' && x !== null && !Array.isArray(x) && Object.keys(x).length === 0);
   const matches = (o: unknown, m: Match) => typeof o === 'object' && o !== null && !Array.isArray(o) && Object.entries(m).every(([k, vals]) => vals.includes((o as Record<string, never>)[k] ?? null));
@@ -271,9 +271,7 @@ export function validateRecipe(recipe: Recipe, catalog: Catalog): ValidationResu
   const err = (code: string, message: string, node?: string, port?: string) => d.push({ severity: 'error', code, message, node, port });
   const warn = (code: string, message: string, node?: string, port?: string) => d.push({ severity: 'warning', code, message, node, port });
 
-  if (!SPEC_VERSIONS.includes(recipe.srs as never) || recipe.kind !== 'recipe') err('srs.version', `recipe must declare srs ${SPEC_VERSIONS.map((x) => `"${x}"`).join(' or ')} and kind "recipe"`);
-  const v11 = recipe.srs === '1.1';
-  const needs11 = (feature: string, node?: string) => { if (!v11) err('srs.feature', `${feature} needs srs "1.1"`, node); };
+  if (recipe.srs !== SPEC_VERSION || recipe.kind !== 'recipe') err('srs.version', `recipe must declare srs "${SPEC_VERSION}" and kind "recipe"`);
   if (!TICKER_RE.test(recipe.meta?.ticker ?? '')) err('meta.ticker', 'ticker must be 3-6 chars A-Z/0-9');
   if (!recipe.meta?.name) err('meta.name', 'recipe needs a name');
 
@@ -306,7 +304,7 @@ export function validateRecipe(recipe: Recipe, catalog: Catalog): ValidationResu
     else if (INT_RE.test(L.price_per_run ?? '') && !(BigInt(f) <= BigInt(L.price_per_run) && BigInt(L.price_per_run) <= BigInt(c))) err('listing.pricing', 'price_floor ≤ price_per_run ≤ price_ceiling');
   }
   if (L.settle_mode !== undefined && !['final', 'checkpoint'].includes(L.settle_mode)) err('listing.settle_mode', 'settle_mode is "final" or "checkpoint"');
-  if (L.bill !== undefined) { needs11('listing.bill'); if (!['declared', 'executed'].includes(L.bill)) err('listing.bill', 'bill is "declared" or "executed"'); }
+  if (L.bill !== undefined && !['declared', 'executed'].includes(L.bill)) err('listing.bill', 'bill is "declared" or "executed"');
   const bill = L.bill ?? 'declared';
 
   const nodes = new Map<string, RecipeNode>();
@@ -318,7 +316,7 @@ export function validateRecipe(recipe: Recipe, catalog: Catalog): ValidationResu
   }
   if (nodes.size === 0) err('recipe.empty', 'a recipe needs at least one part');
 
-  // ---- types of references, with type variables bound per node (SRS-1.1 §1.3)
+  // ---- types of references, with type variables bound per node (SRS-1 §1.3)
   const binds = new Map<string, Record<string, string | null>>();
   const binding = new Set<string>();
   const refType = (ref: string): { type?: string; dep?: string; error?: string } => {
@@ -382,7 +380,6 @@ export function validateRecipe(recipe: Recipe, catalog: Catalog): ValidationResu
       const refs = refsOf(b);
       if (!refs.length) { err(Array.isArray(b) ? 'port.alternatives' : 'port.unwired', Array.isArray(b) ? `input "${port}" lists no alternatives` : `input "${port}" (${spec.type}) is not connected`, n.id, port); continue; }
       if (Array.isArray(b)) {
-        needs11('a list of alternatives', n.id);
         if (new Set(b).size !== b.length) err('port.alternatives', `input "${port}" lists the same reference twice`, n.id, port);
       }
       for (const ref of refs) {
@@ -403,14 +400,13 @@ export function validateRecipe(recipe: Recipe, catalog: Catalog): ValidationResu
     }
     for (const [p, s] of Object.entries(m.outputs)) { const t = isVar(m, s.type) ? tv[s.type] ?? m.type_params![s.type].extends : s.type; if (t) portTypes[`${n.id}.${p}`] = t; }
 
-    // secret params and where they can go (SRS-1.1 §5.4)
+    // secret params and where they can go (SRS-1 §5.4)
     const secretsSet = Object.entries(m.params).filter(([k, s]) => s.secret && n.params?.[k] !== undefined).map(([k]) => k);
     const egress = m.capabilities.filter((c) => c.startsWith('net:')).map((c) => c.slice(4)).filter((h) => !CONFIDENTIAL_HOSTS.includes(h));
     if (secretsSet.length && egress.length) warn('param.secret-egress', `${m.id} can send data to ${egress.join(', ')}: the values of ${secretsSet.join(', ')} may leave the runner`, n.id);
 
-    // conditions (SRS-1.1 §3.2)
+    // conditions (SRS-1 §3.2)
     if (n.when !== undefined) {
-      needs11('when', n.id);
       const w = n.when;
       const tests = [w.is !== undefined, w.match !== undefined, w.some !== undefined].filter(Boolean).length;
       if (tests > 1 || (w.is !== undefined && !['nonempty', 'empty'].includes(w.is))) err('when.shape', 'a condition has one test: is ("nonempty" | "empty"), match or some', n.id);
@@ -436,7 +432,6 @@ export function validateRecipe(recipe: Recipe, catalog: Catalog): ValidationResu
       }
     }
     if (n.on_error !== undefined) {
-      needs11('on_error', n.id);
       if (!['fail', 'skip'].includes(n.on_error)) err('node.on_error', 'on_error is "fail" or "skip"', n.id);
       else if (n.on_error === 'skip' && m.capabilities.includes('wallet:approve')) err('node.on_error', `${m.id} asks the buyer to sign: if it fails, funds may already have moved, so the run must stop (on_error: "skip" is not allowed)`, n.id);
     }
@@ -459,7 +454,7 @@ export function validateRecipe(recipe: Recipe, catalog: Catalog): ValidationResu
   }
   if (order.length !== nodes.size) err('graph.cycle', 'parts form a cycle; SRS-1 recipes must be acyclic');
 
-  // which nodes may be skipped at run time (SRS-1.1 §3.5): static over-approximation in execution order
+  // which nodes may be skipped at run time (SRS-1 §3.5): static over-approximation in execution order
   // A fallback pair [a, b] is always present when b runs exactly when a's value is absent or empty and b cannot skip otherwise.
   const optional = new Set<string>();
   const nodeOf = (r: string) => r.split('.')[0];
@@ -487,7 +482,6 @@ export function validateRecipe(recipe: Recipe, catalog: Catalog): ValidationResu
 
   let outputType: string | undefined;
   const outs = refsOf(recipe.output);
-  if (Array.isArray(recipe.output)) needs11('a list of alternatives for the output');
   if (!outs.length) err('recipe.output', 'output: the recipe needs a result');
   const outTypes: string[] = [];
   for (const o of outs) { const r = refType(o ?? ''); if (r.error) err('recipe.output', `output: ${r.error}`); else if (r.type) outTypes.push(r.type); }
@@ -557,7 +551,7 @@ export function publicListing(recipe: Recipe, catalog: Catalog): PublicListing {
   const parts = partIndex(catalog);
   const v = validateRecipe(recipe, catalog);
   if (!v.ok) throw new Error('cannot list an invalid recipe: ' + v.diagnostics.filter((x) => x.severity === 'error').map((x) => x.message).join('; '));
-  // SRS-1.1 §5.3: parts are published as a sorted multiset. Execution order is part of the sealed method.
+  // SRS-1 §5.3: parts are published as a sorted multiset. Execution order is part of the sealed method.
   const sortedParts = [...v.partsUsed].sort();
   const iface = { form: recipe.form, parts: sortedParts, output_type: v.outputType };
   return {

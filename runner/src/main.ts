@@ -107,7 +107,7 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
   let reportable = false; // true once the run is verified as paid, pending and assigned to this runner
   let reported = false;
   // buyer-derived data leaves the runner only sealed to the buyer's one-time reply key
-  // sealed events carry nothing in the clear: not even the node id, which is part of the sealed method (SRS-1.1 §5.3)
+  // sealed events carry nothing in the clear: not even the node id, which is part of the sealed method (SRS-1 §5.3)
   const priv = (type: string, data: Record<string, unknown>) => { if (replyTo) emit(job, 'sealed', { node: null, envelope: seal({ type, data }, replyTo, 'output') }); };
   const report = async (outcome: Outcome, outputHash: string, delivered: bigint, partsUsed: string[]) => {
     const msg = runReportMessage(CONTRACT_ID, job.runId, job.recipeId, outcome, outputHash, delivered.toString(), partsUsed);
@@ -210,7 +210,7 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
       }
     }
 
-    // SRS-1.1 §5.3: in the clear the marketplace sees only coarse progress (step i of n, also for skipped steps).
+    // SRS-1 §5.3: in the clear the marketplace sees only coarse progress (step i of n, also for skipped steps).
     // Part names, node ids, order and skips go to the buyer, sealed. Approvals are keyed by step, not by node id.
     const stepOf = (node: string) => `s${v.order.indexOf(node) + 1}`;
     const priorApprovals = Object.fromEntries(Object.entries(resumeIn?.approvals ?? {}).map(([k, a]) => [/^s\d+$/.test(k) ? v.order[Number(k.slice(1)) - 1] ?? k : k, a]));
@@ -237,7 +237,7 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
     const delivered = m ? (fresh > 0n ? creditedDelivered(m.delivered, fresh, m.executed) : m.delivered) : 0n;
     if (m && delivered !== m.delivered) priv('withheld', { measured: m.delivered.toString(), credited: delivered.toString() });
     const settlement = await report(res.ok ? 'ok' : 'fail', res.outputHash, delivered, res.ok ? res.partsUsed : []);
-    // the buyer gets the salt, so only the buyer can check output_hash against the output (SRS-1.1 §6)
+    // the buyer gets the salt, so only the buyer can check output_hash against the output (SRS-1 §6)
     priv('result', { ok: res.ok, error: res.error, output, salt: res.salt, skipped: res.skipped });
     emit(job, 'completed', { ok: res.ok, outcome: res.ok ? 'ok' : 'fail', output_hash: res.outputHash, settlement });
   } catch (e) {

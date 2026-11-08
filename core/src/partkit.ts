@@ -27,7 +27,7 @@ export function sourcesFor(recipe: Recipe, nodeId: string | null, catalog: Catal
     const stack = [nodeId];
     while (stack.length) {
       const cur = stack.pop()!;
-      for (const n of recipe.nodes) if (!downstream.has(n.id) && Object.values(n.inputs).some((b) => refsOf(b).some((r) => r.startsWith(cur + '.')))) { downstream.add(n.id); stack.push(n.id); }
+      for (const n of recipe.nodes) if (!downstream.has(n.id) && [...Object.values(n.inputs), n.when?.ref ?? ''].some((b) => refsOf(b).some((r) => r.startsWith(cur + '.')))) { downstream.add(n.id); stack.push(n.id); }
     }
   }
   const out: Source[] = [];
@@ -107,7 +107,9 @@ export function addPartAutoWired(recipe: Recipe, partId: string, catalog: Catalo
   const nodes = draft.nodes.map((n) => (n.id === id ? { ...n, inputs } : n));
   const outPort = Object.keys(m.outputs)[0];
   const resultNode = (refsOf(draft.output)[0] ?? '').split('.')[0];
-  const takesOver = !draft.output || Object.values(inputs).some((r) => r.split('.')[0] === resultNode);
+  // it also takes over when it reads a value of the result's type from elsewhere (e.g. a report reading a later verdict)
+  const resultType = sourcesFor(draft, null, catalog).find((x) => x.ref === refsOf(draft.output)[0])?.type;
+  const takesOver = !draft.output || Object.values(inputs).some((r) => r.split('.')[0] === resultNode || (!!resultType && sourcesFor(draft, null, catalog).find((x) => x.ref === r)?.type === resultType));
   return { recipe: { ...draft, nodes, output: takesOver && outPort ? `${id}.${outPort}` : draft.output }, nodeId: id, unwired, asked };
 }
 
@@ -146,7 +148,7 @@ export function validatePartManifest(m: PartManifest, catalog: Catalog, opts: { 
   if (!/^[a-z0-9._-]{2,64}$/.test(m.author ?? '')) err('author', 'author must be the NEAR account that is paid the fee');
   if ((m.summary ?? '').trim().length < 20) err('summary', 'summary must say in one sentence what the part does (at least 20 characters)');
   const portRe = /^[a-z_][a-z0-9_]*$/;
-  // type variables (SRS-1.1 §1.3): one capital letter, a known bound or none, and bound by at least one input
+  // type variables (SRS-1 §1.3): one capital letter, a known bound or none, and bound by at least one input
   const tvars = m.type_params ?? {};
   for (const [T, tp] of Object.entries(tvars)) {
     if (!TYPE_VAR_RE.test(T)) err('type_params.name', `type variable "${T}" must be one capital letter`);

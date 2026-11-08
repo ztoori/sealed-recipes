@@ -1,13 +1,14 @@
-# SRS-1: Sealed Recipe Spec (v1.1)
+# SRS-1: Sealed Recipe Spec (v1.0)
 
 SRS-1 is an open format for building workflows ("recipes") out of other people's components ("parts") without writing code or prompts, and for selling runs of those workflows while their method stays secret. A recipe is a typed graph: the types decide what can connect, the buyer's form builds itself from what the parts need, and any part can be swapped for one that fits the same wires. Sealed to an attested runner, a recipe can be quoted, run and settled, with every part author paid in every run, and no one but its creator (and the attested runner, while it executes) can read it.
 
 | | |
 |---|---|
-| Version | 1.1. Additive over 1.0: every 1.0 document is a 1.1 document with the same meaning (Appendix A) |
+| Version | 1.0 |
 | Reference implementation | [`core/src/srs.ts`](../core/src/srs.ts) (validator), [`runner/src/executor.ts`](../runner/src/executor.ts) (run semantics), [`core/src/partkit.ts`](../core/src/partkit.ts) (composer, manifest checks) |
-| Catalog | [`standard/parts.json`](../standard/parts.json): 15 types, 23 parts. Examples using 1.1: [`standard/examples/`](../standard/examples/) |
-| Conformance suite | `npm test`, in particular [`tests/srs11.test.ts`](../tests/srs11.test.ts) |
+| Type vocabulary and registered parts | [`standard/parts.json`](../standard/parts.json) |
+| Example recipes | [`standard/examples/`](../standard/examples/) |
+| Conformance suite | `npm test`, in particular [`tests/srs.test.ts`](../tests/srs.test.ts) |
 | License | MIT |
 
 MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. "The validator" is `validateRecipe`. Every rule given a validation code in this document is enforced by it, and the same function runs in the composer, the runner and the test suite.
@@ -27,7 +28,7 @@ Workflow tools already compose steps, and oracle networks already run workflows 
 | Who composes | a user in a visual editor | a developer | a creator, with no code and no prompt engineering |
 | Who can read a workflow | anyone with access to the instance | its owner and the nodes that run it | only its creator; the runner opens it inside a TEE |
 | Typing | untyped JSON items | the host language's types | nominal types with schemas, checked when composing and at every port while running (§1) |
-| Control flow | IF, Switch, Merge, Loop, error workflows, sub-workflows | anything code can express | conditions, alternatives and skip-on-error (§3.2–3.4); loops and nested recipes are not in 1.1 (§13) |
+| Control flow | IF, Switch, Merge, Loop, error workflows, sub-workflows | anything code can express | conditions, alternatives and skip-on-error (§3.2–3.4); loops and nested recipes are not in this version (§13) |
 | Price known before running | not part of the format | not part of the format | a signed quote from a read-only dry run (§7) |
 | Who is paid per run | no payment to node authors | node operators | every part author, the runner and the creator, in one settlement |
 | A step fails | the error workflow runs | handled in code | the buyer is refunded, or the node is skipped where the creator provided a fallback |
@@ -37,7 +38,7 @@ Workflow tools already compose steps, and oracle networks already run workflows 
 [`standard/examples/ESCL.json`](../standard/examples/ESCL.json), shortened:
 
 ```json
-{ "srs": "1.1", "kind": "recipe",
+{ "srs": "1.0", "kind": "recipe",
   "meta":  { "ticker": "ESCL", "name": "Contract check, escalated only when needed", "creator": "chef.testnet", "description": "…" },
   "form":  [ { "id": "contract", "label": "Contract you are about to sign for", "type": "near.account", "required": true } ],
   "nodes": [
@@ -70,7 +71,7 @@ Workflow tools already compose steps, and oracle networks already run workflows 
 | node id, form field id, constant name | `[a-z][a-z0-9_]{0,31}` | `judge` |
 | ticker (the on-chain recipe id) | `[A-Z0-9]{3,6}` | `ESCL` |
 | reference | `form.<field>`, `const.<name>` or `<node>.<port>` | `rules.verdict` |
-| binding | a reference, or (1.1) a non-empty list of references | `["judge.verdict", "rules.verdict"]` |
+| binding | a reference, or a non-empty list of references | `["judge.verdict", "rules.verdict"]` |
 
 ## 1. Types
 
@@ -89,7 +90,7 @@ A value of type `A` may be wired into a port of type `B` iff `A == B` or `A` tra
 
 ### 1.2 Value schemas
 
-A type MAY declare a `schema` in this subset of JSON Schema: `type` (`string`, `number`, `integer`, `boolean`, `object`, `array`, `null`), `enum`, `pattern`, `minimum`, `maximum`, `properties`, `required` and `items`. Other keywords are not part of SRS-1.1.
+A type MAY declare a `schema` in this subset of JSON Schema: `type` (`string`, `number`, `integer`, `boolean`, `object`, `array`, `null`), `enum`, `pattern`, `minimum`, `maximum`, `properties`, `required` and `items`. Other keywords are not part of SRS-1.
 
 ```json
 "contract.verdict": { "extends": null, "description": "Risk verdict on a contract",
@@ -119,7 +120,7 @@ In a recipe, each node binds each variable to the most specific type that every 
 - If the wired types have no common ancestor, the validator reports `port.generic`. If the join is not within the variable's bound (`extends`), it reports `port.type`.
 - In a manifest, a variable MUST be used by at least one input (`type_params.unbound` otherwise), so a recipe can always bind it.
 
-Without variables every utility exists once per type: the 1.0 catalog's `swap.merge` only merges receipts and `time.wait` only delays holdings. With them, one merge, wait, pick or dedupe serves every type, and its author is paid in every domain that uses it.
+Without variables every utility has to exist once per type: a merge typed for receipts merges only receipts, and a wait typed for holdings delays only holdings. With them, one merge, wait, pick or dedupe serves every type, and its author is paid in every domain that uses it.
 
 ### 1.4 The standard vocabulary
 
@@ -199,7 +200,7 @@ The runner enforces these for every part ([`runner/src/limits.ts`](../runner/src
 
 ```json
 {
-  "srs": "1.1", "kind": "recipe",
+  "srs": "1.0", "kind": "recipe",
   "meta":   { "ticker": "CLNP", "name": "Clean up and protect", "creator": "chef.testnet", "description": "…" },
   "form":   [ { "id": "wallet", "label": "Wallet to clean", "type": "near.account", "required": true },
               { "id": "recipient", "label": "Fresh address", "type": "address.near", "generator": "fresh-implicit" } ],
@@ -213,18 +214,18 @@ The runner enforces these for every part ([`runner/src/limits.ts`](../runner/src
 
 | Field | Meaning |
 |---|---|
-| `srs` | `"1.0"` or `"1.1"`. The features marked (1.1) below require `"1.1"` (`srs.feature`), so a 1.0 runner never misreads a 1.1 recipe |
+| `srs` | the spec version the recipe is written for: `"1.0"` |
 | `form` | what the buyer is asked: typed fields, at most 6 recommended (`form.long`). `generator: "fresh-implicit"` lets the buyer's browser generate a new address |
-| `nodes` | each uses one catalog part, binds every input, and sets params (`params` may be omitted). Optional: `when` (1.1, §3.2), `on_error` (1.1, §3.4) |
+| `nodes` | each uses one catalog part, binds every input, and sets params (`params` may be omitted). Optional: `when` (§3.2), `on_error` (§3.4) |
 | `consts` | typed fixed values; checked against their type's schema |
 | `output` | the result: a binding (§3.1). Its type is the recipe's `output_type` |
-| `listing` | price and collateral (§4), `settle_mode` (§8), `bill` (1.1, §6.1) |
+| `listing` | price and collateral (§4), `settle_mode` (§8), `bill` (§6.1) |
 
 ### 3.1 References and bindings
 
-A reference is `form.<field>`, `const.<name>` or `<node>.<port>`. A binding is one reference, or (1.1) a list of references (§3.3). Node inputs and the recipe's `output` are bindings; a condition reads one reference. Nodes may be declared in any order: execution follows dependencies (§3.5).
+A reference is `form.<field>`, `const.<name>` or `<node>.<port>`. A binding is one reference, or a list of references (§3.3). Node inputs and the recipe's `output` are bindings; a condition reads one reference. Nodes may be declared in any order: execution follows dependencies (§3.5).
 
-### 3.2 Conditions (1.1)
+### 3.2 Conditions
 
 A node with `when` runs only if its condition holds:
 
@@ -245,7 +246,7 @@ A condition has exactly one test (`when.shape`):
 
 Conditions are expressed over typed values that parts produce, not as code or text expressions. That keeps them checkable when composing, editable in a no-code UI and impossible to use as an escape hatch: a condition can choose whether a part runs, never what it does.
 
-### 3.3 Alternatives (1.1)
+### 3.3 Alternatives
 
 A binding that lists several references takes the first one that is present when the node runs:
 
@@ -255,7 +256,7 @@ A binding that lists several references takes the first one that is present when
 
 Every alternative MUST be assignable to the port's type (`port.type`); for a port typed with a variable, every alternative counts towards its binding (§1.3). Repeats are not allowed (`port.alternatives`). The node depends on every node its alternatives name. A recipe `output` may list alternatives too; its `output_type` is their join.
 
-### 3.4 Skipping on error (1.1)
+### 3.4 Skipping on error
 
 `"on_error": "skip"` lets a run continue when that node's part fails: it throws, exceeds a limit (§2.2) or returns a value that is not of its declared type (§1.2). The node is then skipped (§3.5). The default, `"fail"`, fails the run and refunds the buyer.
 
@@ -294,8 +295,7 @@ All enforced by `validateRecipe` ([`core/src/srs.ts`](../core/src/srs.ts)). Erro
 
 | Code | Severity | Rule |
 |---|---|---|
-| `srs.version` | error | `srs` is `"1.0"` or `"1.1"`, `kind` is `"recipe"` |
-| `srs.feature` | error | conditions, `on_error`, alternatives and `bill` require `srs: "1.1"` |
+| `srs.version` | error | `srs` is `"1.0"`, `kind` is `"recipe"` |
 | `meta.ticker`, `meta.name` | error | ticker `^[A-Z0-9]{3,6}$` (the on-chain recipe id); a name |
 | `form.id`, `form.duplicate`, `form.type` | error | field ids match the identifier grammar, are unique and have known types |
 | `type.proof` | error | no form field or constant has a `proof` type (§1.1) |
@@ -328,7 +328,7 @@ The validator also returns the execution order, the billable parts, the union of
 `publicListing(recipe)` is the only recipe-derived data the marketplace and the chain receive:
 `ticker, name, creator, description, form, parts, capabilities, output_type, price_per_run, pricing, reserve_bps, interface_hash`, plus the risk, disclosure and privacy labels, which are recomputed from the parts and never taken from the creator (`labelsFromParts`).
 
-- `parts` is the recipe's parts as a **sorted multiset**: one entry per node, in lexicographic order (1.1; in 1.0 it was in execution order). The contract needs the multiset to bill and to check reports (§6); the order is part of the method and stays sealed.
+- `parts` is the recipe's parts as a **sorted multiset**: one entry per node, in lexicographic order. The contract needs the multiset to bill and to check reports (§6); the order is part of the method and stays sealed.
 - `interface_hash = sha256(canonical({form, parts, output_type}))` identifies what a buyer interacts with, independently of how the recipe works inside.
 - Wiring, conditions, params and constants are **not** included.
 
@@ -357,17 +357,17 @@ The creator's client seals a second copy of each published version (purpose `cre
 
 ### 5.3 What the public data reveals
 
-Sealing hides a recipe's text, not what can be inferred from its interface. Typed ports are what make composition no-code, and they also constrain how parts can be wired. Enumerating every wiring of the public parts that validates, has no dead ends and uses every form field, the 10 seed recipes have: one candidate wiring (ATOM, EXIT, KEYS, STAK), two (CLNP, SWPR, TRIM), three (CHEK), five (SAFE) and 144 (TRCH). For simple linear recipes the structure is therefore guessable, and their sealed edge is in their params, constants and conditions: the prompt a classifier is given, the thresholds, the brands on a watch list, the slippage, which branch handles which case. SRS-1 is designed so that this is where the value lives, and 1.1 widens it: conditions and alternatives add sealed decisions that the interface does not constrain.
+Sealing hides a recipe's text, not what can be inferred from its interface. Typed ports are what make composition no-code, and they also constrain how parts can be wired: for a short linear recipe, often only one wiring of its public parts validates, uses every form field and has no dead ends. The sealed edge of such a recipe is in its params, constants and conditions: the prompt a classifier is given, the thresholds, the brands on a watch list, the slippage, which branch handles which case. SRS-1 is designed so that this is where the value lives, and conditions and alternatives (§3.2, §3.3) add sealed decisions that the interface does not constrain.
 
-1.1 closes the channels through which the method or a buyer's data used to leak:
+The format keeps the method and the buyer's data out of every public channel it controls:
 
-| Channel | 1.0 | 1.1 |
-|---|---|---|
-| Order of `parts` in the listing and reports | execution order | sorted multiset (§4) |
-| Run events in the clear | part names, node ids and order per run | step `i` of `n` only, for run and skipped steps alike; everything else sealed to the buyer |
-| Approvals relayed by the marketplace | keyed by node id | keyed by step number |
-| Which branch ran for a buyer | — | hidden by default: `bill: "declared"` (§6.1) |
-| `output_hash` of a short result (a verdict) | `sha256({run_id, output})`, confirmable by guessing | includes a random salt that only the buyer receives |
+| Channel | What is public |
+|---|---|
+| The parts in the listing and in reports | a sorted multiset, never the execution order (§4) |
+| Events while a run executes | step `i` of `n` only, for run and skipped steps alike; part names, node ids, logs and results are sealed to the buyer |
+| Approvals relayed by the marketplace | keyed by step number, not by node id |
+| Which branch ran for a buyer | nothing, by default: `bill: "declared"` (§6.1) |
+| The result | `output_hash`, salted with a value only the buyer receives, so a short result (a verdict) cannot be confirmed by guessing (§6) |
 
 What remains observable, by design or by physics: the number of steps; how long each step takes (a skipped step finishes at once); in `checkpoint` settlement mode, when each part is billed (§8); the values of a bonded quote, which the contract must enforce (§7); and the requests a part makes to the hosts it declares.
 
@@ -391,14 +391,14 @@ srs-run-v3|<contract>|<run_id>|<recipe_id>|<ok|fail|abort>|<output_hash>|<delive
 
 `report_run` verifies the signature with `env::ed25519_verify`. `parts_used` must be a sub-multiset of the recipe's registered parts, so a runner cannot bill parts the recipe does not contain.
 
-### 6.1 Billing (1.1)
+### 6.1 Billing
 
 `listing.bill` decides which parts an `ok` run pays:
 
 - `"declared"` (default): every node, run or skipped. Every successful run of a recipe produces the same settlement, so the chain shows nothing about which branch ran for a buyer. The creator pays for privacy with the fees of parts that did not run; the buyer's price is unchanged.
 - `"executed"`: only the nodes that ran. The creator keeps more of the price when optional branches are expensive, but each settlement reveals which ones ran, and the validator warns (`bill.reveals-branch`).
 
-For a recipe without conditions or `on_error`, every node runs and both modes bill the same parts as 1.0 did.
+For a recipe without conditions or `on_error`, every node runs and both modes bill the same parts.
 
 ## 7. Quotes and guarantees
 
@@ -441,18 +441,18 @@ A document conforms to SRS-1 when the reference checks accept it. The same funct
 
 The source checks are static. They catch common mistakes and the usual escapes, not every malicious idea. What protects buyers at run time is admission (§11): every part's code is in a runner release whose code hash buyers verify, open parts run in a sandbox, parts that send data somewhere new or ask buyers to sign are read by appointed reviewers first, and every value a part returns is type-checked before another part sees it.
 
-`npm test` runs the conformance suite: every part in the catalog passes the manifest and source checks; every seed recipe and every example validates; every seed recipe can be rebuilt in the composer from a blank recipe by adding its parts; and [`tests/srs11.test.ts`](../tests/srs11.test.ts) covers each 1.1 rule, including the runner's behaviour on skipped, failing and ill-typed parts.
+`npm test` runs the conformance suite: every part in the catalog passes the manifest and source checks; every seed recipe and every example validates; every seed recipe can be rebuilt in the composer from a blank recipe by adding its parts; and [`tests/srs.test.ts`](../tests/srs.test.ts) covers each composition rule, including the runner's behaviour on skipped, failing and ill-typed parts.
 
 ## 10. Adopting SRS-1
 
 A marketplace for sealed recipes is only as useful as the number of parts and recipes that speak the same format. SRS-1 is written to be adopted by anyone, not only this marketplace.
 
 - **Part builders** publish a manifest that conforms (§9) and code that follows the part interface, admitted by tier (§11). A part is paid its fee in every settlement of every recipe that uses it, on any marketplace that settles SRS-1 reports.
-- **Recipe creators** need no code: add parts, and the types decide what can connect; a value no part provides is asked from the buyer, so the form builds itself.
+- **Recipe creators** need no code: add parts, and the types decide what can connect; a value no part provides is asked from the buyer, so the form builds itself. Conditions, fallbacks and skip-on-failure are chosen from menus built from the same types and schemas, so the composer only offers logic the validator accepts.
 - **Wallets and agents** read a recipe's public form, seal their inputs and ask for signed quotes; they never need to see a recipe.
 - **Other marketplaces and runners** can implement the same three documents, the quote message (§7) and the report message (§6). A recipe sealed to a conforming runner can be listed anywhere that verifies its attestation.
 
-**Versioning.** Every part and the spec itself carry a semantic version. Within 1.x, changes are additive: new types, new optional fields, new optional features gated by the `srs` field (as 1.1 does). A breaking change to a part is a new major version with a new id, and the old one stays valid, so published recipes never break.
+**Versioning.** Every part and the spec itself carry a semantic version. Within 1.x, changes are additive: new types, new optional fields, new optional features gated by the `srs` field. A breaking change to a part is a new major version with a new id, and the old one stays valid, so published recipes never break.
 
 **Proposing changes.** New types are proposed as SRS improvement proposals: the JSON definition with its schema, one part and one recipe that use it, and the conformance suite passing. The proposal process is not yet run by an independent body; that is a step for after the first external implementations.
 
@@ -486,13 +486,13 @@ The spec is what makes this tractable. A reviewer does not have to work out what
 
 ## 12. How many parts the spec supports
 
-There are three honest answers.
+There are three answers.
 
 **The format: no limit.** Part ids are namespaced and versioned, and the type vocabulary is open (§10). Nothing in SRS-1 caps the number of parts, or the number of nodes in a recipe; only the buyer's form has a recommended size.
 
-**Interfaces over today's vocabulary: 110,160 slots.** A part's interface is the multiset of its input types and the multiset of its output types. Over the 15 catalog types, parts with up to three inputs and one or two outputs have 816 × 135 = 110,160 distinct interfaces. Each is a slot that any number of builders can fill. Parts in the same slot are drop-in swaps (§3.7), so they compete on fee, risk and track record inside recipes that are already selling, and a better part reaches buyers without anyone rewiring a recipe. A part with type variables (§1.3) fills many slots at once.
+**Interfaces over the standard vocabulary: 110,160 slots.** A part's interface is the multiset of its input types and the multiset of its output types. Over the 15 standard types (§1.4), parts with up to three inputs and one or two outputs have 816 × 135 = 110,160 distinct interfaces. Each is a slot that any number of builders can fill. Parts in the same slot are drop-in swaps (§3.7), so they compete on fee, risk and track record inside recipes that are already selling, and a better part reaches buyers without anyone rewiring a recipe. A part with type variables (§1.3) fills many slots at once.
 
-**Today's catalog: 23 parts in 19 interfaces.** Three interfaces already have competing parts: three spam shields, two contract judges, and two swap engines that deliver to a proven-fresh address (a third, public one, accepts any address). Counting only distinct parts, with one result and no dead ends, they combine into 471 valid recipes of up to six parts. Each of those multiplies by its possible wirings, conditions, repeated parts (TRCH uses the same swap part twice), params and constants, and by the swaps available for each node: a five-node recipe with three competing parts per slot has 3⁵ = 243 variants from swaps alone.
+**Recipes: combinatorial.** Every slot multiplies the recipes that can use it. A recipe's variants multiply by its possible wirings, conditions, params and constants, and by the drop-in parts available for each node: a five-node recipe with three competing parts per slot has 3⁵ = 243 variants from swaps alone.
 
 What grows the space fastest is a new type, not a new part. A type gives parts a new kind of value to exchange, and a type that some part produces and another consumes opens a market for both. Some types that would each unlock a family of parts and recipes (proposals, not in the catalog):
 
@@ -503,7 +503,7 @@ What grows the space fastest is a new type, not a new part. A type gives parts a
 | `price.series` | a price-history source | a timing guard, a DCA planner | buy only below the 30-day average |
 | `tx.history` | an indexer source | an anomaly guard, a cost-basis report | flag unusual outflows, then lock down keys |
 
-## 13. Not in 1.1, and why
+## 13. Not in this version, and why
 
 Every feature is weighed against the four properties at the top of this document: a recipe must stay checkable when composed, quotable before it runs, bounded in cost, and settleable to each part author.
 
@@ -512,13 +512,3 @@ Every feature is weighed against the four properties at the top of this document
 - **Triggers and standing orders.** n8n and CRE start workflows on schedules, webhooks and chain events. Here every run is paid for and every action is approved in the buyer's wallet. Unattended runs first need pre-authorised spending (for example a function-call key with an allowance, or a signed standing intent), which is a wallet question before it is a format one. Meanwhile an agent can ask for quotes and pay on its own schedule (§10).
 - **Free-form expressions.** n8n lets any field hold a JavaScript expression. SRS-1 does not, on purpose: an expression is code inside the sealed recipe that no reviewer reads and the validator cannot type. Computation belongs in parts, where it is admitted, limited and paid.
 - **Several results.** A recipe has one result type: it is what the listing promises and what a quote measures. Results are combined by a part.
-
-## Appendix A. Changes from 1.0
-
-All additive. A 1.0 recipe validates, runs and bills exactly as before; the features below require `"srs": "1.1"`.
-
-- **Types:** value schemas, enforced on constants, conditions and every part output at run time (§1.2); `proof` types (§1.1); type variables (§1.3).
-- **Recipes:** conditions (§3.2), alternatives (§3.3), `on_error: "skip"` (§3.4), precise execution semantics with skipping (§3.5), `listing.bill` (§6.1).
-- **Validation:** identifier grammar for nodes, form fields and constants; constant types and values; listing fields; the rules for the features above; warnings for absent results, branch-revealing billing and secret egress (§3.6).
-- **Privacy:** parts listed and reported as a sorted multiset (§4); only step counts in the clear while running; approvals keyed by step; salted output hashes (§5.3, §6).
-- **Swaps:** compatibility decided by the validator itself, so swaps respect alternatives, conditions and type variables (§3.7).

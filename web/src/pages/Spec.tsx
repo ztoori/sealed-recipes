@@ -1,18 +1,16 @@
 import { useMemo } from 'react';
 import { Marked, type Tokens } from 'marked';
 import spec from '../../../docs/SRS-1.md?raw';
-import { validatePartManifest } from '../../../core/src/partkit';
 import type { Catalog } from '../../../core/src/srs';
 import { usePoll } from '../api';
 import { useApp } from '../App';
 import { Icon } from '../icons';
-import { Stat, Tip } from '../ui';
-import { partTier, type Tier } from '../../../core/src/review';
+import { Tip } from '../ui';
 import { TierTable } from '../components/Admission';
 
 /**
  * Documentation › Spec: SRS-1, the format every part and recipe here is written in. The full text is
- * docs/SRS-1.md itself (rendered, not copied), next to the live registries it defines: types and parts.
+ * docs/SRS-1.md itself (rendered, not copied), next to the type vocabulary and the admission tiers it defines.
  */
 const slug = (s: string) => s.toLowerCase().replace(/<[^>]+>/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const md = new Marked({
@@ -31,16 +29,11 @@ const md = new Marked({
 export function Spec() {
   const { go } = useApp();
   const [cat] = usePoll<Catalog>('/api/catalog', 60000);
-  const [listings] = usePoll<any[]>('/api/listings', 10000);
   const html = useMemo(() => md.parse(spec) as string, []);
   const toc = useMemo(() => [...spec.matchAll(/^## (.+)$/gm)].map((m) => ({ id: 'srs-' + slug(m[1]), label: m[1] })), []);
   const parts = cat?.parts ?? [];
-  const conform = cat ? parts.filter((p) => !validatePartManifest(p, cat).some((d) => d.severity === 'error')).length : 0;
-  const authors = new Set(parts.map((p) => p.author)).size;
-  const tierCounts = parts.reduce<Partial<Record<Tier, number>>>((c, p) => { const t = partTier(p).tier; c[t] = (c[t] ?? 0) + 1; return c; }, {});
-  const usedBy = (t: string) => parts.filter((p) => [...Object.values(p.inputs), ...Object.values(p.outputs)].some((s) => s.type === t)).length;
   const download = () => {
-    const blob = new Blob([JSON.stringify({ srs: cat?.srs ?? '1.1', types: cat?.types, parts }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ srs: cat?.srs ?? '1.0', types: cat?.types, parts }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'srs-1-catalog.json'; a.click();
   };
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -61,19 +54,13 @@ export function Spec() {
               <button className="btn ghost icon-only" aria-label="Download the catalog (JSON)" title="Download the catalog (JSON)" disabled={!cat} onClick={download}><Icon name="download" size={15} /></button>
             </div>
           </div>
-          <div className="std-stats">
-            <Stat icon="link" value={Object.keys(cat?.types ?? {}).length} label="types" />
-            <Stat icon="box" value={parts.length} label={`parts · ${authors} builders`} />
-            <Stat icon="market" value={listings?.length ?? 0} label="recipes listed" />
-            <Stat icon="shieldCheck" value={`${conform}/${parts.length}`} label="conform" tone={conform === parts.length ? 'gain' : 'loss'} tip="Parts passing the §9 conformance checks, run in this browser." />
-          </div>
         </div>
       </div>
 
       <div className="grid std-docs">
         {[
           ['box', 'Part manifest', 'by a builder', 'Typed ports, declared capabilities, a fee, a disclosure of model and layers, and per-run limits. Registered on-chain by hash.', '§2'],
-          ['lock', 'Recipe', 'sealed by a creator', 'A typed graph of parts with the creator’s settings and prompts. Encrypted to the attested runner; only its hash is on-chain.', '§3, §5'],
+          ['lock', 'Recipe', 'sealed by a creator', 'A typed graph of parts with the creator’s conditions, fallbacks, settings and prompts. Encrypted to the attested runner; only its hash is on-chain.', '§3, §5'],
           ['eye', 'Public listing', 'derived, never typed', 'Form, parts, price and the risk and privacy labels computed from the parts. All a buyer or marketplace sees.', '§4'],
           ['receipt', 'Signed quote', 'by the runner', 'A price for one buyer’s sealed inputs, from a dry run. For a recipe that delivers swapped funds it also promises a value, backed by the guarantee deposit.', '§7'],
         ].map(([ic, t, who, d, ref]) => (
@@ -84,13 +71,13 @@ export function Spec() {
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))', alignItems: 'start' }}>
         <div className="panel">
           <header><Icon name="link" size={16} className="hd-ic" /><h2>Type registry</h2><span className="small muted">§1</span></header>
-          <table className="small fixed"><thead><tr><th style={{ width: '30%' }}>Type</th><th>Meaning</th><th style={{ width: '14%' }} className="r">Parts</th></tr></thead><tbody>
-            {Object.entries(cat?.types ?? {}).map(([k, t]) => <tr key={k}><td><code>{k}</code>{t.extends && <div className="muted">extends <code>{t.extends}</code></div>}</td><td>{t.description}</td><td className="r">{usedBy(k)}</td></tr>)}
+          <table className="small fixed"><thead><tr><th style={{ width: '32%' }}>Type</th><th>Meaning</th></tr></thead><tbody>
+            {Object.entries(cat?.types ?? {}).map(([k, t]) => <tr key={k}><td><code>{k}</code>{t.extends && <div className="muted">extends <code>{t.extends}</code></div>}</td><td>{t.description}</td></tr>)}
           </tbody></table>
         </div>
         <div className="panel">
           <header><Icon name="shieldCheck" size={16} className="hd-ic" /><h2>Admission tiers</h2><span className="small muted">§11</span><Tip wide>A part runs inside other people’s sealed recipes, on buyers’ wallets. How much it must prove before it runs depends on what its manifest lets it do. Automated checks for everything; people only for what a sandbox cannot judge. Every decision is in the release log that the runner’s code hash covers.</Tip><span className="spacer" /><button className="linkbtn" onClick={() => go({ page: 'compose', sub: 'review' })}>Review queue</button></header>
-          <div className="body"><TierTable counts={tierCounts} /></div>
+          <div className="body"><TierTable /></div>
         </div>
       </div>
 

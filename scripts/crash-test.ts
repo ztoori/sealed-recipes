@@ -49,7 +49,7 @@ for (let done = false; !done;) {
       case 'checkpoint': {
         const n = (mid.get(e.data.mid_part ?? '') ?? 0) + 1; mid.set(e.data.mid_part ?? '', n);
         say(`${t}   checkpoint #${e.data.local_seq} stored (${e.data.mid_part ? `inside ${e.data.mid_part}` : `${e.data.completed_parts} parts done`})`);
-        // in the clear, checkpoints name only the step (SRS-1.1 §5.3): in TRCH's execution order s4 is the first tranche, s5 the wait
+        // in the clear, checkpoints name only the step (SRS-1 §5.3): in TRCH's execution order s4 is the first tranche, s5 the wait
         if (e.data.mid_part === 's4' && n === 2 && crashes === 0) { crashes++; await crash('first tranche deposits submitted, swaps still settling'); }
         if (e.data.mid_part === 's5' && n === 1 && crashes === 1) { crashes++; setTimeout(() => void crash('6 s into the 20 s wait'), 6000); }
         break;

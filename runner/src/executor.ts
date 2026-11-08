@@ -71,7 +71,7 @@ export interface ExecDeps {
 export interface ResumePoint { index: number; values: Record<string, unknown>; used: string[]; node?: string; partState?: unknown; skipped?: string[] }
 
 /**
- * partsUsed: the parts to bill, sorted (SRS-1.1 §6.1): every declared node with bill "declared" (the default), only the
+ * partsUsed: the parts to bill, sorted (SRS-1 §6.1): every declared node with bill "declared" (the default), only the
  * nodes that ran with bill "executed". skipped: nodes that did not run (sealed; reported only to the buyer).
  * outputHash commits to the output with a random salt that only the buyer receives, so a short output (a verdict)
  * cannot be confirmed by guessing.
@@ -92,7 +92,7 @@ export async function execute(runId: string, recipe: Recipe, inputs: Record<stri
   const start = deps.resume?.index ?? 0;
   for (const [k, v] of Object.entries(deps.resume?.values ?? {})) values.set(k, v);
   const nodeValues = () => Object.fromEntries([...values].filter(([k]) => !k.startsWith('form.') && !k.startsWith('const.')));
-  // SRS-1.1 §3.3: a reference is present unless it points at a skipped node; a list of references takes the first present one
+  // SRS-1 §3.3: a reference is present unless it points at a skipped node; a list of references takes the first present one
   const present = (ref: string) => !skipped.has(ref.slice(0, ref.indexOf('.')));
   const resolve = (b: Binding): { ok: boolean; value?: unknown } => { const r = refsOf(b).find(present); return r ? { ok: true, value: values.get(r) } : { ok: false }; };
   if (start > 0 || deps.resume?.partState !== undefined) deps.emit('resumed', { from_part: start, of: v.order.length, mid_part: deps.resume?.node ?? null });
@@ -103,7 +103,7 @@ export async function execute(runId: string, recipe: Recipe, inputs: Record<stri
       const nodeId = v.order[idx];
       const node = recipe.nodes.find((n) => n.id === nodeId)!;
       const m = manifests.get(node.part)!;
-      // SRS-1.1 §3.5: skip when a required input is absent (its source was skipped) or the condition does not hold
+      // SRS-1 §3.5: skip when a required input is absent (its source was skipped) or the condition does not hold
       const missing = Object.entries(node.inputs).filter(([, b]) => !resolve(b).ok).map(([p]) => p);
       // a condition on a skipped node sees no value: "empty" holds, "match" and "some" do not (this is how a fallback runs only when its primary was skipped)
       const why = missing.length ? `input ${missing.join(', ')} has no value` : node.when && !evalWhen(node.when, resolve(node.when.ref).value) ? 'its condition does not hold' : null;
@@ -137,7 +137,7 @@ export async function execute(runId: string, recipe: Recipe, inputs: Record<stri
           wait: (ms) => approval(() => new Promise<void>((r) => setTimeout(r, ms))),
           saveState: async (partState) => { if (deps.checkpoint && (deps.mode ?? 'run') === 'run') await approval(() => deps.checkpoint!({ index: idx, values: nodeValues(), used: [...used], node: nodeId, partState, skipped: [...skipped] }, [])); },
         }));
-        // SRS-1.1 §1.2: every declared output is present and is a value of its (bound) type
+        // SRS-1 §1.2: every declared output is present and is a value of its (bound) type
         for (const port of Object.keys(m.outputs)) {
           const t = v.portTypes[`${nodeId}.${port}`];
           if (!(port in out)) throw new Error(`${m.id} returned no "${port}"`);
@@ -145,7 +145,7 @@ export async function execute(runId: string, recipe: Recipe, inputs: Record<stri
           if (bad.length) throw new Error(`${m.id} output "${port}" is not a ${t}: ${bad.join('; ')}`);
         }
       } catch (e) {
-        // SRS-1.1 §3.4: on_error "skip" (never allowed on signing parts) continues without this node
+        // SRS-1 §3.4: on_error "skip" (never allowed on signing parts) continues without this node
         if (node.on_error !== 'skip') throw e;
         skipped.add(nodeId);
         deps.emit('part_skipped', { node: nodeId, part: m.id, name: m.name, reason: `failed: ${(e as Error).message}` });

@@ -8,6 +8,7 @@ import { api, ASSET_LABEL, money, usd, usePoll } from '../api';
 import { useApp, useStoryOnce } from '../App';
 import { SealModal } from '../components/SealModal';
 import { CAT, Icon } from '../icons';
+import { ConditionEditor, OnErrorEditor, Fallbacks, chipWhen, describeWhen, resultOptions } from './compose-logic';
 import { Empty, Seal, Tip } from '../ui';
 import CLNP from '../../../seed/recipes/CLNP.json';
 
@@ -30,16 +31,21 @@ const CAT_LABEL: Record<string, [string, string]> = {
 };
 const CREATOR_COPY_OF_CLNP = CLNP as unknown as Recipe; // the story's creator composing her own recipe, step by step
 
-type PartData = { manifest: PartManifest; errors: number; isResult: boolean };
+type PartData = { manifest: PartManifest; errors: number; isResult: boolean; when?: string; whenFull?: string; skipOnError?: boolean; maybe?: boolean };
 function PartNode({ data, selected }: NodeProps<Node<PartData>>) {
   const m = data.manifest;
   return (
-    <div className={'fnode' + (selected ? ' selected' : '') + (data.errors ? ' err' : '') + (data.isResult ? ' result' : '')} style={{ ['--cc' as any]: CAT[m.category]?.color }}>
+    <div className={'fnode' + (selected ? ' selected' : '') + (data.errors ? ' err' : '') + (data.isResult ? ' result' : '') + (data.maybe ? ' maybe' : '')} style={{ ['--cc' as any]: CAT[m.category]?.color }}>
+      {data.when && <Handle type="target" position={Position.Top} id="__when" className="when-handle" />}
       <div className="hd"><span className="cat"><Icon name={CAT[m.category]?.icon ?? 'box'} size={12} />{CAT_LABEL[m.category][0]}</span><b>{m.name}</b><span>{m.author} · {usd(m.fee_per_call, 2)}</span></div>
       <div className="ports">
         <div>{Object.entries(m.inputs).map(([p, s]) => (<div key={p} className="port"><Handle type="target" position={Position.Left} id={p} style={{ left: -6 }} />{p}<i>{s.type}</i></div>))}</div>
         <div>{Object.entries(m.outputs).map(([p, s]) => (<div key={p} className="port out"><Handle type="source" position={Position.Right} id={p} style={{ right: -6 }} />{p}<i>{s.type}</i></div>))}</div>
       </div>
+      {(data.when || data.skipOnError) && <div className="logictags">
+        {data.when && <span className="ltag" title={data.whenFull}><Icon name="split" size={11} />{data.when}</span>}
+        {data.skipOnError && <span className="ltag" title="If this part fails, the run carries on without it"><Icon name="arrow" size={11} />skips on failure</span>}
+      </div>}
       {data.isResult && <div className="resulttag"><Icon name="check" size={12} />result</div>}
     </div>
   );
@@ -67,6 +73,11 @@ function friendly(d: Diagnostic, name: (id?: string) => string): string {
     case 'meta.ticker': return 'Give it a short code: 3 to 6 capital letters or digits.';
     case 'meta.name': return 'Give it a name buyers will understand.';
     case 'node.deadend': return `${name(d.node)}: nothing uses its output, but you would still pay its fee. Connect it or remove it.`;
+    case 'recipe.output-optional': return 'On some runs the part that makes the result may be skipped, and the buyer would be refunded. Select it and add a fallback result.';
+    case 'bill.reveals-branch': return 'Billing only the parts that ran shows on-chain which branch ran for each buyer. Bill every part to keep that private (Listing).';
+    case 'param.secret-egress': return `${name(d.node)}: this part can send data to a host outside the runner, so your sealed settings on it may leave the runner.`;
+    case 'node.on_error': return `${name(d.node)}: asks the buyer to sign, so a failure must stop the run.`;
+    case 'when.unchecked': return `${name(d.node)}: the value this condition reads has no declared fields, so the condition cannot be checked before running.`;
     case 'form.unused': return `The buyer’s “${d.message.match(/"([^"]+)"/)?.[1]}” is not used by any part yet.`;
     default: return (d.node ? `${name(d.node)}: ` : '') + d.message;
   }
@@ -140,18 +151,30 @@ function Builder() {
     else if (a.asked.length) toast(`Added to the buyer’s form: ${a.asked.map((id) => a.recipe.form.find((f) => f.id === id)?.label).join(', ')}`);
     fit(80);
   };
-  const remove = (id: string) => setRecipe((r) => r && ({ ...r, output: refsOf(r.output).some((x) => x.startsWith(id + '.')) ? '' : r.output, nodes: r.nodes.filter((n) => n.id !== id).map((n) => ({ ...n, inputs: Object.fromEntries(Object.entries(n.inputs).filter(([, ref]) => !refsOf(ref).some((x) => x.startsWith(id + '.')))) })) }));
+  /** remove a part, and every wire, fallback or condition that read from it */
+  const remove = (id: string) => setRecipe((r) => {
+    if (!r) return r;
+    const keep = (b: string | string[]) => { const left = refsOf(b).filter((x) => !x.startsWith(id + '.')); return left.length === 0 ? null : left.length === 1 ? left[0] : left; };
+    return { ...r, output: keep(r.output) ?? '', nodes: r.nodes.filter((n) => n.id !== id).map(({ when, ...n }) => ({ ...n, ...(when && !when.ref.startsWith(id + '.') ? { when } : {}),
+      inputs: Object.fromEntries(Object.entries(n.inputs).flatMap(([p, b]) => { const k = keep(b); return k === null ? [] : [[p, k]]; })) })) };
+  });
 
   // ---------- recipe <-> flow ----------
   const nodes: Node[] = useMemo(() => !recipe ? [] : [
     { id: 'form', type: 'form', position: formPos, measured: dims.form, data: { fields: recipe.form, consts: Object.entries(recipe.consts ?? {}) }, selected: sel === 'form', deletable: false },
-    ...recipe.nodes.filter((n) => manifests.has(n.part)).map((n) => ({ id: n.id, type: 'part', position: n.ui ?? { x: 0, y: 0 }, measured: dims[n.id], selected: sel === n.id, data: { manifest: manifests.get(n.part)!, errors: v?.diagnostics.filter((d) => d.node === n.id && d.severity === 'error').length ?? 0, isResult: refsOf(recipe.output).some((x) => x.startsWith(n.id + '.')) } })),
+    ...recipe.nodes.filter((n) => manifests.has(n.part)).map((n) => ({ id: n.id, type: 'part', position: n.ui ?? { x: 0, y: 0 }, measured: dims[n.id], selected: sel === n.id, data: { manifest: manifests.get(n.part)!, errors: v?.diagnostics.filter((d) => d.node === n.id && d.severity === 'error').length ?? 0, isResult: refsOf(recipe.output).some((x) => x.startsWith(n.id + '.')), when: n.when ? chipWhen(n.when) : undefined, whenFull: n.when ? describeWhen(n.when, n.when.ref) : undefined, skipOnError: n.on_error === 'skip', maybe: !!v?.optional.includes(n.id) } })),
   ], [recipe, manifests, sel, v, formPos, dims]);
   const edges: Edge[] = useMemo(() => !recipe ? [] : recipe.nodes.flatMap((n) => Object.entries(n.inputs).flatMap(([port, b]) => refsOf(b).map((ref) => [port, ref] as const)).map(([port, ref], i) => {
     const [src, ...rest] = ref.split('.'); const p = rest.join('.');
     const bad = v?.diagnostics.some((d) => d.node === n.id && d.port === port && d.severity === 'error');
-    return { id: `${n.id}:${port}:${i}`, source: src === 'const' || src === 'form' ? 'form' : src, sourceHandle: src === 'const' ? 'const:' + p : p, target: n.id, targetHandle: port, animated: story.step === 1, style: { stroke: bad ? '#b8364a' : '#15233f', strokeWidth: 1.5 } } as Edge;
-  })), [recipe, v, story.step]);
+    // a fallback (the second or later choice for an input) is drawn dashed
+    const k = refsOf(n.inputs[port]).indexOf(ref);
+    return { id: `${n.id}:${port}:${k}`, source: src === 'const' || src === 'form' ? 'form' : src, sourceHandle: src === 'const' ? 'const:' + p : p, target: n.id, targetHandle: port, animated: story.step === 1, style: { stroke: bad ? '#b8364a' : '#15233f', strokeWidth: 1.5, ...(k > 0 ? { strokeDasharray: '5 4' } : {}) } } as Edge;
+  }).concat(n.when ? [(() => {
+    // the condition: from the value it reads to the top of the part it gates
+    const [src, ...rest] = n.when!.ref.split('.'); const p = rest.join('.');
+    return { id: `${n.id}:__when`, source: src === 'const' || src === 'form' ? 'form' : src, sourceHandle: src === 'const' ? 'const:' + p : p, target: n.id, targetHandle: '__when', deletable: false, label: n.when!.not ? 'unless' : 'if', className: 'when-edge', style: { stroke: '#f0b44c', strokeWidth: 1.5, strokeDasharray: '2 4' } } as Edge;
+  })()] : [])), [recipe, v, story.step]);
   const onNodesChange = useCallback((ch: NodeChange[]) => {
     const dimCh = ch.filter((c) => c.type === 'dimensions' && (c as { dimensions?: unknown }).dimensions) as { id: string; dimensions: { width: number; height: number } }[];
     if (dimCh.length) setDims((d) => { const n = { ...d }; for (const c of dimCh) n[c.id] = c.dimensions; return n; });
@@ -163,9 +186,18 @@ function Builder() {
   }, [nodes]);
   const onEdgesChange = useCallback((ch: EdgeChange[]) => {
     const rm = ch.filter((c) => c.type === 'remove').map((c) => (c as { id: string }).id);
-    if (rm.length) setRecipe((r) => r && ({ ...r, nodes: r.nodes.map((n) => ({ ...n, inputs: Object.fromEntries(Object.entries(n.inputs).filter(([p]) => !rm.includes(`${n.id}:${p}`))) })) }));
+    // edge ids are <node>:<port>:<index in the input's list of choices>
+    if (rm.length) setRecipe((r) => r && ({ ...r, nodes: r.nodes.map((n) => ({ ...n, inputs: Object.fromEntries(Object.entries(n.inputs).flatMap(([p, b]) => {
+      const left = refsOf(b).filter((_, k) => !rm.includes(`${n.id}:${p}:${k}`));
+      return left.length ? [[p, left.length === 1 ? left[0] : left]] : [];
+    })) })) }));
   }, []);
-  const wire = (nodeId: string, port: string, ref: string) => setRecipe((r) => r && ({ ...r, nodes: r.nodes.map((n) => (n.id === nodeId ? { ...n, inputs: { ...n.inputs, [port]: ref } } : n)) }));
+  /** set where an input comes from; with keepFallbacks, only its first choice changes */
+  const wire = (nodeId: string, port: string, ref: string, keepFallbacks = false) => setRecipe((r) => r && ({ ...r, nodes: r.nodes.map((n) => {
+    if (n.id !== nodeId) return n;
+    const rest = keepFallbacks ? refsOf(n.inputs[port]).slice(1).filter((x) => x !== ref) : [];
+    return { ...n, inputs: { ...n.inputs, [port]: rest.length ? [ref, ...rest] : ref } };
+  }) }));
   const onConnect = useCallback((c: Connection) => {
     if (!c.target || !c.targetHandle || !c.sourceHandle) return;
     wire(c.target, c.targetHandle, c.source === 'form' ? (c.sourceHandle.startsWith('const:') ? 'const.' + c.sourceHandle.slice(6) : 'form.' + c.sourceHandle) : `${c.source}.${c.sourceHandle}`);
@@ -314,6 +346,8 @@ function Builder() {
               <div className="small muted row">by {selM.author}<span className="spacer" /><button className="linkbtn" onClick={() => go({ page: 'compose', sub: 'part', part: selM.id })}><Icon name="code" size={13} />Code</button></div>
               <div className="row wrap small" style={{ gap: 6 }}><RiskPill risk={withdrawalRisk(selM.disclosure)} label />{selM.capabilities.includes('wallet:approve') && <span className="pill">asks the buyer to sign</span>}</div>
               <InputsEditor recipe={recipe} nodeId={selNode.id} m={selM} catalog={catalog} wire={wire} setRecipe={setRecipe as never} />
+              <ConditionEditor recipe={recipe} nodeId={selNode.id} catalog={catalog} setRecipe={setRecipe as never} diagnostics={v?.diagnostics ?? []} />
+              <OnErrorEditor recipe={recipe} nodeId={selNode.id} m={selM} setRecipe={setRecipe as never} />
               {Object.keys(selM.params).length > 0 && <div className="grid" style={{ gap: 8 }}>
                 <div className="sectlabel"><Icon name="lock" size={13} />Your settings<Tip>Sealed: only the runner sees them.</Tip></div>
                 {Object.entries(selM.params).map(([k, ps]) => (
@@ -327,8 +361,12 @@ function Builder() {
                 ))}
               </div>}
               {Object.entries(selM.outputs).map(([port, o]) => (
-                <label key={port} className="row small"><input type="radio" name="result" checked={recipe.output === `${selNode.id}.${port}`} onChange={() => setRecipe((r) => r && ({ ...r, output: `${selNode.id}.${port}` }))} /> Use {Object.keys(selM.outputs).length > 1 ? <>“{port}” </> : ''}as the recipe’s result (what the buyer gets)<span className="muted">{o.type}</span></label>
+                <label key={port} className="row small"><input type="radio" name="result" checked={refsOf(recipe.output)[0] === `${selNode.id}.${port}`} onChange={() => setRecipe((r) => r && ({ ...r, output: `${selNode.id}.${port}` }))} /> Use {Object.keys(selM.outputs).length > 1 ? <>“{port}” </> : ''}as the recipe’s result (what the buyer gets)<span className="muted">{o.type}</span></label>
               ))}
+              {refsOf(recipe.output)[0]?.startsWith(selNode.id + '.') && (v?.optional.includes(selNode.id) || refsOf(recipe.output).length > 1) && <div className="grid" style={{ gap: 6 }}>
+                <div className="small muted">This part may be skipped on some runs. If it is, the buyer gets:</div>
+                <Fallbacks binding={recipe.output} options={resultOptions(recipe, catalog)} what="the result" onChange={(b) => setRecipe((r) => r && ({ ...r, output: b }))} />
+              </div>}
               <SwapList recipe={recipe} nodeId={selNode.id} current={selM} catalog={catalog} onSwap={(id) => setRecipe(swapPart(recipe, selNode.id, id, catalog))} />
               <button className="btn ghost sm" onClick={() => { remove(selNode.id); setSel(null); }}><Icon name="trash" size={13} />Remove part</button>
             </div>
@@ -357,6 +395,9 @@ function Builder() {
                   <div className="field" style={{ gridColumn: '1 / 3' }}><label htmlFor="pt">Target paid runs per period</label><input id="pt" value={band.target_runs} onChange={(e) => setBand('target_runs', Math.max(0, Math.round(Number(e.target.value) || 0)))} inputMode="numeric" /></div>
                   <div className="muted" style={{ gridColumn: '1 / 3' }}>More paid runs than the target raise the price by up to 12.5% a period; fewer lower it. It never leaves the band. A quote locks the price.</div>
                 </>}
+                {(v?.optional.length ?? 0) > 0 && <label className="small" style={{ gridColumn: '1 / 3', display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input type="checkbox" checked={(recipe.listing.bill ?? 'declared') === 'declared'} onChange={(e) => setRecipe((r) => r && ({ ...r, listing: { ...r.listing, bill: e.target.checked ? undefined : 'executed' } }))} />
+                  Pay every part on every run, so settlements don’t show which branch ran<Tip>Some parts run only on some runs. Paying their authors anyway keeps every buyer’s settlement identical on-chain. Untick to pay only for the parts that ran: you keep more, but anyone can see which branch ran.</Tip></label>}
                 <div className="field"><label htmlFor="bd">Guarantee deposit (USDC)</label><input id="bd" value={Number(recipe.listing.bond ?? '0') / 1e6} onChange={(e) => setListing('bond', toUnits(e.target.value))} inputMode="decimal" /></div>
                 <div className="field"><label htmlFor="rs">Keep in it (% of your cut)</label><input id="rs" value={(recipe.listing.reserve_bps ?? 0) / 100} onChange={(e) => setListing('reserve_bps', Math.max(0, Math.min(10000, Math.round(Number(e.target.value) * 100))))} inputMode="decimal" /></div>
                 <div className="muted" style={{ gridColumn: '1 / 3' }}>Your collateral: a buyer is paid from it if a run delivers less than its signed quote promised. It earns nothing, and you can withdraw the free part at any time.</div>
@@ -397,7 +438,7 @@ function Builder() {
 /** The buyer's form: what a buyer fills in before asking for a quote. Parts add fields; the creator words them. */
 function FormEditor({ recipe, setRecipe, published }: { recipe: Recipe; setRecipe: (f: (r: Recipe) => Recipe) => void; published: boolean }) {
   const [adding, setAdding] = useState(Object.keys(BUYER_TYPES)[0]);
-  const users = (id: string) => recipe.nodes.filter((n) => Object.values(n.inputs).includes(`form.${id}`)).length;
+  const users = (id: string) => recipe.nodes.filter((n) => [...Object.values(n.inputs).flatMap(refsOf), n.when?.ref].includes(`form.${id}`)).length;
   const set = (id: string, patch: Partial<FormField>) => setRecipe((r) => ({ ...r, form: r.form.map((f) => (f.id === id ? { ...f, ...patch } : f)) }));
   const drop = (id: string) => setRecipe((r) => ({ ...r, form: r.form.filter((f) => f.id !== id) }));
   return (
@@ -430,7 +471,7 @@ function FormEditor({ recipe, setRecipe, published }: { recipe: Recipe; setRecip
 }
 
 /** Where each input of the selected part comes from: any compatible earlier output, the buyer's form, or a fixed value. */
-function InputsEditor({ recipe, nodeId, m, catalog, wire, setRecipe }: { recipe: Recipe; nodeId: string; m: PartManifest; catalog: Catalog; wire: (n: string, p: string, ref: string) => void; setRecipe: (f: (r: Recipe) => Recipe) => void }) {
+function InputsEditor({ recipe, nodeId, m, catalog, wire, setRecipe }: { recipe: Recipe; nodeId: string; m: PartManifest; catalog: Catalog; wire: (n: string, p: string, ref: string, keepFallbacks?: boolean) => void; setRecipe: (f: (r: Recipe) => Recipe) => void }) {
   const node = recipe.nodes.find((n) => n.id === nodeId)!;
   const all = sourcesFor(recipe, nodeId, catalog);
   if (!Object.keys(m.inputs).length) return null;
@@ -444,17 +485,17 @@ function InputsEditor({ recipe, nodeId, m, catalog, wire, setRecipe }: { recipe:
   });
   return (
     <div className="grid" style={{ gap: 8 }}>
-      <div className="sectlabel"><Icon name="link" size={13} />Inputs<Tip>Where each value comes from: an earlier part, the buyer’s form, or a fixed value.</Tip></div>
+      <div className="sectlabel"><Icon name="link" size={13} />Inputs<Tip>Where each value comes from: an earlier part, the buyer’s form, or a fixed value. Add a fallback for when the first choice was skipped.</Tip></div>
       {Object.entries(m.inputs).map(([port, spec]) => {
         const opts = all.filter((s) => isAssignable(catalog.types, s.type, spec.type));
-        // the inspector edits one wire per input; a list of alternatives (SRS-1.1) shows its first entry
+        // the inspector edits one wire per input; a list of alternatives shows its first entry
         const ref = refsOf(node.inputs[port])[0] ?? '';
         const fixedKey = ref.startsWith('const.') ? ref.slice(6) : null;
         const fixable = ['asset.id', 'usd', 'percent', 'near.account', 'address.near'].includes(spec.type);
         return (
           <div key={port} className={'field' + (ref ? '' : ' missing')}>
             <label htmlFor={`in-${port}`}>{port}<span className="muted" style={{ fontWeight: 400 }}>{spec.type}</span></label>
-            <select id={`in-${port}`} value={fixedKey ? '__fixed' : ref} onChange={(e) => e.target.value === '__fixed' ? setFixed(port, spec.type, spec.type === 'asset.id' ? Object.keys(ASSET_LABEL)[0] : '') : e.target.value === '__ask' ? askBuyer(port, spec.type) : wire(nodeId, port, e.target.value)}>
+            <select id={`in-${port}`} value={fixedKey ? '__fixed' : ref} onChange={(e) => e.target.value === '__fixed' ? setFixed(port, spec.type, spec.type === 'asset.id' ? Object.keys(ASSET_LABEL)[0] : '') : e.target.value === '__ask' ? askBuyer(port, spec.type) : wire(nodeId, port, e.target.value, true)}>
               {!ref && <option value="">choose…</option>}
               {opts.map((s) => <option key={s.ref} value={s.ref}>{s.label}</option>)}
               {BUYER_TYPES[spec.type] && <option value="__ask">Ask the buyer (new field)…</option>}
@@ -463,6 +504,7 @@ function InputsEditor({ recipe, nodeId, m, catalog, wire, setRecipe }: { recipe:
             {fixedKey && (spec.type === 'asset.id'
               ? <select aria-label="Fixed asset" value={String(recipe.consts?.[fixedKey]?.value ?? '')} onChange={(e) => setFixed(port, spec.type, e.target.value)}>{Object.entries(ASSET_LABEL).map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select>
               : <input aria-label="Fixed value" value={String(recipe.consts?.[fixedKey]?.value ?? '')} onChange={(e) => setFixed(port, spec.type, spec.type === 'usd' || spec.type === 'percent' ? Number(e.target.value) : e.target.value)} />)}
+            {!fixedKey && <Fallbacks binding={node.inputs[port]} options={opts} what={port} onChange={(b) => setRecipe((r) => ({ ...r, nodes: r.nodes.map((n) => (n.id === nodeId ? { ...n, inputs: { ...n.inputs, [port]: b } } : n)) }))} />}
             {!opts.length && !fixable && <span className="small loss">Nothing produces a {spec.type} yet: add a part that does, before this one.</span>}
           </div>
         );
