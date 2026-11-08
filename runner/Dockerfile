@@ -9,6 +9,8 @@ COPY core/src core/src
 COPY runner/src runner/src
 COPY runner/docker-compose.yml runner/docker-compose.yml
 COPY standard/parts.json standard/parts.json
+COPY standard/reviews.json standard/reviews.json
+COPY standard/reviewers.json standard/reviewers.json
 ENV NODE_ENV=production RUNNER_PORT=8787 RUNNER_HOST=0.0.0.0
 EXPOSE 8787
 # listen on all interfaces inside the CVM

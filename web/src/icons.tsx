@@ -93,5 +93,5 @@ export const CAT: Record<string, { icon: string; label: string; color: string }>
 };
 
 export const ROLE_ICON: Record<string, string> = {
-  Creator: 'compose', Buyer: 'user', 'Part author': 'box', Trader: 'trend', 'TEE runner': 'cpu', Protocol: 'vault',
+  Creator: 'compose', Buyer: 'user', 'Part author': 'box', Trader: 'trend', Reviewer: 'shieldCheck', 'TEE runner': 'cpu', Protocol: 'vault',
 };

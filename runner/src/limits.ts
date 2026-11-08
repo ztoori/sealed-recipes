@@ -3,11 +3,11 @@
  * size. The runner enforces them; a part that goes over fails the run, and the contract refunds the buyer.
  * Time spent waiting for the buyer's wallet approval does not count against max_ms.
  *
- * Scope, stated plainly: parts run in-process as reviewed TypeScript (their code is part of the attested
- * codehash), so these limits are cooperative, not a sandbox. Every HTTP and model call goes through the counted
- * fetch, and when a limit trips, the run's AbortController cancels the part's in-flight requests and any it
- * tries to start afterwards. A hostile part could still burn CPU in a tight loop; untrusted third-party parts
- * would run as WASM with fuel metering (see docs/THREAT_MODEL.md), which is not built here.
+ * Scope, stated plainly: reviewed and signing parts run in-process (their code and review record are part of the
+ * attested codehash), so for them these limits are cooperative. Every HTTP and model call goes through the counted
+ * fetch, and when a limit trips, the run's AbortController cancels the part's in-flight requests and any it tries
+ * to start afterwards. Open-tier parts, admitted without human review, run in the sandbox (sandbox.ts), which also
+ * kills the process at max_ms, so a tight loop is stopped there. Production target: WASM with fuel metering.
  */
 import type { PartManifest } from '../../core/src/srs.js';
 

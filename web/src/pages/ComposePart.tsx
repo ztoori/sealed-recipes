@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { withdrawalRisk, type Catalog, type PartManifest, type Diagnostic } from '../../../core/src/srs';
 import { lintPartSource, partTemplate, validatePartManifest } from '../../../core/src/partkit';
-import { hashObject } from '../../../core/src/canonical';
+import { hashObject, sha256Hex } from '../../../core/src/canonical';
+import { partTier, reviewedManifestHash, securityScan, submissionMessage, TIER_INFO, type ReleaseRecord } from '../../../core/src/review';
+import { base64 } from '../../../core/src/seal';
+import { demoWalletSign } from '../../../core/src/creator';
+import { TierPill, admissionLine, TiersTip } from '../components/Admission';
 import { api, short, usd, usePoll } from '../api';
 import { useApp } from '../App';
 import { RiskPill } from './ComposeRecipe';
@@ -10,8 +14,9 @@ import { Tip } from '../ui';
 
 /**
  * Compose › Part: build a part from scratch, or open any part to see its internals (every part in this demo is
- * public). Live SRS-1 conformance checks on the manifest and static checks on the code. Submitting registers the
- * manifest on-chain; the code runs only after review, in the next audited runner release (its code hash is pinned).
+ * public). Live SRS-1 conformance checks on the manifest, static and security checks on the code, and the admission
+ * tier the manifest puts the part in (SRS-1 §11). Registering puts the manifest hash on-chain; submitting sends the
+ * signed code to the review queue; the part runs once it is admitted and shipped in a runner release.
  */
 type Port = { name: string; type: string; description?: string };
 type Param = { name: string; type: string; default: string; secret: boolean; description?: string };
@@ -97,7 +102,15 @@ export function ComposePart({ part }: { part?: string }) {
   const codeDiags = readOnly && catalog && catalog.parts.filter((p) => p.implementation === viewing?.implementation).length > 1
     ? lintPartSource(shownCode, m).filter((d) => !d.code.startsWith('capability') && d.code !== 'output.missing') // a file shared by several parts
     : lintPartSource(shownCode, m);
-  const all = [...manifestDiags.map((d) => ({ ...d, where: 'manifest' })), ...codeDiags.map((d) => ({ ...d, where: 'code' }))];
+  const scanDiags = readOnly ? [] : securityScan(shownCode, m).diagnostics;
+  const all = [...manifestDiags.map((d) => ({ ...d, where: 'manifest' })), ...codeDiags.map((d) => ({ ...d, where: 'code' })), ...scanDiags.map((d) => ({ ...d, where: 'security' }))];
+  const tier = partTier(m);
+  const [subs] = usePoll<{ id: string; part: string; status: string; approvals: number; needed: number }[]>('/api/parts/submissions', 4000);
+  const mine = (subs ?? []).find((x) => x.part === m.id);
+  const [adm] = usePoll<{ records: ReleaseRecord[] }>('/api/parts/admission', 60000);
+  const record = viewing ? adm?.records.find((r) => r.part === viewing.id) : undefined;
+  const onchainHash = (cat as any)?.onchain?.[m.id]?.manifest_hash;
+  const isRegistered = !!registered || onchainHash === hashObject(m);
   const errs = all.filter((d) => d.severity === 'error');
   const types = Object.keys(catalog?.types ?? {});
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => { setDraft((d) => ({ ...d, [k]: v })); setRegistered(null); };
@@ -114,6 +127,13 @@ export function ComposePart({ part }: { part?: string }) {
   const download = () => {
     const blob = new Blob([JSON.stringify({ manifest: m, manifest_hash: hashObject(m), source: { path: `runner/src/parts/${m.id.split('@')[0].split('.').pop()}.ts`, code } }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${m.id.replace('@', '-')}.srs-part.json`; a.click();
+  };
+  const submit = async () => {
+    try {
+      const sig = base64.enc(demoWalletSign(acting, submissionMessage(m.id, reviewedManifestHash(m), sha256Hex(code.replace(/\r\n/g, '\n')), acting)));
+      const r = await api('/api/parts/submissions', { manifest: m, source: code, signature: sig });
+      toast(`Submitted ${m.id}: automated checks running`); go({ page: 'compose', sub: 'review', part: r.id });
+    } catch (e) { toast((e as Error).message, true); }
   };
   const register = async () => {
     try {
@@ -153,6 +173,7 @@ export function ComposePart({ part }: { part?: string }) {
               <li><Icon name="refresh" size={15} /><span><b>Durable</b> <Tip>Save state before any irreversible step; resume after a restart without asking twice.</Tip></span></li>
               <li><Icon name="info" size={15} /><span><b>Disclosure</b> <Tip>Name the model, and say which layers are open, sealed or closed. It sets the withdrawal risk buyers see.</Tip></span></li>
               <li><Icon name="clock" size={15} /><span><b>Limits</b> <Tip>Time, HTTP calls, model calls and output size are capped per run.</Tip></span></li>
+              <li><Icon name="shieldCheck" size={15} /><span><b>Admission by tier</b> <Tip wide>Open parts (pure, or reading public NEAR data) are admitted on automated checks and run in a sandbox. Parts that send buyer data somewhere new need one appointed reviewer; parts that ask buyers to sign need two.</Tip></span></li>
             </ul>
             <button className="linkbtn" onClick={() => go({ page: 'docs', sub: 'spec' })}><Icon name="docs" size={13} />Full spec</button>
           </div>
@@ -235,20 +256,25 @@ export function ComposePart({ part }: { part?: string }) {
           <div className="body">
             {!all.length && <div className="small gain row"><Icon name="check" size={14} />Conforms to SRS-1</div>}
             {all.map((d, i) => <Diag key={i} d={d} where={d.where} />)}
-            <div className="small muted row" style={{ marginTop: 8 }}>Static checks <Tip>They catch common mistakes, not malicious code. The runner enforces capabilities and limits at run time, and parts are reviewed before they ship.</Tip></div>
+            <div className="small muted row" style={{ marginTop: 8 }}>Static and security checks <Tip wide>They catch common mistakes and the usual ways code escapes its manifest (other modules, process, code generation, hidden strings, undeclared hosts). They are a filter, not a proof: after you submit, the part is also run in the sandbox, and parts that send data somewhere new or ask buyers to sign are read by appointed reviewers.</Tip></div>
           </div>
         </div>
         {!readOnly && (
           <div className="panel">
-            <header><Icon name="flag" size={16} className="hd-ic" /><h2>Submit</h2></header>
+            <header><Icon name="flag" size={16} className="hd-ic" /><h2>Admission</h2><TiersTip /><span className="spacer" /><TierPill tier={tier.tier} /></header>
             <div className="body grid" style={{ gap: 8 }}>
+              <div className="small">This part {tier.reasons.join('; ')}, so it needs <b>{TIER_INFO[tier.tier].short}</b>.</div>
               <ol className="submit-steps small">
-                <li className={registered ? 'done' : ''}><span className="sn">{registered ? <Icon name="check" size={12} /> : 1}</span><span><b>Register on-chain</b> <Tip>As {acting}: id, fee and manifest hash. You are paid the fee in every settlement that uses the part.</Tip></span></li>
-                <li><span className="sn">2</span><span><b>Review and release</b> <Tip>The code is reviewed and shipped in the next audited runner release; the runner's code hash, checked by every buyer and creator, covers it.</Tip></span></li>
-                <li><span className="sn">3</span><span><b>Earn per run</b> <Tip>Creators can add it in Compose, and any recipe using it pays you per run.</Tip></span></li>
+                <li className={isRegistered ? 'done' : ''}><span className="sn">{isRegistered ? <Icon name="check" size={12} /> : 1}</span><span><b>Register on-chain</b> <Tip>As {acting}: id, fee and manifest hash. You are paid the fee in every settlement that uses the part.</Tip></span></li>
+                <li className={mine ? 'done' : ''}><span className="sn">{mine ? <Icon name="check" size={12} /> : 2}</span><span><b>Submit for review</b> <Tip>Your code, signed by your wallet. The marketplace runs the automated checks: conformance, security scan, and a behaviour test in the sandbox.</Tip></span></li>
+                <li className={mine && ['approved', 'released'].includes(mine.status) ? 'done' : ''}><span className="sn">3</span><span><b>{tier.tier === 'open' ? 'Admitted on the checks' : tier.tier === 'reviewed' ? 'One reviewer approves' : 'Two reviewers approve'}</b> <Tip wide>{TIER_INFO[tier.tier].runs}</Tip></span></li>
+                <li className={mine?.status === 'released' ? 'done' : ''}><span className="sn">4</span><span><b>Released</b> <Tip>The owner ships admitted parts in the next runner release. Its code hash covers your code and its review record; the runner refuses any part whose record does not verify.</Tip></span></li>
+                <li><span className="sn">5</span><span><b>Earn per run</b> <Tip>Creators can add it in Compose, and any recipe using it pays you per run.</Tip></span></li>
               </ol>
-              {draft.author !== acting && <div className="diag warning">The author is {draft.author}; switch “Acting as” to that account to register.</div>}
-              <button className="btn" disabled={!!errs.length || !!registered || draft.author !== acting} onClick={register}>{registered ? <><Icon name="check" size={14} />Registered · tx {short(registered.tx, 6, 4)}</> : 'Register on-chain'}</button>
+              {draft.author !== acting && <div className="diag warning">The author is {draft.author}; switch “Acting as” to that account to register and submit.</div>}
+              {mine && <button className="linkbtn" onClick={() => go({ page: 'compose', sub: 'review', part: mine.id })}><Icon name="shieldCheck" size={13} />Submission: {mine.status.replace('_', ' ')}{mine.needed ? ` · ${mine.approvals}/${mine.needed} approvals` : ''}</button>}
+              <button className="btn" disabled={!!errs.length || isRegistered || draft.author !== acting} onClick={register}>{isRegistered ? <><Icon name="check" size={14} />Registered{registered ? ` · tx ${short(registered.tx, 6, 4)}` : ''}</> : 'Register on-chain'}</button>
+              <button className="btn primary" disabled={!!errs.length || !isRegistered || draft.author !== acting || !!(mine && mine.status !== 'failed_checks' && mine.status !== 'changes_requested')} onClick={submit}><Icon name="shieldCheck" size={14} />Submit for review</button>
               <button className="btn ghost" disabled={!!errs.length} onClick={download}><Icon name="download" size={14} />Download submission</button>
             </div>
           </div>
@@ -262,6 +288,16 @@ export function ComposePart({ part }: { part?: string }) {
               <dt>Manifest hash</dt><dd className="hash">{short((cat as any)?.onchain?.[viewing.id]?.manifest_hash ?? '', 10, 6)}</dd>
               <dt>Can reach</dt><dd>{viewing.capabilities.join(', ') || 'nothing (pure)'}</dd>
             </dl>
+          </div>
+        )}
+        {readOnly && viewing && (
+          <div className="panel">
+            <header><Icon name="shieldCheck" size={16} className="hd-ic" /><h2>Admission</h2><TiersTip /><span className="spacer" /><TierPill tier={partTier(viewing).tier} /></header>
+            <div className="body small grid" style={{ gap: 6 }}>
+              <div>{admissionLine(record)}</div>
+              <div className="muted">{TIER_INFO[partTier(viewing).tier].runs}</div>
+              {record && <div className="muted hash">code {record.source_sha256.slice(0, 16)}…</div>}
+            </div>
           </div>
         )}
       </aside>

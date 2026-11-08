@@ -2,52 +2,13 @@ import { hashObject } from '../../core/src/canonical.js';
 import { validateRecipe, type Catalog, type Recipe, type FormField } from '../../core/src/srs.js';
 import type { ApprovalRequest, ApprovalResult, PartHandler, Emit, Endpoints } from './types.js';
 import { enforceLimits } from './limits.js';
-import { walletScanner } from './parts/wallet-scanner.js';
-import { spamShield } from './parts/spam-shield.js';
-import { allowlistShield } from './parts/allowlist-shield.js';
-import { dustFilter } from './parts/dust-filter.js';
-import { freshCheck } from './parts/fresh-check.js';
-import { intentsSwap } from './parts/intents-swap.js';
-import { summaryReport } from './parts/summary-report.js';
-import { wait } from './parts/wait.js';
-import { mergeReceipts } from './parts/merge-receipts.js';
-import { airdropClaim } from './parts/airdrop-claim.js';
-import { intentsAtomic } from './parts/intents-atomic.js';
-import { accessKeyList } from './parts/access-keys.js';
-import { keyRisk } from './parts/key-risk.js';
-import { keysRevoke } from './parts/keys-revoke.js';
-import { stakingPositions } from './parts/staking-positions.js';
-import { stakingWithdraw } from './parts/staking-withdraw.js';
-import { contractFacts } from './parts/contract-facts.js';
-import { aiContractRisk, rulesContractRisk } from './parts/contract-risk.js';
-import { contractReport } from './parts/contract-report.js';
-import { trimPlan } from './parts/trim-plan.js';
+import { HANDLERS, SANDBOXED } from './parts/registry.js';
+export { HANDLERS, SANDBOXED };
+import type { Admission } from './admission.js';
 
-export const HANDLERS: Record<string, PartHandler> = {
-  'near.wallet-scanner@1.0.0': walletScanner,
-  'ai.spam-shield@1.1.0': spamShield,
-  'ai.spam-shield-pro@1.0.0': spamShield,
-  'rules.spam-shield@1.0.0': allowlistShield,
-  'filter.dust@1.0.0': dustFilter,
-  'addr.fresh-check@1.0.0': freshCheck,
-  'intents.confidential-swap@1.0.0': intentsSwap,
-  'intents.public-swap@1.0.0': intentsSwap,
-  'report.summary@1.0.0': summaryReport,
-  'time.wait@1.0.0': wait,
-  'swap.merge@1.0.0': mergeReceipts,
-  'intents.atomic-swap@1.0.0': intentsAtomic,
-  'airdrop.claim@1.0.0': airdropClaim,
-  'near.access-keys@1.0.0': accessKeyList,
-  'rules.key-risk@1.0.0': keyRisk,
-  'keys.revoke@1.0.0': keysRevoke,
-  'staking.positions@1.0.0': stakingPositions,
-  'staking.withdraw@1.0.0': stakingWithdraw,
-  'near.contract-facts@1.0.0': contractFacts,
-  'ai.contract-risk@1.0.0': aiContractRisk,
-  'rules.contract-risk@1.0.0': rulesContractRisk,
-  'report.contract@1.0.0': contractReport,
-  'plan.trim@1.0.0': trimPlan,
-};
+/** Set once at start by the runner (runner/src/admission.ts). Unset only in unit tests that exercise parts directly. */
+let ADMISSION: Admission | null = null;
+export function setAdmission(a: Admission | null) { ADMISSION = a; }
 
 export const REAL_ENDPOINTS: Endpoints = {
   fastnear: 'https://api.fastnear.com',
@@ -130,7 +91,9 @@ export async function execute(runId: string, recipe: Recipe, inputs: Record<stri
       const nodeId = v.order[idx];
       const node = recipe.nodes.find((n) => n.id === nodeId)!;
       const m = manifests.get(node.part)!;
-      const handler = HANDLERS[node.part];
+      // only parts whose release record verifies run; open-tier parts run in the sandbox (SRS-1 §11)
+      if (ADMISSION && !ADMISSION.admitted.has(node.part)) throw new Error(`${node.part} is not admitted in this runner release: ${ADMISSION.refused.get(node.part) ?? 'no release record'}`);
+      const handler = ADMISSION?.sandboxed.get(node.part) ?? HANDLERS[node.part];
       if (!handler) throw new Error(`runner has no implementation for ${node.part}`);
       const partInputs = Object.fromEntries(Object.entries(node.inputs).map(([p, ref]) => [p, values.get(ref)]));
       const params = { ...Object.fromEntries(Object.entries(m.params).map(([k, s]) => [k, s.default])), ...node.params };

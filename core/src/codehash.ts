@@ -8,7 +8,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { sha256Hex } from './canonical.js';
 
-export const CODEHASH_ROOTS = ['runner/src', 'core/src', 'standard/parts.json'];
+export const CODEHASH_ROOTS = ['runner/src', 'core/src', 'standard/parts.json', 'standard/reviews.json', 'standard/reviewers.json'];
 
 function walk(p: string, out: string[]) {
   const st = statSync(p);

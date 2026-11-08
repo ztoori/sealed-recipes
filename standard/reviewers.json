@@ -1,0 +1,20 @@
+{
+  "srs": "1.0",
+  "kind": "reviewer-set",
+  "owner": "srs-dao.testnet",
+  "note": "Appointed by the owner. In the local demo the keys are derived from the demo wallet; on testnet they are the reviewers' NEAR access keys.",
+  "reviewers": [
+    {
+      "account": "audit-a.testnet",
+      "public_key": "ed25519:HojPUQS8WSCT6UDecWCdwtsF9jD5eGAU66GNxS4iYiDu"
+    },
+    {
+      "account": "audit-b.testnet",
+      "public_key": "ed25519:EKgjmrccvEPhBMnN2cAx5vFSLd1phrgUowRv6az4jys7"
+    },
+    {
+      "account": "audit-c.testnet",
+      "public_key": "ed25519:88egn38tRW78vFMK6Q25JCyqN1mptDHG6o9ujEZhroXd"
+    }
+  ]
+}

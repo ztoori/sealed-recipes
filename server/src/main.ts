@@ -18,6 +18,7 @@ import { hashObject, sha256Hex } from '../../core/src/canonical.js';
 import { sealedHash, type SealedEnvelope } from '../../core/src/seal.js';
 import { FileBlobStore, type VaultIndex } from './store.js';
 import { TeeRunnerBackend } from './backends.js';
+import { mountReview, ReviewError, SubmissionStore } from './review.js';
 import { signNep413, type Nep413Payload, type SignedNep413 } from '../../core/src/nep413.js';
 import { demoWalletKey } from '../../core/src/creator.js';
 import { validateRecipe, labelsFromParts, type Catalog, type PublicListing } from '../../core/src/srs.js';
@@ -222,8 +223,15 @@ app.use('/mock', mocks.router);
 app.use(express.json({ limit: '2mb' }));
 const j = (res: express.Response, v: unknown) => res.json(toJson(v));
 const guard = (fn: (req: express.Request, res: express.Response) => unknown) => async (req: express.Request, res: express.Response) => {
-  try { await fn(req, res); } catch (e) { res.status(e instanceof LedgerError ? 400 : 500).json({ error: (e as Error).message }); }
+  try { await fn(req, res); } catch (e) { res.status(e instanceof LedgerError || e instanceof ReviewError ? 400 : 500).json({ error: (e as Error).message }); }
 };
+
+// ---- part admission: submissions, automated checks, appointed reviewers (SRS-1 §11) ----
+mountReview(app, {
+  root: ROOT, catalog, port: PORT, store: new SubmissionStore(env.SRS_REVIEW_DIR ?? resolve(ROOT, '.data/reviews')),
+  onchainManifestHash: (id) => ledger.parts.get(id)?.manifest_hash,
+  demoPublicKey: (account) => demoWalletKey(account).publicKey,
+}, guard, j);
 
 // ---- chain surface (contract views + relayer) ----
 app.get('/api/chain/config', (_, res) => j(res, { contract_id: CONTRACT_ID, owner: ledger.owner, payment_token: ledger.paymentToken, protocol_account: ledger.protocolAccount, protocol_fee_bps: ledger.protocolFeeBps, height: ledger.height, network: 'local-mirror' }));

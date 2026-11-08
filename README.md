@@ -106,9 +106,14 @@ The app has four sections: **Recipes** (find one and get a quote), **Compose** (
    - **CHEK** checks a contract before you sign. Try `near-gift-claim.near` (high risk: reward-bait name, upgradable, no published source) and `v2.ref-finance.near` (low risk: locked, source published).
    - **TRIM** caps any token at a share of your wallet (use `dana.testnet`, about 48% NEAR): it sells only the excess, privately, into USDC at a fresh address.
 6. **Compose → Recipe** (no code). Start a **New recipe**, or search **Your recipes** (the ones published by the account you act as) and press **Edit**. Add parts from the palette: *Suggested next* lists what fits, each part wires itself, and every input has a plain "comes from" list: an earlier part, the buyer's form, a new question for the buyer, or a fixed value. Click the *Buyer's form* on the canvas to word its questions and set defaults. Select a part to see its settings (sealed), its withdrawal risk, and drop-in alternatives. For example, swap *Allowlist Shield* for *AI Spam Shield Pro* and the recipe turns **high** risk (closed model). *Ready to publish?* lists what is left in plain words. Recipes are private: **Edit** opens the copy sealed to your own wallet key. Changing wiring or settings publishes a new version after the notice period; changing the parts, the buyer's form or the result publishes a new recipe with its own short code.
-7. **Compose → Part** (for developers). Open any part to read its manifest and source (all parts are public in this demo), or build a new one. SRS-1 conformance checks run live on the manifest and the code. Registering puts the manifest hash on-chain, and the code ships after review in an audited runner release.
-8. **Documentation** opens on **Spec (SRS-1)**: the full text of [docs/SRS-1.md](docs/SRS-1.md), rendered from the file, next to the live type registry and a conformance count of every part checked in the browser. §9 says how conformance is checked, and §10 how others can adopt and extend the spec. **Trust & privacy** shows what the marketplace stores (ciphertext), what the contract stores and what only the runner sees, the runner attestation (re-run with a new nonce), the exact JSON 1Click receives, and the contract's NEP-297 events.
-9. **An agent as the buyer** (with the demo running and the story done): `npm run agent`. The agent seals one request for `carol.testnet`, asks the recipes it shortlisted (CLNP and SWPR by default) for quotes, compares them against its policy (confidential only, maximum risk, price cap, approval cap), pays the winner, approves only within its limit, and checks delivery against the promise. No human in the loop.
+7. **Compose → Part** (for developers). Open any part to read its manifest, source and how it was admitted (all parts are public in this demo), or build a new one. SRS-1 conformance, static and security checks run live, and the panel shows the part's **admission tier**. Register the manifest on-chain, then **Submit for review**: the code goes to the queue, signed by your wallet.
+8. **Compose → Review**. The admission queue. Every submission gets automated checks: conformance, a security scan, and a behaviour test in a sandbox, once as a quote and once as a run, showing the hosts it reached and any transaction it asked the buyer to sign. Then it depends on the tier:
+   - **Open** (pure, or reads public NEAR data): admitted on the checks alone, and runs in the sandbox.
+   - **Reviewed** (sends buyer data to a model or a new host): one appointed reviewer approves.
+   - **Signing** (asks the buyer to sign): two independent appointed reviewers approve.
+   Switch "Acting as" to `audit-a` or `audit-b` to review: tick the checklist, approve or request changes. The owner then runs `npm run release:parts -- --yes` to ship admitted parts in a new runner release; the release log is inside the code hash, and the runner refuses any part whose record does not verify.
+9. **Documentation** opens on **Spec (SRS-1)**: the full text of [docs/SRS-1.md](docs/SRS-1.md), rendered from the file, next to the live type registry and a conformance count of every part checked in the browser. §9 says how conformance is checked, §10 how others can adopt and extend the spec, and §11 how parts are admitted by tier. A panel lists the three admission tiers with how many parts are in each. **Trust & privacy** shows what the marketplace stores (ciphertext), what the contract stores and what only the runner sees, the runner attestation (re-run with a new nonce), the exact JSON 1Click receives, and the contract's NEP-297 events.
+10. **An agent as the buyer** (with the demo running and the story done): `npm run agent`. The agent seals one request for `carol.testnet`, asks the recipes it shortlisted (CLNP and SWPR by default) for quotes, compares them against its policy (confidential only, maximum risk, price cap, approval cap), pays the winner, approves only within its limit, and checks delivery against the promise. No human in the loop.
 
 Headless version for CI or AI judges. It exits non-zero if any step fails:
 
@@ -252,7 +257,7 @@ npm run verify:tla      # also the TLC model check (~10 min; Java + tla2tools.ja
 ## Tests
 
 ```bash
-npm test                # 48 TypeScript tests: SRS-1 conformance of every part, all 10 seed recipes rebuilt in the composer, a recipe built from a blank canvas, the web app's state machines; settlement, bond and pricing vectors; quote signatures and expiry;
+npm test                # 53 TypeScript tests: SRS-1 conformance of every part, part admission (tiers, security scan, sandbox, signed release records), all 10 seed recipes rebuilt in the composer, a recipe built from a blank canvas, the web app's state machines; settlement, bond and pricing vectors; quote signatures and expiry;
                         # event parity with the contract; SRS-1 typing, swaps, value delivered and withdrawal risk;
                         # sealing; per-part resource limits; EIP-191; 1Click shapes; attestation; capability guard; code hash
 npm run test:rust       # 105 Rust tests for the NEAR contract (same vectors, conformance with the proved models,
@@ -374,13 +379,15 @@ contracts/sealed-recipes/   Rust NEAR contract + 105 unit tests
 contracts/test-vectors/       settlement and bond vectors shared by Rust and TS; conformance vectors from the proofs
 verification/                 Z3 proofs (settlement, billing, guarantee deposits), TLA+ models (bonds, durable runs, versions), results
 core/src/                     SRS-1 (parts, disclosure, value delivered), sealing, settlement, ledger mirror, quote hashing, clients, attestation
-runner/                       sealed TEE runner: dry-run quotes, durable execution (checkpoints, resume), resource limits, 11 parts (9 implementation files)
-server/                       marketplace API (quotes, runs, track records) and local mocks of external services
+runner/                       sealed TEE runner: dry-run quotes, durable execution (checkpoints, resume), resource limits, part admission and the sandbox for open-tier parts, 23 parts
+server/                       marketplace API (quotes, runs, track records, part submissions and reviews) and local mocks of external services
 web/                          React UI: Recipes (search, favorites, Get a quote), Compose (Recipe, Part), Wallet, Documentation (Spec, Trust & privacy, Landscape), story mode
 standard/parts.json           SRS-1 part catalog (ports, capabilities, fees, disclosure, limits)
+standard/reviews.json         release log: how every part was admitted (tier, hashes, signed approvals); inside the code hash
+standard/reviewers.json       the owner-appointed reviewers and their keys; inside the code hash
 seed/recipes/                 plaintext of the demo recipes (in the app they only ever travel sealed)
 fixtures/                     fictional wallets, frozen 1Click token sample
-scripts/                      demo launcher, seed, story CLI, agent buyer, live-check, verify-quote, video recorder
+scripts/                      demo launcher, seed, story CLI, agent buyer, release:parts, live-check, verify-quote, video recorder
 docs/                         SRS-1, architecture, threat model, contract spec and events, submission kit, media
 ```
 
@@ -404,6 +411,7 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 - **No live chain adapter or wallet.** The server talks to the in-process mirror. A NEAR RPC adapter and near-connect are the main pieces missing for testnet.
 - **The runner is trusted to measure delivery.** Guarantee deposits pay out on the runner's signed `delivered` value. That is sound only as far as the runner is attested; on-chain DCAP verification of the runner is the next step.
 - **Quotes cost compute.** Quote requests are capped at 12 per minute per client. A small quote fee would be the on-chain version.
+- **Part admission is partly permissioned.** Open-tier parts are admitted on automated checks and sandboxed; parts that send data somewhere new or ask buyers to sign need owner-appointed reviewers (SRS-1 §11). The release log makes every decision auditable. Next: a multisig or DAO as owner, reviewer stakes, several runners with their own releases, reproducible builds. The sandbox is a Node process with the permission model, not yet WASM with fuel metering.
 - **Supplier risk.** Bundled parts can't be switched off by their author, but remote and closed-model parts can. SRS-1 labels this risk; fallback parts, notice periods and supplier bonds are planned.
 - **Thin markets.** With 10 recipes, each price moves with its own demand only.
 - **Demand can be faked, at a cost.** A creator can pay for their own runs to push the price up. Each fake run costs the protocol, runner and part fees, and the price rises at most 12.5% a period while buyers simply pick another recipe or set a max price. Counting only quoted runs from distinct buyers would make it harder.

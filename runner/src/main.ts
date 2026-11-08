@@ -26,7 +26,8 @@ import { hashObject, sha256Hex } from '../../core/src/canonical.js';
 import { reportData, type RunnerAttestation } from '../../core/src/attestation.js';
 import { computeCodehash, loadCatalog } from '../../core/src/codehash.js';
 import { validateRecipe, measuresValue, type Recipe } from '../../core/src/srs.js';
-import { execute, parseRewrites, type ResumePoint } from './executor.js';
+import { execute, parseRewrites, setAdmission, type ResumePoint } from './executor.js';
+import { admitParts } from './admission.js';
 import { loadKeys } from './keys.js';
 import type { ApprovalRequest, ApprovalResult } from './types.js';
 
@@ -57,6 +58,10 @@ interface ResumeInput { checkpoint: CheckpointRecord | null; approvals: Record<s
 const catalog = loadCatalog(ROOT);
 const composeHash = sha256Hex(readFileSync(resolve(ROOT, 'runner/docker-compose.yml'), 'utf8').replace(/\r\n/g, '\n'));
 const { codehash } = computeCodehash(ROOT);
+// admission (SRS-1 §11): only parts whose release record verifies can run; open-tier parts run in the sandbox
+const admission = await admitParts(ROOT, catalog);
+setAdmission(admission);
+console.log(`[runner] release ${admission.release}: ${admission.admitted.size} parts admitted (${admission.sandboxed.size} sandboxed)${admission.refused.size ? `, ${admission.refused.size} refused: ` + [...admission.refused].map(([id, why]) => `${id} (${why})`).join('; ') : ''}`);
 const keys = await loadKeys(env.TEE_MODE ?? 'local-dev', resolve(ROOT, '.data/runner-dev-keys.json'), composeHash);
 
 type Ev = { seq: number; at: number; type: string; data: Record<string, unknown> };

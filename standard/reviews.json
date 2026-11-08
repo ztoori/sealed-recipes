@@ -1,0 +1,261 @@
+{
+  "srs": "1.0",
+  "kind": "release-log",
+  "release": 1,
+  "note": "Release 1 (genesis): the parts shipped by the owner before the review process existed. Later releases append records with their automated checks and signed approvals.",
+  "records": [
+    {
+      "part": "near.wallet-scanner@1.0.0",
+      "tier": "open",
+      "author": "scanlabs.testnet",
+      "implementation": "runner/src/parts/wallet-scanner.ts",
+      "manifest_hash": "4fc9adef2b47a427919b4e5553c21b447ee15e5c72585af73522fcf837ab12f9",
+      "source_sha256": "35bb832e76a1e6f7cb9fb3db37611a14093831b7dba0d509e1c4a4cdc158d95a",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "ai.spam-shield@1.1.0",
+      "tier": "reviewed",
+      "author": "sentinel.testnet",
+      "implementation": "runner/src/parts/spam-shield.ts",
+      "manifest_hash": "5eb449f7650e9478babc07484a0f98352bd54c6e9823cc672df5b7b407451e4e",
+      "source_sha256": "bf9af269261ee626a22b5ed1c7f5dea964a4f4263ba4ce35ff7ebc23e364a428",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "ai.spam-shield-pro@1.0.0",
+      "tier": "reviewed",
+      "author": "oracle-labs.testnet",
+      "implementation": "runner/src/parts/spam-shield.ts",
+      "manifest_hash": "1627ba476189712de76271f9316336feb40d5403f407edc4b51b1cec4ac2592a",
+      "source_sha256": "bf9af269261ee626a22b5ed1c7f5dea964a4f4263ba4ce35ff7ebc23e364a428",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "rules.spam-shield@1.0.0",
+      "tier": "open",
+      "author": "openlist.testnet",
+      "implementation": "runner/src/parts/allowlist-shield.ts",
+      "manifest_hash": "dc98f1661d649547540496ad68f3e5324f96e8c63a4e73c9336fbc4e5f219f61",
+      "source_sha256": "d3cc94877a16799a09c3a49bf53d4c2777a3eeda99348f87b221b4fefb85bc5f",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "filter.dust@1.0.0",
+      "tier": "open",
+      "author": "tidy.testnet",
+      "implementation": "runner/src/parts/dust-filter.ts",
+      "manifest_hash": "0225a3a3dac0c741d285828b740a8bedd0f562dbb57c8702a83259c5ba682223",
+      "source_sha256": "2db60236a00cff0d2e9c5663ef714003155ca725513ec51a80033460527071dc",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "addr.fresh-check@1.0.0",
+      "tier": "open",
+      "author": "ghost.testnet",
+      "implementation": "runner/src/parts/fresh-check.ts",
+      "manifest_hash": "f27f967917591a9577535b19e1ec0392a69c7b8d897228f34766df380dbdb392",
+      "source_sha256": "015c8af190ec0343a09256872afc5b3d98ff9d01c057513f1200b53e32b9b58e",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "intents.confidential-swap@1.0.0",
+      "tier": "signing",
+      "author": "veil.testnet",
+      "implementation": "runner/src/parts/intents-swap.ts",
+      "manifest_hash": "618653f124feab388e2a27af7488b91c15c1e9beaf82832849b375e5d49452bf",
+      "source_sha256": "1d7bbcd24566d330428869f31f90cffaaf0f27c5c83cf1058949d4eff40557ee",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "intents.public-swap@1.0.0",
+      "tier": "signing",
+      "author": "defuse-tools.testnet",
+      "implementation": "runner/src/parts/intents-swap.ts",
+      "manifest_hash": "44aca239efb8b5d43db4ecdf5a61bb42945f56c1b5808df1ec1170c1dd4b52c6",
+      "source_sha256": "1d7bbcd24566d330428869f31f90cffaaf0f27c5c83cf1058949d4eff40557ee",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "report.summary@1.0.0",
+      "tier": "open",
+      "author": "tidy.testnet",
+      "implementation": "runner/src/parts/summary-report.ts",
+      "manifest_hash": "987f95488fd7ae27ceac4298241561a569eedf11b7d37a7a7c48f988ab1251cc",
+      "source_sha256": "094deab47b0f2efd27f490d7d63a692e6ec8f63e5d9a98d1e02dbb9bcbdc3040",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "time.wait@1.0.0",
+      "tier": "open",
+      "author": "tidy.testnet",
+      "implementation": "runner/src/parts/wait.ts",
+      "manifest_hash": "3e3ee33fc98781d58984f7ed28057ce401931f7a2f7f02978e78c695735bcc79",
+      "source_sha256": "3c32863e557a20185c2fbf4087d691d111d6f14ae0a5f981344252b63421d0b8",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "swap.merge@1.0.0",
+      "tier": "open",
+      "author": "tidy.testnet",
+      "implementation": "runner/src/parts/merge-receipts.ts",
+      "manifest_hash": "9e401cfe9c349aebd0c89859cdbf328eab60fb9849c28157236236a9399c7d25",
+      "source_sha256": "f30b45b39f37896370a8ca12a3421bc190aedda402ff4188f35934d27ad67420",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "intents.atomic-swap@1.0.0",
+      "tier": "signing",
+      "author": "veil.testnet",
+      "implementation": "runner/src/parts/intents-atomic.ts",
+      "manifest_hash": "d445d58c1f2567c4dba2488ad9824aec905f8f185f011dc88311dffa0ea2351c",
+      "source_sha256": "29cc0495e03cebfa62cea495911ced7c930ae4966d4bffeab8ef29b8b3772677",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "airdrop.claim@1.0.0",
+      "tier": "signing",
+      "author": "dropkit.testnet",
+      "implementation": "runner/src/parts/airdrop-claim.ts",
+      "manifest_hash": "492a671242c2a3518ed366b570faa81516427d1aef29c2c9991592b6356998c7",
+      "source_sha256": "8b6e9275e241571b6ba966de5b0ace23416cc3c13d10f2eee0cff8526b9272a5",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "near.access-keys@1.0.0",
+      "tier": "open",
+      "author": "keysafe.testnet",
+      "implementation": "runner/src/parts/access-keys.ts",
+      "manifest_hash": "6ad98b459299db6342e7241d2b96c6f9bf4555c1cdeda8fb3b94a61d2f601b01",
+      "source_sha256": "9508fc6e3dae9a2a90ecc66bca6c4347a04badf58b6be5493ac28f67a5fc277c",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "rules.key-risk@1.0.0",
+      "tier": "open",
+      "author": "keysafe.testnet",
+      "implementation": "runner/src/parts/key-risk.ts",
+      "manifest_hash": "471f8df59e5e882677890e4c0724137e1dd4fd03df1febcf17f9c4c6f64f17ae",
+      "source_sha256": "8eb013d087f904508c8814baf08fc4b24dd5f8703278e83f0f3c9734e4e6aeac",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "keys.revoke@1.0.0",
+      "tier": "signing",
+      "author": "keysafe.testnet",
+      "implementation": "runner/src/parts/keys-revoke.ts",
+      "manifest_hash": "4b99fedd6d4a7001895ff93f4e8d2f30ef0c7133c9e82785f92b11e48d20293d",
+      "source_sha256": "8b0f732058537e9fe619bff5a137fa395497d87a5642133f0ddb1e927be02b4e",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "staking.positions@1.0.0",
+      "tier": "open",
+      "author": "validator-watch.testnet",
+      "implementation": "runner/src/parts/staking-positions.ts",
+      "manifest_hash": "0e851f5710d70c0d28626a6355f56063126852a3115bc2a5b142513ca73898c2",
+      "source_sha256": "86cdc73a7d45c4ada501c08859e0d8d0b7d4a62a571c1fa398a22595d641a6e8",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "staking.withdraw@1.0.0",
+      "tier": "signing",
+      "author": "validator-watch.testnet",
+      "implementation": "runner/src/parts/staking-withdraw.ts",
+      "manifest_hash": "5ee9a2b94d3acbc55c259468ae2203607a719f16741315e1cb52f3cf1bfb60ef",
+      "source_sha256": "feb07dfe1b3c1358856f8bca75d881ba95a29fbdb720cdf8fba4b01b215ca7da",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "near.contract-facts@1.0.0",
+      "tier": "open",
+      "author": "scanlabs.testnet",
+      "implementation": "runner/src/parts/contract-facts.ts",
+      "manifest_hash": "74f2d93945ca83e65cdbea1041f9da6f7413edca5cd966f9ca0471b625335f3c",
+      "source_sha256": "7a70f75e41a8cf37b33c16495d556da41f4cf1fb2bd981cf1204e261f70bff18",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "ai.contract-risk@1.0.0",
+      "tier": "reviewed",
+      "author": "sentinel.testnet",
+      "implementation": "runner/src/parts/contract-risk.ts",
+      "manifest_hash": "f37b3786afd830fab59273a2460035d2f51ad02a3fdf7c1b9b71c97cd1052744",
+      "source_sha256": "05979bad58a2655eb572b3567e689c171ab801298b28e9f3606f477d9c2e935b",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "rules.contract-risk@1.0.0",
+      "tier": "open",
+      "author": "scanlabs.testnet",
+      "implementation": "runner/src/parts/contract-risk.ts",
+      "manifest_hash": "587489e9628466344e9ae7bba17d6a0eea09db22d06f878e5e9e40896cd784ef",
+      "source_sha256": "05979bad58a2655eb572b3567e689c171ab801298b28e9f3606f477d9c2e935b",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "report.contract@1.0.0",
+      "tier": "open",
+      "author": "scanlabs.testnet",
+      "implementation": "runner/src/parts/contract-report.ts",
+      "manifest_hash": "f5b6623d6fa1613c4846d8a16b447749754ec77944bb32108d9786b876d2fbd2",
+      "source_sha256": "b0dae2c00acb716887579a60ae18a5ffd10c1e177f91736387a921e5ad7e0171",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    },
+    {
+      "part": "plan.trim@1.0.0",
+      "tier": "open",
+      "author": "riskdesk.testnet",
+      "implementation": "runner/src/parts/trim-plan.ts",
+      "manifest_hash": "2b7f175f075a509835fc290b2068098a938785591421675ebd96c219c8f276f2",
+      "source_sha256": "63b9a10c6fa954a77745b6baff8729626588dab6e2e763bc688f9e69e4cc1dfa",
+      "basis": "genesis",
+      "approvals": [],
+      "released_at": "2026-11-07"
+    }
+  ]
+}

@@ -743,3 +743,23 @@ main.home { max-width: 1240px; padding-top: 8px; }
 
 /* request a recipe */
 .lp > section { scroll-margin-top: 84px; }
+
+/* ---- part admission (SRS-1 §11): tiers, review queue, automated report, diff ---- */
+.pill.tier-open { border-color: rgba(60, 203, 154, 0.4); color: var(--gain); background: var(--gain-bg); }
+.pill.tier-reviewed { border-color: rgba(240, 180, 76, 0.4); color: var(--wax-2); background: var(--wax-bg); }
+.pill.tier-signing { border-color: rgba(167, 139, 250, 0.45); color: #c4b5fd; background: rgba(167, 139, 250, 0.12); }
+.tiers { display: grid; gap: 8px; }
+.tier { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.reviewpage { grid-template-columns: 300px minmax(0, 1fr) 330px; align-items: stretch; }
+@media (max-width: 1180px) { .reviewpage { grid-template-columns: 1fr; } }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip.on { border-color: var(--wax); color: var(--ink); background: var(--wax-bg); }
+.plist button > span.row { overflow: visible; white-space: normal; }
+.behave { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.behave .kv { margin: 0; }
+.diag.ok { color: var(--gain); }
+pre.code { margin: 0; max-height: 520px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; padding: 14px; background: #0a0f1b; color: #cdd6ea; border-top: 1px solid var(--line); border-radius: 0 0 var(--r-lg) var(--r-lg); tab-size: 2; white-space: pre; }
+pre.code.diff > div { padding: 0 6px; }
+pre.code.diff .add { background: rgba(60, 203, 154, 0.12); color: #9ff0cf; }
+pre.code.diff .del { background: rgba(242, 104, 124, 0.12); color: #ffb3c0; }
+.admission { display: grid; gap: 8px; }

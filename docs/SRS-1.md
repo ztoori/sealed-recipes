@@ -188,9 +188,10 @@ A document conforms to SRS-1 when the reference checks accept it. The same funct
 |---|---|---|
 | Part manifest | `validatePartManifest`: id `<namespace>.<name>@<semver>`, a known category, author account, a one-sentence summary, lower_snake_case ports and params with the spec's types, at least one output, `net:<host>` or `wallet:approve` capabilities (only `action` parts may ask for signatures), an integer fee, a full disclosure (§2.1), and limits (§2.2) | [`core/src/partkit.ts`](../core/src/partkit.ts) |
 | Part source | `lintPartSource`: exports a `PartHandler`; uses `ctx.http`, never global `fetch`; no `process.env`, `require`, file system, `eval`; reads its declared inputs and returns every declared output; HTTP only with a `net:` capability; a part that asks for signatures handles `ctx.mode === "quote"` and saves and resumes state (§8); model calls go through the verified-chat helper | [`core/src/partkit.ts`](../core/src/partkit.ts) |
+| Part source, security | `securityScan`: imports only the runner helpers and `node:crypto`; no dynamic `import()`, `require`, `process`, global object, `eval` or `Function`, prototype or reflection tricks, WebAssembly, workers or network functions; no text decoded at run time or hidden in escapes; every host the code names is declared; code that builds transactions declares `wallet:approve` | [`core/src/review.ts`](../core/src/review.ts) |
 | Recipe | `validateRecipe` (§3) | [`core/src/srs.ts`](../core/src/srs.ts) |
 
-The source checks are static. They catch common mistakes, not malicious code. What protects buyers at run time is the runner: capabilities and limits are enforced on every part, and a part only runs once its code is in an audited runner release whose code hash buyers verify.
+The source checks are static. They catch common mistakes and the usual escapes, not every malicious idea. What protects buyers at run time is admission (§11): every part's code is in a runner release whose code hash buyers verify, open parts run in a sandbox, and parts that send data somewhere new or ask buyers to sign are read by appointed reviewers first.
 
 `npm test` runs the conformance suite: every part in the catalog passes both checks, and every seed recipe can be rebuilt in the composer from a blank recipe by adding its parts.
 
@@ -198,7 +199,7 @@ The source checks are static. They catch common mistakes, not malicious code. Wh
 
 A marketplace for sealed recipes is only as useful as the number of parts and recipes that speak the same format. SRS-1 is written to be adopted by anyone, not only this marketplace.
 
-- **Part builders** publish a manifest that conforms (§9) and code that follows the part interface. A part is paid its fee in every settlement of every recipe that uses it, on any marketplace that settles SRS-1 reports.
+- **Part builders** publish a manifest that conforms (§9) and code that follows the part interface, admitted by tier (§11). A part is paid its fee in every settlement of every recipe that uses it, on any marketplace that settles SRS-1 reports.
 - **Recipe creators** need no code: add parts, and the types decide what can connect; a value no part provides is asked from the buyer, so the form builds itself.
 - **Wallets and agents** read a recipe's public form, seal their inputs and ask for signed quotes; they never need to see a recipe.
 - **Other marketplaces and runners** can implement the same three documents, the quote message (§7) and the report message (§6). A recipe sealed to a conforming runner can be listed anywhere that verifies its attestation.
@@ -208,3 +209,30 @@ A marketplace for sealed recipes is only as useful as the number of parts and re
 **Proposing changes.** New types are proposed as SRS improvement proposals: the JSON definition, one part and one recipe that use it, and the conformance suite passing. The proposal process is not yet run by an independent body; that is a step for after the first external implementations.
 
 **License.** The spec and its reference implementation are MIT licensed. Anyone may implement, extend or fork them.
+
+## 11. Admission of parts
+
+A part is code that runs inside other people's sealed recipes, on buyers' wallets. Recipe creators cannot read it in the runner and buyers cannot see the recipe, so a malicious part is a real attack. How much a part must prove before it runs depends on what its manifest lets it do (`partTier`):
+
+| Tier | When | What admits it | How it runs |
+|---|---|---|---|
+| **Open** | Pure, or reads only public NEAR data from the known hosts (`api.fastnear.com`, `rpc.mainnet.fastnear.com`, `1click.chaindefuser.com`) | The automated checks pass. No human review | In the sandbox |
+| **Reviewed** | Sends buyer data somewhere new: an AI model, a remote service, or any other host | Automated checks and **one** appointed reviewer | In the runner |
+| **Signing** | Asks the buyer to sign transactions (`wallet:approve`) | Automated checks and **two independent** appointed reviewers | In the runner |
+
+The spec is what makes this tractable. A reviewer does not have to work out what a part might do: the manifest says it, and the questions become whether the code does only that. Typed ports, declared hosts, a single network primitive (`ctx.http`), read-only quotes and declared limits turn most of a review into checks a machine can run. People are only needed where a sandbox cannot judge: whether data sent to a new host is necessary, whether a model's output can steer the part, and above all whether a transaction is the one the buyer meant to sign.
+
+**Automated checks** (every submission, every tier; `runChecks`):
+1. manifest conformance (§9), the static source checks and the security scan;
+2. a behaviour test in the sandbox, once as a quote and once as a run, with sample values for each input type. HTTP calls are answered by local mocks of the declared hosts only; every wallet request is recorded and declined. A violation fails the checks: reaching an undeclared host, asking for a signature or saving state during a quote, missing or mistyped outputs, or running past `max_ms`. The report shows the hosts reached and the transactions the part asked the buyer to sign, for the reviewer.
+
+**The sandbox** (`runner/src/sandbox.ts`). The part is compiled to one file, refusing any import outside the runner helpers. It runs in its own process with Node's permission model on (it can read only that file; no writes, child processes, workers or native addons), code generation from strings disabled, and its network functions and `process` escapes removed before it loads. Its only channel is IPC: `ctx.http` is relayed to the runner, which checks declared hosts and counts calls. The process is killed at `max_ms` (time waiting for the wallet excluded), so even a tight loop stops. Open parts never receive secrets. The production target is the same contract as a WASM module with fuel metering inside the TEE.
+
+**Review.** The owner appoints the reviewers (`standard/reviewers.json`). A reviewer confirms each item of the tier's checklist (`checklistFor`) and signs `srs-part-review-v1|<submission>|<part>|<manifest hash>|<code hash>|<reviewer>|<verdict>|<checklist>` with their wallet key. A reviewer never reviews their own part, and the two approvals for a signing part must come from different reviewers. Any reviewer can request changes; the author then submits a new version. Reviews are public, with the reviewer's name on them.
+
+**Release log.** Admitted parts ship in a runner release cut by the owner (`npm run release:parts`). Each part gets a record in `standard/reviews.json`: its tier, the hash of the manifest as reviewed (without `implementation`), the hash of its code, the basis (`genesis` for parts shipped before this process, `automated` for open parts, `review` with the signed approvals), and the hash of the automated report. The release log and the reviewer set are inside the runner's code hash, so a buyer who verifies the runner's attestation has also verified who admitted every part.
+
+**Enforcement.** At start the runner checks every catalog part against its record (`verifyRecord`): the manifest and code must be exactly what was admitted, under its tier's rule, with valid signatures from appointed reviewers. A part that fails is refused: a recipe that uses it fails before anything runs, and the buyer is refunded. Open parts admitted on the automated checks never load in the runner's own process.
+
+**Decentralizing it.** Appointed reviewers are a permissioned step; the release log makes it auditable, not permissionless. The path from here: the owner becomes a multisig or DAO; reviewers build a public record and later post a stake that is slashed if a part they approved is shown to be malicious; several independent runners pin their own releases, and creators choose which runner seals their recipe; reproducible builds let anyone confirm the released code hash matches the reviewed code. The open tier is already permissionless.
+

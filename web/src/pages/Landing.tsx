@@ -101,6 +101,7 @@ export function Landing() {
             <li><Icon name="link" size={17} />Built to an open spec, so it fits anywhere</li>
             <li><Icon name="vault" size={17} />Registered on-chain with your fee</li>
             <li><Icon name="users" size={17} />Paid in the same receipt as everyone else</li>
+            <li><Icon name="shieldCheck" size={17} />Pure parts go live on automated checks; parts that ask buyers to sign need two reviewers</li>
           </ul>
           <button className="linkbtn" onClick={() => go({ page: 'compose', sub: 'part' })}>Build a part<Icon name="arrow" size={14} /></button>
         </div>

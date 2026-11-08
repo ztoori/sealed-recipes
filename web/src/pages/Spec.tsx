@@ -7,6 +7,8 @@ import { usePoll } from '../api';
 import { useApp } from '../App';
 import { Icon } from '../icons';
 import { Stat, Tip } from '../ui';
+import { partTier, type Tier } from '../../../core/src/review';
+import { TierTable } from '../components/Admission';
 
 /**
  * Documentation › Spec: SRS-1, the format every part and recipe here is written in. The full text is
@@ -35,6 +37,7 @@ export function Spec() {
   const parts = cat?.parts ?? [];
   const conform = cat ? parts.filter((p) => !validatePartManifest(p, cat).some((d) => d.severity === 'error')).length : 0;
   const authors = new Set(parts.map((p) => p.author)).size;
+  const tierCounts = parts.reduce<Partial<Record<Tier, number>>>((c, p) => { const t = partTier(p).tier; c[t] = (c[t] ?? 0) + 1; return c; }, {});
   const usedBy = (t: string) => parts.filter((p) => [...Object.values(p.inputs), ...Object.values(p.outputs)].some((s) => s.type === t)).length;
   const download = () => {
     const blob = new Blob([JSON.stringify({ srs: '1.0', types: cat?.types, parts }, null, 2)], { type: 'application/json' });
@@ -84,6 +87,10 @@ export function Spec() {
           <table className="small fixed"><thead><tr><th style={{ width: '30%' }}>Type</th><th>Meaning</th><th style={{ width: '14%' }} className="r">Parts</th></tr></thead><tbody>
             {Object.entries(cat?.types ?? {}).map(([k, t]) => <tr key={k}><td><code>{k}</code>{t.extends && <div className="muted">extends <code>{t.extends}</code></div>}</td><td>{t.description}</td><td className="r">{usedBy(k)}</td></tr>)}
           </tbody></table>
+        </div>
+        <div className="panel">
+          <header><Icon name="shieldCheck" size={16} className="hd-ic" /><h2>Admission tiers</h2><span className="small muted">§11</span><Tip wide>A part runs inside other people’s sealed recipes, on buyers’ wallets. How much it must prove before it runs depends on what its manifest lets it do. Automated checks for everything; people only for what a sandbox cannot judge. Every decision is in the release log that the runner’s code hash covers.</Tip><span className="spacer" /><button className="linkbtn" onClick={() => go({ page: 'compose', sub: 'review' })}>Review queue</button></header>
+          <div className="body"><TierTable counts={tierCounts} /></div>
         </div>
       </div>
 

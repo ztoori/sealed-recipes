@@ -48,6 +48,21 @@ sequenceDiagram
   K->>K: verify signature, split: protocol, runner, part authors, creator; reserve → guarantee deposit; shortfall → buyer
 ```
 
+## Part admission (SRS-1 §11)
+
+```
+author ──register_part (manifest hash)──▶ contract
+author ──POST /api/parts/submissions (manifest + code, signed)──▶ marketplace
+            │ automated checks: conformance · static + security scan · behaviour test in the sandbox (quote + run)
+            ├─ open tier ──────────────────────────────▶ approved (no human review)
+            ├─ reviewed tier ── 1 appointed reviewer ──▶ approved
+            └─ signing tier ─── 2 appointed reviewers ─▶ approved          (any reviewer can request changes)
+owner ──npm run release:parts──▶ code + manifest + signed record in standard/reviews.json ──▶ pinned code hash
+runner start ──verifyRecord for every part──▶ admitted (open parts compiled for the sandbox) | refused
+```
+
+The tier comes from the manifest alone (`partTier` in `core/src/review.ts`): asking the buyer to sign makes a part *signing*; calling a model, running remotely or reaching a host outside the known NEAR data hosts makes it *reviewed*; anything else is *open*. Submissions live in `.data/reviews/submissions.json`; the release script and the marketplace read the same file. The runner sandbox (`runner/src/sandbox.ts`) compiles a part with esbuild, refusing imports outside the runner helpers, and runs it in a forked process with Node's permission model; `ctx.http`, wallet requests, state saves and waits cross over IPC, so the runner's guarded fetch, limits and approval flow stay in charge. The marketplace's automated checks reuse the same sandbox with local mocks of the declared hosts.
+
 ## Durable multi-step runs
 
 A recipe can span many transactions and a long time: TRCH sells half of a wallet, waits, then sells the rest.

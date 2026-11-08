@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, writeFileSync, mkdtempSync, mkdirSync, cpSyn
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { guardedFetch, validateInputs, parseRewrites, HANDLERS } from '../runner/src/executor.js';
+import { guardedFetch, validateInputs, parseRewrites, HANDLERS, SANDBOXED } from '../runner/src/executor.js';
 import { computeCodehash } from '../core/src/codehash.js';
 import type { Catalog, FormField } from '../core/src/srs.js';
 
@@ -19,7 +19,7 @@ test('parts can only reach hosts they declare (capability guard)', async () => {
 
 test('every catalog part has a runner implementation', () => {
   const cat = JSON.parse(readFileSync(join(root, 'standard/parts.json'), 'utf8')) as Catalog;
-  for (const b of cat.parts) assert.ok(HANDLERS[b.id], `no handler for ${b.id}`);
+  for (const b of cat.parts) assert.ok(HANDLERS[b.id] || SANDBOXED[b.id], `no handler for ${b.id}`);
 });
 
 test('buyer inputs are validated against the public form', () => {
@@ -42,7 +42,7 @@ test('code hash is stable across line endings and changes when code changes', ()
   for (const d of ['runner/src', 'core/src', 'standard']) mkdirSync(join(dir, d), { recursive: true });
   cpSync(join(root, 'runner/src'), join(dir, 'runner/src'), { recursive: true });
   cpSync(join(root, 'core/src'), join(dir, 'core/src'), { recursive: true });
-  cpSync(join(root, 'standard/parts.json'), join(dir, 'standard/parts.json'));
+  for (const f of ['parts.json', 'reviews.json', 'reviewers.json']) cpSync(join(root, 'standard', f), join(dir, 'standard', f));
   const a = computeCodehash(dir).codehash;
   assert.equal(a, computeCodehash(root).codehash);
   const f = join(dir, 'runner/src/types.ts');

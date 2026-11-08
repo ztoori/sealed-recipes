@@ -44,6 +44,9 @@ export const ACCOUNTS = [
   { id: 'sentinel.testnet', role: 'Part author' },
   { id: 'scanlabs.testnet', role: 'Part author' },
   { id: 'dana.testnet', role: 'Trader' },
+  { id: 'audit-a.testnet', role: 'Reviewer' },
+  { id: 'audit-b.testnet', role: 'Reviewer' },
+  { id: 'audit-c.testnet', role: 'Reviewer' },
   { id: 'tee-runner-1.testnet', role: 'TEE runner' },
   { id: 'srs-treasury.testnet', role: 'Protocol' },
 ];
