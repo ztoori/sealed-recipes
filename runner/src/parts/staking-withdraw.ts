@@ -6,7 +6,7 @@ import { view, NEAR } from './near-rpc.js';
  * returns to the same account (pools always pay the delegator). Delivered is measured, not trusted: the part re-reads
  * each pool's get_account afterwards and counts what left the pool.
  */
-const WNEAR = 'nep141:wrap.near'; // priced as NEAR for the job metric
+const WNEAR = 'nep141:wrap.near'; // priced as NEAR for the value delivered
 interface WState { phase: 'approval' | 'submitted'; ready: StakePosition[] }
 
 export const stakingWithdraw: PartHandler = async (inputs, ctx) => {

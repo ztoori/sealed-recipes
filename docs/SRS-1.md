@@ -1,8 +1,8 @@
-# SRS-1: Sealed Recipe Standard (v1.0)
+# SRS-1: Sealed Recipe Spec (v1.0)
 
-SRS-1 is the no-code / low-code format for composing **parts** (code, specialist agents or data sources) into workflows that can be **sealed, priced and settled**. It has four documents: a **part manifest** (published by a builder), a **job type** (a standard request buyers can post), a **recipe** (written by a creator, sealed) and a **public listing** (derived from the recipe, which is all the market sees).
+SRS-1 is the no-code / low-code format for composing **parts** (code, specialist agents or data sources) into workflows that can be **sealed, priced and settled**. It has three documents: a **part manifest** (published by a builder), a **recipe** (written by a creator, sealed) and a **public listing** (derived from the recipe, which is all the market sees). A **signed quote** (§7) prices one buyer's sealed inputs for one recipe.
 
-Reference implementation: [`core/src/srs.ts`](../core/src/srs.ts). Catalogs: [`standard/parts.json`](../standard/parts.json), [`standard/jobs.json`](../standard/jobs.json).
+Reference implementation: [`core/src/srs.ts`](../core/src/srs.ts). Catalog (types and parts): [`standard/parts.json`](../standard/parts.json).
 
 ## 1. Types
 
@@ -151,34 +151,25 @@ srs-run-v3|<contract>|<run_id>|<recipe_id>|<ok|fail|abort>|<output_hash>|<delive
 
 `report_run` verifies the signature with `env::ed25519_verify`. `parts_used` must be a sub-multiset of the recipe's registered parts, so a runner cannot bill parts the recipe doesn't contain.
 
-## 7. Recipe intents: job types, quotes and bonds
+## 7. Quotes and guarantees
 
 A recipe's **bond** (shown to users as its *guarantee deposit*) is collateral the creator posts; it pays buyers shortfalls and nothing else.
 
-A **job type** is a standard request that recipes compete to fulfil:
+A buyer asks one recipe for a quote on their own inputs, filled in from the recipe's public form (§4). A buyer or an agent may ask several recipes and compare; nothing in the format groups recipes or makes them answer together.
 
-```json
-{ "id": "job.wallet-cleanup@1.0.0", "name": "Clean up my wallet",
-  "inputs": { "wallet": {"type": "near.account"}, "threshold_usd": {"type": "usd"}, "target": {"type": "asset.id"}, "recipient": {"type": "address.near"} },
-  "output": "swap.receipts",
-  "metric": { "name": "value_delivered", "unit": "payment-token" } }
-```
+**Value delivered.** A recipe whose result type is `swap.receipts` (or a subtype) has a measurable value: what reached the buyer's recipient, in payment-token units. Only such a recipe can promise a value in its quote and back the promise with its bond. Any other recipe (a report, a key cleanup) quotes its price alone, with `expected = promised = cover = 0`.
 
-A recipe opts in with `"implements": "job.wallet-cleanup@1.0.0"`. The validator requires its form fields to be exactly the job's inputs (types assignable) and its output type to match (`job.input`, `job.output`).
-
-1. **Post.** The buyer seals `{inputs, salt, reply_to}` once to the attested runner and posts it with
-   `job_hash = sha256(canonical({inputs, salt}))`. The random salt means the on-chain hash can't be brute-forced back to the wallet.
-2. **Quote.** For each listed recipe implementing the type (capped), the runner checks the recipe against its on-chain hash and the job against `job_hash`. It then runs the recipe in **quote mode**: read-only, swaps priced with dry 1Click quotes, no approvals. The output is measured with the job's metric (value in payment-token units): `expected` from expected outputs, and `promised` from the post-slippage minimums. The runner signs
+1. **Seal.** The buyer seals `{inputs, salt, reply_to}` once to the attested runner, with
+   `job_hash = sha256(canonical({inputs, salt}))`. ("Job" is the buyer's sealed request; the name is kept in the contract.) The random salt means the on-chain hash can't be brute-forced back to the wallet. One sealed request can be sent to several recipes.
+2. **Quote.** The runner checks the recipe against its on-chain hash and the request against `job_hash`. It then runs the recipe in **quote mode**: read-only, swaps priced with dry 1Click quotes, no approvals. For a recipe with a value delivered, `expected` comes from expected outputs and `promised` from the post-slippage minimums. The runner signs
    `srs-quote-v3|<contract>|<recipe>|<sealed_hash>|<job_hash>|<inputs_hash>|<buyer>|<price>|<expected>|<promised>|<cover>|<expires_ns>`,
-   where `inputs_hash` is the hash of the sealed job the buyer will pay with, `price` is the recipe's current market price (locked for this job), and `cover = min(promised, bond_available)`.
-   A job may carry a `max_price`: recipes listed above it are not asked to quote.
+   where `inputs_hash` is the hash of the sealed request the buyer will pay with, `price` is the recipe's current market price (locked for this request), and `cover = min(promised, bond_available)`.
+   A request may carry a `max_price`: a recipe listed above it is not asked to quote.
    The whole quote is sealed to `reply_to`; the marketplace relays ciphertext, and the buyer's client checks the signature before paying.
-3. **Choose.** The buyer, or an agent's policy, compares expected value, promise, price, privacy, withdrawal risk and the on-chain track record.
+3. **Choose.** The buyer, or an agent's policy, weighs expected value, promise, price, privacy, withdrawal risk and the on-chain track record.
 4. **Pay.** The signed quote rides in the run payment's `customRecipientMsg` (so its values become public; paying without a quote is always allowed and keeps them private). The contract checks the price (in the recipe's band, at most the buyer's `max_price`), then, in order: `job_hash` format, recipe version, runner active, signature, expiry, single use, `cover ≤ promised`, `bond_available ≥ cover`; then it locks `cover`.
-5. **Re-check.** Right before executing, the runner re-prices the job in quote mode. If the fresh promise is below 98% of the quoted one (the wallet changed), it signs `abort`: the buyer is refunded and the cover goes back to the bond.
+5. **Re-check.** Right before executing, the runner re-prices the run in quote mode. If the fresh promise is below 98% of the quoted one (the wallet changed), it signs `abort`: the buyer is refunded and the cover goes back to the bond.
 6. **Settle.** The runner measures `delivered` (for bonded runs, credited with any value the buyer withheld after the re-check: drained funds or deposits smaller than asked count at their quoted minimum, so the bond insures the market, not the buyer's own choices) and signs `srs-run-v3|…|ok|…|<delivered>|…`. The contract pays `min(max(0, promised − delivered), cover)` to the buyer from the locked cover, updates the recipe's track record and releases the rest.
-
-A job with no implementing recipe gets no quotes.
 
 ## 8. Durable parts, settlement modes and versions
 
@@ -195,26 +186,25 @@ A document conforms to SRS-1 when the reference checks accept it. The same funct
 
 | Document | Check | Where |
 |---|---|---|
-| Part manifest | `validatePartManifest`: id `<namespace>.<name>@<semver>`, a known category, author account, a one-sentence summary, lower_snake_case ports and params with standard types, at least one output, `net:<host>` or `wallet:approve` capabilities (only `action` parts may ask for signatures), an integer fee, a full disclosure (§2.1), and limits (§2.2) | [`core/src/partkit.ts`](../core/src/partkit.ts) |
+| Part manifest | `validatePartManifest`: id `<namespace>.<name>@<semver>`, a known category, author account, a one-sentence summary, lower_snake_case ports and params with the spec's types, at least one output, `net:<host>` or `wallet:approve` capabilities (only `action` parts may ask for signatures), an integer fee, a full disclosure (§2.1), and limits (§2.2) | [`core/src/partkit.ts`](../core/src/partkit.ts) |
 | Part source | `lintPartSource`: exports a `PartHandler`; uses `ctx.http`, never global `fetch`; no `process.env`, `require`, file system, `eval`; reads its declared inputs and returns every declared output; HTTP only with a `net:` capability; a part that asks for signatures handles `ctx.mode === "quote"` and saves and resumes state (§8); model calls go through the verified-chat helper | [`core/src/partkit.ts`](../core/src/partkit.ts) |
 | Recipe | `validateRecipe` (§3) | [`core/src/srs.ts`](../core/src/srs.ts) |
-| Job type | a recipe implementing it must match its inputs and output exactly (§7) | [`core/src/srs.ts`](../core/src/srs.ts) |
 
 The source checks are static. They catch common mistakes, not malicious code. What protects buyers at run time is the runner: capabilities and limits are enforced on every part, and a part only runs once its code is in an audited runner release whose code hash buyers verify.
 
-`npm test` runs the conformance suite: every part in the catalog passes both checks, and every seed recipe can be rebuilt in the composer from its job's form and its parts.
+`npm test` runs the conformance suite: every part in the catalog passes both checks, and every seed recipe can be rebuilt in the composer from a blank recipe by adding its parts.
 
 ## 10. Adopting SRS-1
 
-A marketplace for sealed recipes is only as useful as the number of parts, recipes and job types that speak the same format. SRS-1 is written to be adopted by anyone, not only this marketplace.
+A marketplace for sealed recipes is only as useful as the number of parts and recipes that speak the same format. SRS-1 is written to be adopted by anyone, not only this marketplace.
 
 - **Part builders** publish a manifest that conforms (§9) and code that follows the part interface. A part is paid its fee in every settlement of every recipe that uses it, on any marketplace that settles SRS-1 reports.
-- **Recipe creators** need no code: pick a job type, add parts, and the types decide what can connect.
-- **Wallets and agents** post job types and compare signed quotes; they never need to see a recipe. A job type is a public, versioned interface any client can implement.
-- **Other marketplaces and runners** can implement the same four documents, the quote message (§7) and the report message (§6). A recipe sealed to a conforming runner can be listed anywhere that verifies its attestation.
+- **Recipe creators** need no code: add parts, and the types decide what can connect; a value no part provides is asked from the buyer, so the form builds itself.
+- **Wallets and agents** read a recipe's public form, seal their inputs and ask for signed quotes; they never need to see a recipe.
+- **Other marketplaces and runners** can implement the same three documents, the quote message (§7) and the report message (§6). A recipe sealed to a conforming runner can be listed anywhere that verifies its attestation.
 
-**Versioning.** Every part, job type and the standard itself carry a semantic version. Within 1.x, changes are additive: new types, new optional fields, new job types. A breaking change to a part or job type is a new major version with a new id, and the old one stays valid, so published recipes never break.
+**Versioning.** Every part and the spec itself carry a semantic version. Within 1.x, changes are additive: new types, new optional fields. A breaking change to a part is a new major version with a new id, and the old one stays valid, so published recipes never break.
 
-**Proposing changes.** New types and job types are proposed as SRS improvement proposals: the JSON definition, one recipe that implements it, and the conformance suite passing. The proposal process is not yet run by an independent body; that is a step for after the first external implementations.
+**Proposing changes.** New types are proposed as SRS improvement proposals: the JSON definition, one part and one recipe that use it, and the conformance suite passing. The proposal process is not yet run by an independent body; that is a step for after the first external implementations.
 
-**License.** The standard and its reference implementation are MIT licensed. Anyone may implement, extend or fork them.
+**License.** The spec and its reference implementation are MIT licensed. Anyone may implement, extend or fork them.

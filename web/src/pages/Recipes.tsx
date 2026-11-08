@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { nextPrice } from '../../../core/src/pricing';
 import { api, money, short, usd, usePoll } from '../api';
 import { useApp, useStoryOnce } from '../App';
-import { CAT, Icon, jobLook } from '../icons';
+import { CAT, Icon, RESULT_LABEL, recipeLook } from '../icons';
 import { Empty, Head, Seal, Stat, Tip } from '../ui';
 
 /**
@@ -25,16 +25,14 @@ export function Recipes({ ticker: wanted }: { ticker?: string }) {
   const { go, story } = useApp();
   const once = useStoryOnce();
   const [listings] = usePoll<any[]>('/api/listings', 2500);
-  const [jobs] = usePoll<any[]>('/api/jobs', 15000);
   const [q, setQ] = useState('');
   const [fav, toggleFav] = useFavorites();
-  const jobName = (id?: string | null) => jobs?.find((j) => j.id === id)?.name ?? '';
   const ticker = wanted && listings?.some((l) => l.ticker === wanted) ? wanted : listings?.[0]?.ticker;
   const select = (t: string) => go({ page: 'recipes', ticker: t });
 
   const match = (l: any) => {
     const s = q.trim().toLowerCase(); if (!s) return true;
-    return [l.ticker, l.name, l.description, l.creator, jobName(l.implements), ...l.parts.map((p: string) => p.split('@')[0])].join(' ').toLowerCase().includes(s);
+    return [l.ticker, l.name, l.description, l.creator, ...l.parts.map((p: string) => p.split('@')[0])].join(' ').toLowerCase().includes(s);
   };
   const shown = (listings ?? []).filter(match);
   const favs = shown.filter((l) => fav.has(l.ticker));
@@ -52,10 +50,10 @@ export function Recipes({ ticker: wanted }: { ticker?: string }) {
   const row = (l: any) => (
     <li key={l.ticker} className={'rcp' + (l.ticker === ticker ? ' sel' : '') + (fav.has(l.ticker) ? ' fav' : '')}>
       <button className="pick" onClick={() => select(l.ticker)} aria-current={l.ticker === ticker ? 'true' : undefined}>
-        <Seal job={l.implements} size={38} />
+        <Seal ticker={l.ticker} kind={l.output_type} size={38} />
         <span className="nm">
           <b>{l.name}</b>
-          <span className="sub"><span className="tk">{l.ticker}</span>{jobName(l.implements) || 'direct runs only'}</span>
+          <span className="sub"><span className="tk">{l.ticker}</span>by {l.creator.replace('.testnet', '')}</span>
         </span>
         <span className="px">
           <b>{money(l.record.pricePerRun)}</b>
@@ -69,20 +67,20 @@ export function Recipes({ ticker: wanted }: { ticker?: string }) {
   return (
     <div className="grid ex">
       <section className="rail" aria-label="Find a recipe">
-        <label className="search-wrap"><Icon name="search" size={16} /><input className="search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search recipes, jobs, parts" aria-label="Search recipes" /></label>
+        <label className="search-wrap"><Icon name="search" size={16} /><input className="search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search recipes, creators, parts" aria-label="Search recipes" /></label>
         <div className="rail-scroll">
           {favs.length > 0 && <><div className="listhead"><Icon name="star" size={13} fill />Favorites</div><ul className="rlist">{favs.map(row)}</ul></>}
           <div className="listhead">{q ? `${shown.length} matching` : 'All recipes'}<span className="count">{listings?.length ?? 0}</span></div>
           <ul className="rlist">{rest.map(row)}</ul>
           {listings && !shown.length && <Empty icon="search">Nothing matches “{q}”.</Empty>}
           {listings && !listings.some((l) => l.ticker === 'CLNP') && !q && (
-            <div className="ghost-row" title="Play the demo to watch a creator compose and publish it"><Seal job="job.wallet-cleanup" size={38} className="dim" /><span className="nm"><b>Clean up and protect</b><span className="sub"><span className="tk">CLNP</span>published in the demo</span></span><Icon name="lock" size={15} /></div>
+            <div className="ghost-row" title="Play the demo to watch a creator compose and publish it"><Seal ticker="CLNP" kind="swap.receipts" size={38} className="dim" /><span className="nm"><b>Clean up and protect</b><span className="sub"><span className="tk">CLNP</span>published in the demo</span></span><Icon name="lock" size={15} /></div>
           )}
         </div>
       </section>
 
       <section className="grid detail" style={{ minWidth: 0 }}>
-        {ticker && <RecipeDetail key={ticker} ticker={ticker} listings={listings ?? []} jobName={jobName} />}
+        {ticker && <RecipeDetail key={ticker} ticker={ticker} listings={listings ?? []} />}
       </section>
     </div>
   );
@@ -90,28 +88,27 @@ export function Recipes({ ticker: wanted }: { ticker?: string }) {
 
 const RISK_TIP = 'Withdrawal risk: could this recipe be rebuilt if a part’s model or service disappeared? Open weights or bundled code: low. Remote services: medium. Closed models: high (SRS-1 §2.1).';
 
-function RecipeDetail({ ticker, listings, jobName }: { ticker: string; listings: any[]; jobName: (id?: string | null) => string }) {
+function RecipeDetail({ ticker, listings }: { ticker: string; listings: any[] }) {
   const { go } = useApp();
   const [m, refresh] = usePoll<any>(`/api/recipe/${ticker}`, 1500, [ticker]);
   const rec = m?.record;
   const l = listings.find((x) => x.ticker === ticker);
-  const rivals = listings.filter((x) => x.ticker !== ticker && l?.implements && x.implements === l.implements);
   if (!rec || !m.listing) return <div className="panel body muted loading"><span className="spinner" />Loading {ticker}</div>;
   const kept = rec.keptPromise;
   return (
     <>
       <div className="panel hero">
         <div className="hero-main">
-          <Seal job={l?.implements} ticker={ticker} size={112} className="hero-seal" />
+          <Seal ticker={ticker} kind={l?.output_type} size={112} className="hero-seal" />
           <div className="hero-tx">
             <div className="hero-meta"><span className="tk lg">{ticker}</span><span>by <b>{m.listing.creator}</b></span><span className="ver">v{m.onchain?.version ?? 1}</span></div>
             <h1 className="listing-name">{m.listing.name}</h1>
             <p className="lede">{m.listing.description}</p>
-            {l?.implements && <div className="tags">
-              <span className="tag"><Icon name={jobLook(l.implements).icon} size={13} />{jobName(l.implements)}</span>
+            <div className="tags">
+              {RESULT_LABEL[m.listing.output_type] && <span className="tag"><Icon name={recipeLook(ticker, m.listing.output_type).icon} size={13} />{RESULT_LABEL[m.listing.output_type]}</span>}
               <span className={'tag risk-' + m.listing.risk}><i className="dot" />{m.listing.risk} risk<Tip>{RISK_TIP}</Tip></span>
               {m.listing.privacy === 'confidential' && <span className="tag sealed"><Icon name="lock" size={13} />Confidential swaps</span>}
-            </div>}
+            </div>
           </div>
           <div className="hero-buy">
             <div className="bigpx">{money(rec.pricePerRun)}</div>
@@ -125,10 +122,6 @@ function RecipeDetail({ ticker, listings, jobName }: { ticker: string; listings:
           <Stat icon="shield" value={money(rec.deposit.available, 0)} label="guarantee" tone="wax" tip="The creator’s collateral. If a run delivers less than its signed promise, the buyer is paid the shortfall from it, in the same settlement." />
           <Stat icon="receipt" value={money(rec.revenue)} label="billed" />
         </div>
-        {rivals.length > 0 && <div className="rivals">
-          <span className="muted">Rivals</span>
-          {rivals.map((r) => <button key={r.ticker} className="chip" onClick={() => go({ page: 'recipes', ticker: r.ticker })}><b>{r.ticker}</b>{money(r.record.pricePerRun)}{r.record.keptPromise != null && <span className={r.record.keptPromise >= 1 ? 'gain' : 'loss'}>{Math.round(r.record.keptPromise * 100)}%</span>}</button>)}
-        </div>}
       </div>
 
       <div className="panel">

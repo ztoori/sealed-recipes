@@ -4,13 +4,13 @@
  * The attack: get a bonded quote while the wallet is full, empty the wallet, then pay with the quote. If the
  * runner simply executed, it would deliver almost nothing and the contract would pay the shortfall from the bond.
  *
- * What happens instead: right before executing, the runner re-prices the job inside the TEE. The fresh promise is
+ * What happens instead: right before executing, the runner re-prices the run inside the TEE. The fresh promise is
  * far below the quoted one, so it signs an `abort` report: the buyer gets the run price back, the cover returns
  * to the bond, and the recipe's `aborted` counter goes up (aborts are not counted as failures).
  *   npm run attack:drain
  */
 import { open, USDC_NEAR, type SealedEnvelope } from '../core/src/index.js';
-import { api, BASE, freshImplicitAccount, verifiedRunner, postJob, signedQuote } from './lib/client.js';
+import { api, BASE, freshImplicitAccount, verifiedRunner, requestQuotes, signedQuote } from './lib/client.js';
 
 const BUYER = 'carol.testnet';
 const usd = (u: string | number | bigint) => '$' + (Number(u) / 1e6).toFixed(4);
@@ -18,7 +18,7 @@ const say = (s: string) => console.log(`[attack] ${s}`);
 
 const runner = await verifiedRunner();
 const fresh = freshImplicitAccount();
-const job = await postJob('job.wallet-cleanup@1.0.0', { wallet: BUYER, threshold_usd: 30, target: USDC_NEAR, recipient: fresh.account }, runner.onchain, BUYER);
+const job = await requestQuotes(['CLNP', 'SWPR'], { wallet: BUYER, threshold_usd: 30, target: USDC_NEAR, recipient: fresh.account }, runner.onchain, BUYER);
 const q = job.quotes.find((x) => x.ok && Number(x.cover) > 0);
 const T = q?.listing.ticker as string;
 if (!q) { say('no quote: ' + JSON.stringify(job.quotes.map((x) => x.error))); process.exit(1); }
@@ -44,7 +44,7 @@ for (let done = false; !done;) {
   while ((i = buf.indexOf('\n\n')) >= 0) {
     let e = JSON.parse(buf.slice(6, i)); buf = buf.slice(i + 2);
     if (e.type === 'sealed') { e = { ...e, ...open<{ type: string; data: any }>(e.data.envelope as SealedEnvelope, job.reply.secretKey) }; }
-    if (e.type === 'rechecked') say(`   runner re-priced the job before executing: ${e.data.ok ? 'quote holds' : 'below 98% of the quote'}`);
+    if (e.type === 'rechecked') say(`   runner re-priced the run before executing: ${e.data.ok ? 'quote holds' : 'below 98% of the quote'}`);
     if (e.type === 'recheck') say(`   fresh promise ${usd(e.data.fresh_promised)} vs quoted ${usd(e.data.quoted_promised)}`);
     if (e.type === 'signed') say(`   signed: ${e.data.message.split('|').slice(0, 5).join('|')}|…`);
     if (e.type === 'part_start') say(`   ✘ a part started executing: ${e.data.name}`);

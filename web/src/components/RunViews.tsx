@@ -34,9 +34,9 @@ export function timeline(events: Ev[]): Row[] {
       case 'deposit_submitted': rows.push({ title: 'Deposit sent to the Intents deposit address', sub: `tx ${short(d.txHash, 8, 6)}`, source: 'NEAR Intents', logs: [] }); break;
       case 'status': { const last = rows.at(-1); if (last?.title.startsWith('Deposit')) last.logs.push(`1Click: ${d.status}`); break; }
       case 'run_requested': rows.push({ title: 'Solver delivered via ft_transfer_call: run escrowed on-chain', sub: `tx ${short(d.tx, 8, 6)} · block ${d.height}`, source: 'contract', logs: [] }); break;
-      case 'accepted': rows.push({ title: `Runner ${d.runner_id} accepted the job`, sub: d.tee === 'local-dev' ? 'local-dev runner (no hardware TEE)' : 'Intel TDX', source: 'runner', logs: [] }); break;
+      case 'accepted': rows.push({ title: `Runner ${d.runner_id} accepted the run`, sub: d.tee === 'local-dev' ? 'local-dev runner (no hardware TEE)' : 'Intel TDX', source: 'runner', logs: [] }); break;
       case 'verified': rows.push({ title: 'Runner checked the on-chain commitments', source: 'runner', logs: d.checks.map((c: any) => `${c.ok ? '✓' : '✕'} ${c.label}`) }); break;
-      case 'rechecked': rows.push({ title: d.ok ? 'Runner re-priced the job before executing: quote still holds' : 'Wallet changed since the quote: run aborted', sub: `threshold ${d.threshold_bps / 100}% of the quoted promise`, source: 'runner', logs: [], ...(d.ok ? {} : { state: 'fail' as const }) }); break;
+      case 'rechecked': rows.push({ title: d.ok ? 'Runner re-priced the run before executing: quote still holds' : 'Wallet changed since the quote: run aborted', sub: `threshold ${d.threshold_bps / 100}% of the quoted promise`, source: 'runner', logs: [], ...(d.ok ? {} : { state: 'fail' as const }) }); break;
       case 'recheck': { const last = rows.at(-1); if (last) { last.logs.push(`fresh promise ${usd(d.fresh_promised, 2)} vs quoted ${usd(d.quoted_promised, 2)}`); last.sealed = true; } break; }
       case 'refunded': rows.push({ title: 'Runner reported the failure: refunded now', sub: 'signed fail report, no waiting for the reclaim timeout', source: 'runner', logs: [] }); break;
       case 'checkpoint': (part ?? rows.at(-1))?.logs.push(`checkpoint #${d.local_seq} stored, sealed to the runner${d.mid_part ? ' (before an irreversible step)' : ''}`); break;

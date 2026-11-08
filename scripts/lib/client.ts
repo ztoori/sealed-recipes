@@ -45,11 +45,11 @@ export function freshImplicitAccount() {
 }
 
 /**
- * Recipe intents, client side: seal the job once (to the runner), post it, collect competing quotes.
+ * Quotes, client side: seal the inputs once (to the runner), then ask each recipe the buyer chose for a quote.
  * Each quote comes back sealed to this client's one-time reply key; it is opened and its runner signature is
  * verified here, against the exact message the contract will check, before anything is paid.
  */
-export async function postJob(jobType: string, inputs: Record<string, unknown>, runner: { enc_pk_hex: string; signing_pk: string }, buyer: string, only?: string, maxPrice?: bigint) {
+export async function requestQuotes(recipes: string[], inputs: Record<string, unknown>, runner: { enc_pk_hex: string; signing_pk: string }, buyer: string, maxPrice?: bigint) {
   const { seal, jobHash, sealedHash, openQuote } = await import('../../core/src/index.js');
   const reply = nacl.box.keyPair();
   const salt = randomBytes(16).toString('hex');
@@ -57,13 +57,15 @@ export async function postJob(jobType: string, inputs: Record<string, unknown>, 
   const sealed_job = seal({ inputs, salt, reply_to: bytesToHex(reply.publicKey) }, runner.enc_pk_hex, 'inputs');
   const inputsHash = sealedHash(sealed_job);
   const { contract_id } = await api<{ contract_id: string }>('/api/chain/config');
-  const r = await api<{ quotes: any[] }>('/api/jobs', { job_type: jobType, sealed_job, job_hash, buyer, ...(only ? { only } : {}), ...(maxPrice !== undefined ? { max_price: maxPrice.toString() } : {}) });
-  for (const q of r.quotes) {
+  // a recipe that is not listed (or refuses) comes back as a failed quote, so one bad entry doesn't sink the rest
+  const quotes = await Promise.all(recipes.map((recipe_id) => api<{ quote: any }>('/api/quotes', { recipe_id, sealed_job, job_hash, buyer, ...(maxPrice !== undefined ? { max_price: maxPrice.toString() } : {}) })
+    .then((r) => r.quote, (e: Error) => ({ recipe_id, ok: false, error: e.message, listing: { ticker: recipe_id } }))));
+  for (const q of quotes) {
     if (!q.ok || !q.sealed_quote) continue;
     const o = openQuote(q.sealed_quote, reply.secretKey, { contractId: contract_id, recipeId: q.recipe_id, signingPk: runner.signing_pk, buyer, inputsHash, jobHash: job_hash });
     Object.assign(q, o, { details: o.details, ok: o.verified, error: o.problem });
   }
-  return { ...r, sealed_job, job_hash, reply };
+  return { quotes, sealed_job, job_hash, reply };
 }
 
 /** The quote object the contract checks, as sent in the run msg. */

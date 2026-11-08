@@ -58,6 +58,5 @@
     }
   ],
   "output": "report.report",
-  "listing": {"price_per_run": "150000", "reserve_bps": 2000, "bond": "0", "pricing": {"price_floor": "120000", "price_ceiling": "400000", "target_runs": 2}},
-  "implements": "job.wallet-audit@1.0.0"
+  "listing": {"price_per_run": "150000", "reserve_bps": 2000, "bond": "0", "pricing": {"price_floor": "120000", "price_ceiling": "400000", "target_runs": 2}}
 }

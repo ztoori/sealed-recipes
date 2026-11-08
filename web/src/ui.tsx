@@ -1,13 +1,14 @@
 import { useId, useRef, useState, type ReactNode } from 'react';
-import { Icon, jobLook } from './icons';
+import { Icon, recipeLook } from './icons';
 
 /**
  * The recipe's seal: a wax medallion with a guilloché rosette, like the security printing on a banknote.
- * Its hue and icon come from the job the recipe does, so rivals for one job look related.
+ * Its hue comes from the recipe's short code and its icon from what the recipe hands the buyer (its result type);
+ * large seals also print the short code.
  */
-export function Seal({ job, ticker, size = 40, className }: { job?: string | null; ticker?: string; size?: number; className?: string }) {
+export function Seal({ ticker, kind, size = 40, className }: { ticker?: string | null; kind?: string | null; size?: number; className?: string }) {
   const id = useId().replace(/:/g, '');
-  const { icon, hue } = jobLook(job);
+  const { icon, hue } = recipeLook(ticker, kind);
   const big = size >= 72;
   const N = big ? 30 : 18;
   const edge = Array.from({ length: 241 }, (_, i) => {

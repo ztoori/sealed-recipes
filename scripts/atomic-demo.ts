@@ -9,7 +9,7 @@
  *        withdrawal settle in ONE execute_intents transaction.
  */
 import { open, USDC_NEAR, type SealedEnvelope } from '../core/src/index.js';
-import { api, BASE, freshImplicitAccount, verifiedRunner, postJob, signedQuote } from './lib/client.js';
+import { api, BASE, freshImplicitAccount, verifiedRunner, requestQuotes, signedQuote } from './lib/client.js';
 
 const BUYER = 'carol.testnet';
 const say = (s: string) => console.log(`[atomic] ${s}`);
@@ -18,7 +18,7 @@ const usdc = USDC_NEAR.replace(/^nep141:/, '');
 async function runOnce(label: string, breakAsset?: string, breakSymbol?: string) {
   const runner = await verifiedRunner();
   const fresh = freshImplicitAccount();
-  const job = await postJob('job.wallet-exit@1.0.0', { wallet: BUYER, recipient: fresh.account }, runner.onchain, BUYER, 'ATOM');
+  const job = await requestQuotes(['ATOM'], { wallet: BUYER, recipient: fresh.account }, runner.onchain, BUYER);
   const q = job.quotes.find((x) => x.ok);
   if (!q) throw new Error('ATOM did not quote: ' + JSON.stringify(job.quotes.map((x) => x.error)));
   say(`${label}: ATOM quotes ${(Number(q.promised) / 1e6).toFixed(4)} USDC (solver quotes are firm amounts)`);

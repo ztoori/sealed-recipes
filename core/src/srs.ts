@@ -1,5 +1,5 @@
 /**
- * SRS-1 (Sealed Recipe Standard) — the no-code / low-code composition standard.
+ * SRS-1 (Sealed Recipe Spec) — the no-code / low-code composition spec.
  * A part declares typed ports; a recipe wires parts into a DAG. This module
  * validates recipes, type-checks wiring, computes cost/capabilities, derives the
  * public listing (what a marketplace may see) and finds drop-in part swaps.
@@ -35,13 +35,6 @@ export function withdrawalRisk(d: Disclosure): Risk {
 const RISK_ORDER: Record<Risk, number> = { low: 0, medium: 1, high: 2 };
 export const maxRisk = (rs: Risk[]): Risk => rs.reduce<Risk>((a, b) => (RISK_ORDER[b] > RISK_ORDER[a] ? b : a), 'low');
 
-export interface JobType {
-  id: string; name: string; description: string;
-  inputs: Record<string, { type: string; label?: string; default?: unknown; options?: string[]; placeholder?: string; required?: boolean; generator?: 'fresh-implicit' }>;
-  output: string;
-  metric: { name: string; unit: 'payment-token'; description: string } | null;
-}
-
 export interface PartManifest {
   id: string; // "<name>@<semver>"
   name: string;
@@ -60,7 +53,7 @@ export interface PartManifest {
 
 export interface TypeDef { description: string; extends: string | null }
 
-export interface Catalog { srs: '1.0'; kind: 'part-catalog'; types: Record<string, TypeDef>; parts: PartManifest[]; jobs?: JobType[] }
+export interface Catalog { srs: '1.0'; kind: 'part-catalog'; types: Record<string, TypeDef>; parts: PartManifest[] }
 
 export interface FormField {
   id: string;
@@ -89,8 +82,6 @@ export interface Recipe {
   nodes: RecipeNode[];
   consts?: Record<string, { type: string; value: unknown }>;
   output: string; // "<node>.<port>"
-  /** job type this recipe competes for (recipe intents); its form must match the job's inputs */
-  implements?: string;
   listing: { price_per_run: string; /** v6: market-driven band; omitted = fixed price */ pricing?: { price_floor: string; price_ceiling: string; target_runs: number }; /** share of the creator's cut kept as the recipe's guarantee deposit (0..10000) */ reserve_bps?: number; bond?: string; settle_mode?: 'final' | 'checkpoint' };
 }
 
@@ -121,6 +112,14 @@ export function isAssignable(types: Record<string, TypeDef>, actual: string, exp
   }
   return false;
 }
+
+/**
+ * Value delivered (SRS-1 §7). A recipe whose result is swap receipts has a measurable value: what reached the
+ * buyer's recipient, in payment-token units. Only such recipes can promise a value in a signed quote and back
+ * that promise with their guarantee deposit; any other recipe quotes its price alone.
+ */
+export const VALUE_TYPE = 'swap.receipts';
+export const measuresValue = (types: Record<string, TypeDef>, outputType?: string | null): boolean => !!outputType && isAssignable(types, outputType, VALUE_TYPE);
 
 export function partIndex(catalog: Catalog): Map<string, PartManifest> {
   return new Map(catalog.parts.map((b) => [b.id, b]));
@@ -239,20 +238,6 @@ export function validateRecipe(recipe: Recipe, catalog: Catalog): ValidationResu
   const risk = maxRisk(partsUsed.map((b) => (parts.get(b)!.disclosure ? withdrawalRisk(parts.get(b)!.disclosure) : 'high')));
   for (const id of new Set(partsUsed)) if (parts.get(id)!.disclosure?.model.kind === 'closed') warn('part.closed-model', `${id} runs on a closed model: its provider can withdraw or reprice it at any time (high withdrawal risk)`);
 
-  if (recipe.implements) {
-    const job = catalog.jobs?.find((j) => j.id === recipe.implements);
-    if (!job) err('job.unknown', `unknown job type "${recipe.implements}"`);
-    else {
-      for (const [id, spec] of Object.entries(job.inputs)) {
-        const f = recipe.form.find((x) => x.id === id);
-        if (!f) err('job.input', `job ${job.id} needs form field "${id}" (${spec.type})`);
-        else if (!isAssignable(types, spec.type, f.type)) err('job.input', `form field "${id}" must accept ${spec.type}`);
-      }
-      for (const f of recipe.form) if (!job.inputs[f.id]) err('job.input', `form field "${f.id}" is not part of job ${job.id}; buyers posting this job will not provide it`);
-      if (outputType && outputType !== job.output) err('job.output', `job ${job.id} expects output ${job.output}, recipe returns ${outputType}`);
-    }
-  }
-
   return { ok: !d.some((x) => x.severity === 'error'), diagnostics: d, order, partsUsed, capabilities, partFees, outputType, risk };
 }
 
@@ -270,7 +255,6 @@ export interface PublicListing {
   pricing: { price_floor: string; price_ceiling: string; target_runs: number } | null;
   reserve_bps: number;
   interface_hash: string;
-  implements: string | null;
   risk: Risk;
   disclosures: { part: string; model: Disclosure['model']; runtime: Disclosure['runtime']; risk: Risk }[];
   privacy: 'confidential' | 'public' | 'n/a';
@@ -312,7 +296,6 @@ export function publicListing(recipe: Recipe, catalog: Catalog): PublicListing {
     pricing: recipe.listing.pricing ?? null,
     reserve_bps: recipe.listing.reserve_bps ?? 0,
     interface_hash: hashObject(iface),
-    implements: recipe.implements ?? null,
     risk: v.risk,
     disclosures: [...new Set(v.partsUsed)].map((id) => { const m = parts.get(id)!; return { part: id, model: m.disclosure.model, runtime: m.disclosure.runtime, risk: withdrawalRisk(m.disclosure) }; }),
     privacy: v.capabilities.includes('wallet:approve') ? (v.partsUsed.some((b) => b.startsWith('intents.confidential-swap')) ? 'confidential' : 'public') : 'n/a',

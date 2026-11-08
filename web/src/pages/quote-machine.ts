@@ -3,7 +3,7 @@
  *
  *   form ──quote──▶ quoting ──▶ quoted ──choose──▶ preparing ──▶ ready ──pay──▶ paying ──▶ running ──▶ finished
  *     ▲               │  └──▶ unquotable            │                 │                    │
- *     └──── edit ─────┴──────────── (inputs changed: the sealed job no longer matches, the quote is dropped) ─┘
+ *     └──── edit ─────┴──────────── (inputs changed: the sealed inputs no longer match, the quote is dropped) ─┘
  *
  * Inputs are locked from the moment a payment is being prepared; "Get another quote" starts over from `form`.
  */

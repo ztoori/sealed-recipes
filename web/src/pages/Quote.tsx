@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import nacl from 'tweetnacl';
 import { seal, open, sealedHash, type SealedEnvelope } from '../../../core/src/seal';
-import { jobHash, openQuote } from '../../../core/src/jobs';
+import { jobHash, openQuote } from '../../../core/src/quotes';
+import { measuresValue } from '../../../core/src/srs';
 import { verifyRunnerAttestation } from '../../../core/src/attestation';
 import { api, ASSET_LABEL, money, PAY_ASSETS, runnerAttestation, short, usd, usePoll } from '../api';
 import { useApp, useStoryOnce } from '../App';
@@ -21,9 +22,8 @@ export function Quote({ ticker }: { ticker: string }) {
   const { acting, story, toast, go } = useApp();
   const once = useStoryOnce();
   const [m] = usePoll<any>(`/api/recipe/${ticker}`, 3000, [ticker]);
-  const [jobs] = usePoll<any[]>('/api/jobs', 30000);
+  const [cat] = usePoll<any>('/api/catalog', 60000);
   const listing = m?.listing;
-  const job = jobs?.find((j) => j.id === listing?.implements);
   const form: any[] = listing?.form ?? [];
   const [phase, dispatch] = useReducer(quoteReducer, { name: 'form' });
   const [values, setValues] = useState<Record<string, string>>({});
@@ -32,7 +32,7 @@ export function Quote({ ticker }: { ticker: string }) {
   const [maxPrice, setMaxPrice] = useState('');
   const [runnerOk, setRunnerOk] = useState<null | { ok: boolean; hardware: boolean }>(null);
   const jobRef = useRef<{ sealed: SealedEnvelope; job_hash: string } | null>(null);
-  const reply = useRef<nacl.BoxKeyPair | null>(null); // one-time key: the runner seals everything about this job and run to it
+  const reply = useRef<nacl.BoxKeyPair | null>(null); // one-time key: the runner seals everything about these inputs and this run to it
   const [allEvents, setEvents] = useState<Ev[]>([]);
   const [shown, setShown] = useState(0);
   const maxUnits = () => (maxPrice.trim() && Number(maxPrice) > 0 ? String(Math.round(Number(maxPrice) * 1e6)) : undefined);
@@ -53,7 +53,7 @@ export function Quote({ ticker }: { ticker: string }) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `fresh-${freshKey.account.slice(0, 8)}.json`; a.click();
   };
 
-  /** Seal the job once to the attested runner, then this recipe quotes from a dry run, signed. */
+  /** Seal the inputs once to the attested runner, then this recipe quotes from a dry run, signed. */
   const getQuote = async () => {
     dispatch({ t: 'quote' });
     setEvents([]); setShown(0);
@@ -62,7 +62,7 @@ export function Quote({ ticker }: { ticker: string }) {
       const { attestation, onchain } = await runnerAttestation(nonce);
       const v = verifyRunnerAttestation(attestation, { nonce, signing_pk: onchain.signing_pk, enc_pk_hex: onchain.enc_pk_hex, codehash: onchain.codehash });
       setRunnerOk({ ok: v.ok, hardware: v.hardware });
-      if (!v.ok) throw new Error('runner attestation failed; refusing to send your job');
+      if (!v.ok) throw new Error('runner attestation failed; refusing to send your inputs');
       const inputs: Record<string, unknown> = {};
       for (const f of form) {
         const raw = (values[f.id] ?? '').trim();
@@ -77,9 +77,7 @@ export function Quote({ ticker }: { ticker: string }) {
       jobRef.current = { sealed, job_hash };
       const { contract_id } = await api('/api/chain/config');
       const mp = maxUnits();
-      const r = await api('/api/jobs', { job_type: listing.implements, sealed_job: sealed, job_hash, buyer: acting, only: ticker, ...(mp ? { max_price: mp } : {}) });
-      const q = r.quotes.find((x: any) => x.recipe_id === ticker);
-      if (!q) { dispatch({ t: 'unquotable', error: 'the recipe was not asked to quote' }); return; }
+      const { quote: q } = await api('/api/quotes', { recipe_id: ticker, sealed_job: sealed, job_hash, buyer: acting, ...(mp ? { max_price: mp } : {}) });
       if (q.ok && q.sealed_quote) {
         // opened with this browser's one-time key; the runner signature is checked against the exact message the contract will verify
         try { const o = openQuote(q.sealed_quote, reply.current.secretKey, { contractId: contract_id, signingPk: onchain.signing_pk, buyer: acting, inputsHash: sealedHash(sealed), jobHash: job_hash, recipeId: ticker }); Object.assign(q, o, { ok: o.verified, error: o.problem }); }
@@ -177,7 +175,7 @@ export function Quote({ ticker }: { ticker: string }) {
   const result = events.find((e) => e.type === 'result')?.data;
   const q = 'q' in phase ? phase.q : null;
   const guaranteed = 'guaranteed' in phase ? phase.guaranteed : true;
-  const metric = !!job?.metric;
+  const metric = !!cat && measuresValue(cat.types, listing?.output_type); // swap receipts: the quote promises a value
   const expired = phase.name === 'quoted' && q && now > Number(BigInt(q.expires_ns) / 1_000_000n);
   const busy = LOCKED.has(phase.name);
   const stage = phase.name === 'finished' ? (settlement?.payouts ? 5 : 4) : phase.name === 'running' ? 3 : phase.name === 'ready' || phase.name === 'paying' ? 2 : phase.name === 'quoted' || phase.name === 'preparing' ? 1 : 0;
@@ -192,10 +190,10 @@ export function Quote({ ticker }: { ticker: string }) {
       <div className="grid runpage">
         <section className="grid">
           <div className="panel">
-            <header><button className="btn ghost sm icon-only" aria-label={'Back to ' + listing.name} onClick={() => go({ page: 'recipes', ticker })}><Icon name="back" size={15} /></button><h2>Your job</h2><span className="spacer" /><span className="small muted">as {acting}</span></header>
+            <header><button className="btn ghost sm icon-only" aria-label={'Back to ' + listing.name} onClick={() => go({ page: 'recipes', ticker })}><Icon name="back" size={15} /></button><h2>Your inputs</h2><span className="spacer" /><span className="small muted">as {acting}</span></header>
             <div className="body grid" style={{ gap: 10 }}>
               <div className="quote-recipe">
-                <Seal job={listing.implements} size={48} />
+                <Seal ticker={ticker} kind={listing.output_type} size={48} />
                 <div style={{ minWidth: 0 }}><b>{listing.name}</b> <span className="tk">{ticker}</span>
                   <div className="tags">
                     <span className="tag">{money(rec.pricePerRun)} / run</span>
@@ -207,7 +205,7 @@ export function Quote({ ticker }: { ticker: string }) {
               <fieldset disabled={locked} className="plainset grid" style={{ gap: 10 }}>
                 {form.map((f) => (
                   <div className="field" key={f.id}>
-                    <label htmlFor={'f-' + f.id}>{f.label}{f.generator === 'fresh-implicit' && <Tip>A new keypair made in this browser. Only the address goes into the sealed job; the key never leaves your device.</Tip>}</label>
+                    <label htmlFor={'f-' + f.id}>{f.label}{f.generator === 'fresh-implicit' && <Tip>A new keypair made in this browser. Only the address goes into your sealed inputs; the key never leaves your device.</Tip>}</label>
                     {f.options ? (
                       <select id={'f-' + f.id} value={values[f.id] ?? ''} onChange={(e) => edit(f.id, e.target.value)}>{f.options.map((o: string) => <option key={o} value={o}>{ASSET_LABEL[o] ?? o}</option>)}</select>
                     ) : f.generator === 'fresh-implicit' ? (
@@ -240,7 +238,7 @@ export function Quote({ ticker }: { ticker: string }) {
             <div className="mini-flow"><span><Icon name="user" size={13} />You</span><Icon name="arrow" size={13} className="arrow-ic" /><span><Icon name="cpu" size={13} />Sealed runner</span><Icon name="arrow" size={13} className="arrow-ic" /><span><Icon name="receipt" size={13} />Signed quote</span></div>
           </div></div>}
           {phase.name === 'quoting' && <div className="panel"><div className="quote-wait"><span className="big-ic"><span className="spinner" style={{ width: 26, height: 26, borderWidth: 3 }} /></span><b>Dry run inside the sealed runner</b><p>Nothing is spent until you pay.</p></div></div>}
-          {phase.name === 'unquotable' && <div className="panel"><Empty icon="alert"><b>{ticker} could not quote this job.</b><div className="small">{phase.error}</div></Empty></div>}
+          {phase.name === 'unquotable' && <div className="panel"><Empty icon="alert"><b>{ticker} could not quote these inputs.</b><div className="small">{phase.error}</div></Empty></div>}
           {q && (
             <div className="panel" id="quote">
               <Head icon="receipt" title={`${ticker}'s quote`} tip="From a dry run inside the sealed runner. The signature is checked in this browser against the exact message the contract will verify."><span className="spacer" /><span className="pill ok"><Icon name="check" size={12} />signature verified</span></Head>
@@ -261,7 +259,7 @@ export function Quote({ ticker }: { ticker: string }) {
                 {phase.name === 'quoted' && !expired && <div className="row wrap">
                   <button id="choose-guaranteed" className="btn lg" onClick={() => choose(true)} title="Its price is locked and its promise is backed by the guarantee deposit"><Icon name="shieldCheck" size={16} />Use this quote{metric ? ' (guaranteed)' : ''}</button>
                   {metric && <button className="btn ghost" onClick={() => choose(false)} title="Pay without the quote: no guarantee, and no promised or delivered value written on-chain">Run without a guarantee</button>}
-                  <Tip wide>The promise is bound to your account and this job. If the run delivers less, the contract pays the shortfall from the guarantee deposit in the same settlement. Right before executing, the runner re-prices the job; if your wallet changed since the quote, it aborts and you are refunded.</Tip>
+                  <Tip wide>The promise is bound to your account and these inputs. If the run delivers less, the contract pays the shortfall from the guarantee deposit in the same settlement. Right before executing, the runner re-prices the run; if your wallet changed since the quote, it aborts and you are refunded.</Tip>
                 </div>}
                 {phase.name === 'preparing' && <div className="row small muted"><span className="spinner" />Getting a payment quote from 1Click</div>}
               </div>

@@ -1,8 +1,8 @@
 /**
- * Job metrics: turn a recipe's output into the value it delivered (or expects to deliver), in payment-token
- * units (USDC, 6 decimals), so quotes from different recipes are comparable and bonds can be enforced.
+ * Value delivered (SRS-1 §7): turn a recipe's swap receipts into the value it delivered (or expects to deliver),
+ * in payment-token units (USDC, 6 decimals), so a quote can promise a value and the guarantee deposit can back it.
+ * Only recipes whose result is swap receipts are measured (`measuresValue` in core/src/srs.ts).
  */
-import type { JobType } from '../../core/src/srs.js';
 
 const USDC = 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
 interface Receipt { status: string; assetOut?: string; amountOutUnits?: string; minAmountOutUnits?: string }
@@ -19,8 +19,8 @@ function toPaymentUnits(asset: string, units: bigint, prices: Prices): bigint {
  *  than the runner asked for; 1Click refunds it and it never executes. */
 const EXECUTED = new Set(['SUCCESS', 'FAILED', 'REFUNDED']);
 
-export function measure(job: JobType | undefined, output: unknown, prices: Prices): { expected: bigint; promised: bigint; delivered: bigint; executed: bigint } {
-  if (!job?.metric || !Array.isArray(output)) return { expected: 0n, promised: 0n, delivered: 0n, executed: 0n };
+export function measure(valued: boolean, output: unknown, prices: Prices): { expected: bigint; promised: bigint; delivered: bigint; executed: bigint } {
+  if (!valued || !Array.isArray(output)) return { expected: 0n, promised: 0n, delivered: 0n, executed: 0n };
   let expected = 0n, promised = 0n, delivered = 0n, executed = 0n;
   for (const r of output as Receipt[]) {
     const asset = r.assetOut ?? USDC;

@@ -1,19 +1,19 @@
 /**
  * Builder kit for the no-code composer and the part builder:
- *  - recipeFromJob / addPartAutoWired / sourcesFor: compose a recipe by adding parts; inputs are wired automatically
- *    to the best type-compatible source, and every wire can be changed afterwards;
+ *  - blankRecipe / addPartAutoWired / sourcesFor / addBuyerField: compose a recipe by adding parts; inputs are wired
+ *    automatically to the best type-compatible source (asking the buyer when nothing earlier provides a value),
+ *    and every wire can be changed afterwards;
  *  - validatePartManifest: SRS-1 §2 conformance of a part manifest (the same rules the catalog's parts pass);
  *  - lintPartSource: static checks on a part's TypeScript source against its manifest. These catch common mistakes;
  *    they are not a sandbox. A part only runs after it is reviewed and shipped in an audited runner release.
  */
-import { isAssignable, partIndex, type Catalog, type Diagnostic, type FormField, type JobType, type PartManifest, type Recipe } from './srs.js';
+import { isAssignable, partIndex, type Catalog, type Diagnostic, type FormField, type PartManifest, type Recipe } from './srs.js';
 
 // ---------------------------------------------------------------- composing
 
-/** A blank recipe whose buyer form is exactly the job type's inputs (SRS-1 §7: a recipe implementing a job must). */
-export function recipeFromJob(job: JobType, creator: string): Recipe {
-  const form: FormField[] = Object.entries(job.inputs).map(([id, f]) => ({ id, ...(f as Omit<FormField, 'id'>) }));
-  return { srs: '1.0', kind: 'recipe', meta: { ticker: '', name: '', creator, description: '' }, form, nodes: [], output: '', implements: job.id,
+/** A blank recipe: no parts and an empty buyer form. The form grows as parts ask for values nothing else provides. */
+export function blankRecipe(creator: string): Recipe {
+  return { srs: '1.0', kind: 'recipe', meta: { ticker: '', name: '', creator, description: '' }, form: [], nodes: [], output: '',
     listing: { price_per_run: '500000', reserve_bps: 1000, bond: '10000000', pricing: { price_floor: '300000', price_ceiling: '1500000', target_runs: 2 } } };
 }
 
@@ -48,6 +48,33 @@ export function bestSource(recipe: Recipe, nodeId: string, type: string, catalog
   return cands.find((s) => s.type === type) ?? cands[0];
 }
 
+/**
+ * Types a buyer can type into a form (SRS-1 §4). Anything else (holdings, plans, receipts) has to come from a part.
+ * Each has a default field id and label, so a value asked from the buyer reads well without editing.
+ */
+export const BUYER_TYPES: Record<string, { id: string; label: string; placeholder?: string }> = {
+  'near.account': { id: 'wallet', label: 'Wallet', placeholder: 'bob.testnet' },
+  'address.near': { id: 'recipient', label: 'Send to' },
+  'asset.id': { id: 'target', label: 'Asset' },
+  usd: { id: 'amount_usd', label: 'Amount (USD)' },
+  percent: { id: 'percent', label: 'Percentage' },
+};
+
+/**
+ * Adds a buyer form field of `type`, or returns the existing one of that type when `reuse` is set.
+ * Ids are unique and lower_snake_case; a NEAR recipient defaults to a fresh address generated in the buyer's browser.
+ */
+export function addBuyerField(recipe: Recipe, type: string, opts: { id?: string; label?: string; reuse?: boolean } = {}): { recipe: Recipe; fieldId: string } {
+  if (opts.reuse) { const f = recipe.form.find((x) => x.type === type); if (f) return { recipe, fieldId: f.id }; }
+  const d = BUYER_TYPES[type] ?? { id: 'value', label: 'Value' };
+  const base = (opts.id ?? d.id).toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^[^a-z_]+/, '') || 'value';
+  let id = base, i = 2; while (recipe.form.some((f) => f.id === id)) id = `${base}_${i++}`;
+  const field: FormField = { id, label: opts.label ?? d.label, type, ...(d.placeholder ? { placeholder: d.placeholder } : {}),
+    ...(type === 'near.account' ? { required: true } : {}),
+    ...(type === 'address.near' ? { required: true, generator: 'fresh-implicit' as const, label: opts.label ?? 'Fresh address (generated in your browser)' } : {}) };
+  return { recipe: { ...recipe, form: [...recipe.form, field] }, fieldId: id };
+}
+
 const nodeIdFor = (m: PartManifest, taken: Set<string>) => {
   const base = m.id.split('@')[0].split('.').pop()!.replace(/[^a-z]/g, '').slice(0, 14) || 'step';
   let id = base, i = 2; while (taken.has(id) || id === 'form' || id === 'const') id = base + i++;
@@ -55,35 +82,48 @@ const nodeIdFor = (m: PartManifest, taken: Set<string>) => {
 };
 
 /**
- * Adds a part and wires each of its inputs to the best compatible source. If the recipe implements a job and the new
- * part produces the job's output type, it becomes the recipe's result. Returns the new recipe and the node id.
+ * Adds a part and wires each of its inputs to the best compatible source. With `askBuyer`, an input nothing earlier
+ * provides becomes a buyer form field (when a buyer can type that type). The newest part at the end of the chain
+ * becomes the recipe's result: it takes over when the current result feeds it, or when there is none yet.
+ * Returns the new recipe, the node id, the inputs still unwired and the buyer fields added.
  */
-export function addPartAutoWired(recipe: Recipe, partId: string, catalog: Catalog, job?: JobType, ui?: { x: number; y: number }): { recipe: Recipe; nodeId: string; unwired: string[] } {
+export function addPartAutoWired(recipe: Recipe, partId: string, catalog: Catalog, opts: { ui?: { x: number; y: number }; askBuyer?: boolean } = {}): { recipe: Recipe; nodeId: string; unwired: string[]; asked: string[] } {
+  const { ui } = opts;
   const m = partIndex(catalog).get(partId); if (!m) throw new Error('unknown part ' + partId);
   const id = nodeIdFor(m, new Set(recipe.nodes.map((n) => n.id)));
   const params = Object.fromEntries(Object.entries(m.params).map(([k, s]) => [k, s.default ?? (s.type === 'number' ? 0 : s.type === 'string[]' ? [] : '')]));
-  const draft: Recipe = { ...recipe, nodes: [...recipe.nodes, { id, part: partId, inputs: {}, params, ui: ui ?? { x: recipe.nodes.length * 270, y: 120 } }] };
+  let draft: Recipe = { ...recipe, nodes: [...recipe.nodes, { id, part: partId, inputs: {}, params, ui: ui ?? { x: recipe.nodes.length * 270, y: 120 } }] };
   const inputs: Record<string, string> = {};
   const unwired: string[] = [];
+  const asked: string[] = [];
   for (const [port, spec] of Object.entries(m.inputs)) {
     const s = bestSource(draft, id, spec.type, catalog);
-    if (s) inputs[port] = s.ref; else unwired.push(port);
+    if (s) inputs[port] = s.ref;
+    else if (opts.askBuyer && BUYER_TYPES[spec.type]) {
+      const a = addBuyerField(draft, spec.type, spec.type === 'near.account' || spec.type === 'address.near' ? {} : { id: port, label: humanize(port) });
+      draft = a.recipe; inputs[port] = `form.${a.fieldId}`; asked.push(a.fieldId);
+    } else unwired.push(port);
   }
   const nodes = draft.nodes.map((n) => (n.id === id ? { ...n, inputs } : n));
-  const outPort = job ? Object.entries(m.outputs).find(([, s]) => isAssignable(catalog.types, s.type, job.output))?.[0] : undefined;
-  return { recipe: { ...draft, nodes, output: outPort ? `${id}.${outPort}` : draft.output }, nodeId: id, unwired };
+  const outPort = Object.keys(m.outputs)[0];
+  const resultNode = draft.output.split('.')[0];
+  const takesOver = !draft.output || Object.values(inputs).some((r) => r.split('.')[0] === resultNode);
+  return { recipe: { ...draft, nodes, output: takesOver && outPort ? `${id}.${outPort}` : draft.output }, nodeId: id, unwired, asked };
 }
 
+const humanize = (port: string) => { const t = port.replace(/_usd$/, ' (USD)').replace(/_/g, ' '); return t.charAt(0).toUpperCase() + t.slice(1); };
+
 /** Parts that could come next: every input can be fed from what the recipe already has. Ranked by usefulness. */
-export function suggestNext(recipe: Recipe, catalog: Catalog, job?: JobType): PartManifest[] {
+export function suggestNext(recipe: Recipe, catalog: Catalog): PartManifest[] {
   const have = sourcesFor(recipe, null, catalog);
   const used = new Set(recipe.nodes.map((n) => n.part));
   const feeds = (m: PartManifest) => Object.values(m.inputs).every((s) => have.some((h) => isAssignable(catalog.types, h.type, s.type)));
   const consumesNew = (m: PartManifest) => Object.values(m.inputs).some((s) => have.some((h) => h.kind === 'node' && isAssignable(catalog.types, h.type, s.type)));
-  const finishes = (m: PartManifest) => !!job && Object.values(m.outputs).some((s) => isAssignable(catalog.types, s.type, job.output));
+  // every input can be fed: from what the recipe already has, or by asking the buyer
+  const askable = (m: PartManifest) => Object.values(m.inputs).every((s) => have.some((h) => isAssignable(catalog.types, h.type, s.type)) || !!BUYER_TYPES[s.type]);
   return catalog.parts
-    .filter((m) => !used.has(m.id) && feeds(m))
-    .map((m) => ({ m, score: (consumesNew(m) ? 2 : 0) + (finishes(m) ? 1 : 0) - (recipe.nodes.length === 0 && m.category !== 'source' ? 3 : 0) }))
+    .filter((m) => !used.has(m.id) && askable(m) && (recipe.nodes.length ? consumesNew(m) : m.category === 'source'))
+    .map((m) => ({ m, score: (feeds(m) ? 2 : 0) + (m.category === 'action' || m.category === 'sink' ? 1 : 0) }))
     .sort((a, b) => b.score - a.score)
     .map((x) => x.m);
 }
@@ -109,7 +149,7 @@ export function validatePartManifest(m: PartManifest, catalog: Catalog, opts: { 
   for (const [kind, ports] of [['input', m.inputs], ['output', m.outputs]] as const) {
     for (const [p, s] of Object.entries(ports ?? {})) {
       if (!portRe.test(p)) err('port.name', `${kind} "${p}": port names are lower_snake_case`, p);
-      if (!catalog.types[s.type]) err('port.type', `${kind} "${p}" has unknown type "${s.type}": use a standard type or propose a new one`, p);
+      if (!catalog.types[s.type]) err('port.type', `${kind} "${p}" has unknown type "${s.type}": use a type from the spec or propose a new one`, p);
     }
   }
   if (!Object.keys(m.outputs ?? {}).length) err('outputs', 'a part must produce at least one output');

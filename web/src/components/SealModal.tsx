@@ -9,21 +9,24 @@ import { Icon } from '../icons';
 
 const rand = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
 
-/** The "seal" moment: verify the runner, encrypt in this browser, publish only ciphertext + listing. */
 /**
+ * The "seal" moment: verify the runner, encrypt in this browser, publish only ciphertext + listing.
+ * With `asVersion`, the sealed recipe is announced as the next version of an already listed recipe instead: it takes
+ * effect after the notice period, and the listing (name, form, parts, price) stays as published.
+ *
  * verifying → verified → sealed → publishing → published, with explicit failure states and retries:
  * verify_failed (retry verify), publish_failed (retry publish with the same ciphertext).
  */
 type Phase = 'verifying' | 'verify_failed' | 'verified' | 'sealed' | 'publishing' | 'publish_failed' | 'published';
 const STAGE: Record<Phase, number> = { verifying: 0, verify_failed: 0, verified: 1, sealed: 2, publishing: 2, publish_failed: 2, published: 3 };
 
-export function SealModal({ recipe, catalog, auto, onClose }: { recipe: Recipe; catalog: Catalog; auto: boolean; onClose: (published: boolean) => void }) {
+export function SealModal({ recipe, catalog, auto, asVersion, onClose }: { recipe: Recipe; catalog: Catalog; auto: boolean; asVersion?: boolean; onClose: (published: boolean) => void }) {
   const [phase, setPhase] = useState<Phase>('verifying');
   const stage = STAGE[phase];
   const [checks, setChecks] = useState<Check[]>([]);
   const [env, setEnv] = useState<SealedEnvelope>();
   const [encPk, setEncPk] = useState('');
-  const [tx, setTx] = useState<{ tx: string; height: number; sealed_hash: string }>();
+  const [tx, setTx] = useState<{ tx: string; height?: number; version?: number; effective_ns?: string }>();
   const [err, setErr] = useState('');
   const started = useRef(false);
 
@@ -42,12 +45,13 @@ export function SealModal({ recipe, catalog, auto, onClose }: { recipe: Recipe; 
   const publish = async (e: SealedEnvelope) => {
     setErr(''); setPhase('publishing');
     try {
-      const listing = publicListing(recipe, catalog);
       // a second copy sealed to the creator's own key (derived from a wallet signature; local demo wallet here),
       // so the creator can reopen and edit any published version from any device
       const who = recipe.meta.creator;
       const creator_copy = seal(recipe, creatorKeyFromSignature(demoWalletSign(who, creatorKeyMessage(who))).publicKeyHex, 'creator-copy');
-      const r = await api('/api/publish', { listing, sealed: e, bond: recipe.listing.bond ?? '0', settle_mode: recipe.listing.settle_mode ?? 'final', creator_copy });
+      const r = asVersion
+        ? await api(`/api/recipes/${recipe.meta.ticker}/update`, { signer: who, sealed: e, creator_copy })
+        : await api('/api/publish', { listing: publicListing(recipe, catalog), sealed: e, bond: recipe.listing.bond ?? '0', settle_mode: recipe.listing.settle_mode ?? 'final', creator_copy });
       setTx(r); setPhase('published'); return true;
     } catch (x) { setErr((x as Error).message); setPhase('publish_failed'); return false; }
   };
@@ -65,7 +69,7 @@ export function SealModal({ recipe, catalog, auto, onClose }: { recipe: Recipe; 
   }, []);
 
   const plaintext = JSON.stringify({ nodes: recipe.nodes.map((n) => ({ id: n.id, part: n.part, inputs: n.inputs, params: n.params })) }, null, 1);
-  const listItems = ['Verify the runner', 'Seal in this browser', 'Publish the commitment', 'Listed'];
+  const listItems = asVersion ? ['Verify the runner', 'Seal in this browser', 'Announce the new version', 'Takes effect after notice'] : ['Verify the runner', 'Seal in this browser', 'Publish the commitment', 'Listed'];
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Seal and publish">
       <div className="sealer">
@@ -84,14 +88,14 @@ export function SealModal({ recipe, catalog, auto, onClose }: { recipe: Recipe; 
             {checks.map((c) => <div key={c.id} className={'check ' + c.status}><span className="i">{c.status === 'pass' ? '✓' : c.status === 'skip' ? '○' : '✕'}</span><span>{c.label}</span>{c.status === 'skip' && <span className="d">{c.detail}</span>}</div>)}
           </div>}
           {env && <div className="small"><span className="muted">on-chain commitment</span><div className="hash">{sealedHash(env)}</div></div>}
-          {tx && <div className="small"><span className="muted">publish_recipe</span><div className="hash">tx {tx.tx} · block {tx.height}</div></div>}
+          {tx && <div className="small"><span className="muted">{asVersion ? `update_sealed · version ${tx.version}` : 'publish_recipe'}</span><div className="hash">tx {tx.tx}{tx.height ? ` · block ${tx.height}` : ''}</div>{asVersion && tx.effective_ns && <div className="muted">takes effect {new Date(Number(BigInt(tx.effective_ns) / 1_000_000n)).toLocaleString()}; buyers keep the current version until then</div>}</div>}
           {err && <div className="diag error">{err}</div>}
           <div className="row wrap">
             {phase === 'verify_failed' && <button className="btn ghost" onClick={() => verify()}>Verify again</button>}
             {phase === 'verified' && !auto && <button className="btn seal" onClick={() => doSeal(encPk)}><Icon name="lock" size={15} />Seal in this browser</button>}
-            {(phase === 'sealed' || phase === 'publish_failed') && !auto && env && <button className="btn" onClick={() => publish(env)}>{phase === 'publish_failed' ? 'Try publishing again' : `Publish ${recipe.meta.ticker}`}</button>}
+            {(phase === 'sealed' || phase === 'publish_failed') && !auto && env && <button className="btn" onClick={() => publish(env)}>{phase === 'publish_failed' ? 'Try publishing again' : asVersion ? `Announce ${recipe.meta.ticker}’s new version` : `Publish ${recipe.meta.ticker}`}</button>}
             {phase === 'publishing' && <span className="small muted">Publishing…</span>}
-            {phase === 'published' && <button className="btn primary" onClick={() => onClose(true)}><Icon name="market" size={15} />Open the listing</button>}
+            {phase === 'published' && <button className="btn primary" onClick={() => onClose(true)}><Icon name="market" size={15} />{asVersion ? 'Done' : 'Open the listing'}</button>}
             {phase !== 'published' && phase !== 'publishing' && (!auto || phase.endsWith('failed')) && <button className="btn ghost" onClick={() => onClose(false)}>{phase === 'publish_failed' || phase === 'verify_failed' ? 'Back to editing' : 'Cancel'}</button>}
           </div>
         </div>

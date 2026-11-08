@@ -133,6 +133,5 @@
     }
   },
   "output": "merge.receipts",
-  "listing": {"price_per_run": "1200000", "reserve_bps": 1000, "bond": "20000000", "settle_mode": "checkpoint", "pricing": {"price_floor": "700000", "price_ceiling": "2400000", "target_runs": 1}},
-  "implements": "job.wallet-exit@1.0.0"
+  "listing": {"price_per_run": "1200000", "reserve_bps": 1000, "bond": "20000000", "settle_mode": "checkpoint", "pricing": {"price_floor": "700000", "price_ceiling": "2400000", "target_runs": 1}}
 }

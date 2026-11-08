@@ -9,7 +9,7 @@ The contract does not change from one backend to another. It only checks these t
 | Contract expects | What it is |
 |---|---|
 | a registered runner: `signing_pk` (ed25519), `enc_pk_hex` (X25519), `codehash` | recipes and buyer inputs are sealed to `enc_pk_hex`; everything below is signed with `signing_pk` |
-| `srs-quote-v3` signatures | quotes from dry runs, bound to buyer, job, sealed inputs, recipe version and price |
+| `srs-quote-v3` signatures | quotes from dry runs, bound to buyer, sealed request and inputs, recipe version and price |
 | `srs-ckpt-v1` signatures | durable progress (and partial billing in checkpoint mode) |
 | `srs-run-v3` signatures | the final report: outcome, delivered value, parts used |
 
@@ -49,4 +49,4 @@ A narrower first step is to run individual untrusted parts as OutLayer WASM jobs
 
 ## Why this matters
 
-These parts are the same on every backend: competing quotes, guarantee deposits, per-part payouts, durable runs and versions. They live in the contract and the SRS-1 standard, not in any one executor. A workflow engine that comes to NEAR becomes another place to run recipes, not a replacement for the marketplace and settlement layer.
+These parts are the same on every backend: signed quotes, guarantee deposits, per-part payouts, durable runs and versions. They live in the contract and the SRS-1 spec, not in any one executor. A workflow engine that comes to NEAR becomes another place to run recipes, not a replacement for the marketplace and settlement layer.

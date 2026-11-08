@@ -1,6 +1,6 @@
 /**
  * Navigation as one explicit state, mirrored in the URL hash so every page can be linked and the back button works.
- *   #/ (landing)   #/recipes[/TICKER]   #/quote/TICKER   #/compose/recipe   #/compose/part[/PART_ID]   #/wallet   #/docs/standard|trust|landscape
+ *   #/ (landing)   #/recipes[/TICKER]   #/quote/TICKER   #/compose/recipe   #/compose/part[/PART_ID]   #/wallet   #/docs/spec|trust|landscape (#/docs/standard still opens the spec)
  */
 export type Route =
   | { page: 'home' }
@@ -8,7 +8,7 @@ export type Route =
   | { page: 'quote'; ticker: string }
   | { page: 'compose'; sub: 'recipe' | 'part'; part?: string }
   | { page: 'wallet' }
-  | { page: 'docs'; sub: 'standard' | 'trust' | 'landscape' };
+  | { page: 'docs'; sub: 'spec' | 'trust' | 'landscape' };
 
 export function parseRoute(hash: string): Route {
   const [page, a, ...rest] = hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
@@ -18,7 +18,7 @@ export function parseRoute(hash: string): Route {
     case 'quote': return a ? { page: 'quote', ticker: a.toUpperCase() } : { page: 'recipes' };
     case 'compose': return a === 'part' ? { page: 'compose', sub: 'part', ...(b ? { part: b } : {}) } : { page: 'compose', sub: 'recipe' };
     case 'wallet': return { page: 'wallet' };
-    case 'docs': return { page: 'docs', sub: a === 'landscape' ? 'landscape' : a === 'trust' ? 'trust' : 'standard' };
+    case 'docs': return { page: 'docs', sub: a === 'landscape' ? 'landscape' : a === 'trust' ? 'trust' : 'spec' };
     default: return a ? { page: 'recipes', ticker: a.toUpperCase() } : { page: 'recipes' };
   }
 }

@@ -147,14 +147,14 @@ export function ComposePart({ part }: { part?: string }) {
           <header><Icon name="shieldCheck" size={16} className="hd-ic" /><h2>The rules</h2><Tip>A recipe author never sees your code, and buyers never see the recipe. What makes that safe is that every part does exactly what its manifest declares, and the runner enforces it.</Tip></header>
           <div className="body small grid" style={{ gap: 6 }}>
             <ul>
-              <li><Icon name="link" size={15} /><span><b>Typed ports</b> <Tip>Inputs and outputs use the standard types, so parts snap together and can be swapped.</Tip></span></li>
+              <li><Icon name="link" size={15} /><span><b>Typed ports</b> <Tip>Inputs and outputs use the spec’s types, so parts snap together and can be swapped.</Tip></span></li>
               <li><Icon name="globe" size={15} /><span><b>Declared hosts only</b> <Tip>The part can only reach the hosts it lists (net:…); only Act parts may ask the buyer to sign (wallet:approve), and they never sign themselves.</Tip></span></li>
               <li><Icon name="eye" size={15} /><span><b>Read-only quotes</b> <Tip>With ctx.mode = "quote" the part must be read-only.</Tip></span></li>
               <li><Icon name="refresh" size={15} /><span><b>Durable</b> <Tip>Save state before any irreversible step; resume after a restart without asking twice.</Tip></span></li>
               <li><Icon name="info" size={15} /><span><b>Disclosure</b> <Tip>Name the model, and say which layers are open, sealed or closed. It sets the withdrawal risk buyers see.</Tip></span></li>
               <li><Icon name="clock" size={15} /><span><b>Limits</b> <Tip>Time, HTTP calls, model calls and output size are capped per run.</Tip></span></li>
             </ul>
-            <button className="linkbtn" onClick={() => go({ page: 'docs', sub: 'standard' })}><Icon name="docs" size={13} />Full standard</button>
+            <button className="linkbtn" onClick={() => go({ page: 'docs', sub: 'spec' })}><Icon name="docs" size={13} />Full spec</button>
           </div>
         </div>
       </aside>

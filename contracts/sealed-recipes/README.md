@@ -13,8 +13,8 @@ What it does:
 - **Pay-per-run through NEAR Intents.** A 1Click swap delivers the payment token with
   `customRecipientMsg = {"action":"run",...}`, which arrives as `ft_transfer_call` → `ft_on_transfer`. The run
   stays in escrow until the runner sends a report.
-- **Recipe intents with bonded quotes.** Recipes compete for a buyer's job with quotes signed by the TEE runner
-  (`srs-quote-v2|…`). A quote is bound to the recipe version, the job, the buyer's sealed inputs and the buyer,
+- **Bonded quotes.** A recipe answers a buyer's sealed request with a quote signed by the TEE runner
+  (`srs-quote-v2|…`). A quote is bound to the recipe version, the request (`job_hash`), the buyer's sealed inputs and the buyer,
   and can back only one run. It names a `cover` (at most `promised`) that the recipe's bond (`{"action":"bond"}`)
   must hold in full; paying the quote locks that cover. If the run delivers less than promised, the shortfall is
   paid to the buyer from the cover in the same settlement. A runner that finds the inputs or market changed since

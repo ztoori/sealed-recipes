@@ -13,7 +13,7 @@
  *   - the wait resumed with the time that was left, not from zero.
  */
 import { open, type SealedEnvelope } from '../core/src/index.js';
-import { api, BASE, freshImplicitAccount, verifiedRunner, postJob, signedQuote } from './lib/client.js';
+import { api, BASE, freshImplicitAccount, verifiedRunner, requestQuotes, signedQuote } from './lib/client.js';
 
 const BUYER = 'carol.testnet';
 const say = (s: string) => console.log(`[durable] ${s}`);
@@ -22,7 +22,7 @@ const usd = (u: string | number | bigint) => '$' + (Number(u) / 1e6).toFixed(4);
 const runner = await verifiedRunner();
 const fresh = freshImplicitAccount();
 const before = await api<{ wallet: { contract_id: string; symbol: string; balance: string }[] }>(`/api/account/${BUYER}`);
-const job = await postJob('job.wallet-exit@1.0.0', { wallet: BUYER, recipient: fresh.account }, runner.onchain, BUYER, 'TRCH');
+const job = await requestQuotes(['TRCH'], { wallet: BUYER, recipient: fresh.account }, runner.onchain, BUYER);
 const q = job.quotes.find((x) => x.ok);
 if (!q) { say('TRCH did not quote: ' + JSON.stringify(job.quotes.map((x) => x.error))); process.exit(1); }
 say(`TRCH quoted: expects ${usd(q.expected)}, promises ${usd(q.promised)} (bond covers ${usd(q.cover)}), settle mode: per checkpoint`);

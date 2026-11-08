@@ -125,6 +125,5 @@
       "price_ceiling": "1500000",
       "target_runs": 2
     }
-  },
-  "implements": "job.concentration-cap@1.0.0"
+  }
 }

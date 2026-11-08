@@ -33,7 +33,7 @@ export function useStoryOnce() {
 
 const STEPS: Record<number, { title: string; body: string }> = {
   1: { title: 'A creator composes and seals “Clean up and protect”', body: 'Five parts snap together, type-checked. The recipe is encrypted in the browser to the attested runner and backed by a $25 guarantee.' },
-  2: { title: 'A buyer finds it and gets a signed quote', body: 'Bob opens CLNP, seals his job once, gets a promise from a private dry run, and pays from Arbitrum via NEAR Intents.' },
+  2: { title: 'A buyer finds it and gets a signed quote', body: 'Bob opens CLNP, seals his inputs once, gets a promise from a private dry run, and pays from Arbitrum via NEAR Intents.' },
   3: { title: 'The sealed workflow runs', body: 'Scam airdrops quarantined by private AI, dust swapped confidentially to a fresh address. Only Bob’s wallet signs.' },
   4: { title: 'Everyone is paid in one receipt', body: 'Protocol, runner, five part authors and the creator settle together; delivery is checked against the promise.' },
 };
@@ -42,7 +42,7 @@ const MENU: [ReturnType<typeof section>, string, string, Route][] = [
   ['recipes', 'Recipes', 'market', { page: 'recipes' }],
   ['compose', 'Compose', 'compose', { page: 'compose', sub: 'recipe' }],
   ['wallet', 'Wallet', 'wallet', { page: 'wallet' }],
-  ['docs', 'Documentation', 'docs', { page: 'docs', sub: 'standard' }],
+  ['docs', 'Documentation', 'docs', { page: 'docs', sub: 'spec' }],
 ];
 
 export function App() {
@@ -120,7 +120,7 @@ export function App() {
         <div className="caption done" role="status">
           <div className="cap-steps" aria-hidden>{[1, 2, 3, 4].map((n) => <i key={n} className="done" />)}</div>
           <div className="stepno"><Icon name="check" size={22} /></div>
-          <div><h3>That was one job, end to end</h3><p>Every step is in the ledger: CLNP’s track record, everyone’s income in Wallet, the proofs in Docs.</p></div>
+          <div><h3>That was one run, end to end</h3><p>Every step is in the ledger: CLNP’s track record, everyone’s income in Wallet, the proofs in Docs.</p></div>
           <button onClick={() => { dispatch({ type: 'stop' }); go({ page: 'recipes', ticker: 'CLNP' }); }}>Open CLNP</button>
         </div>
       )}

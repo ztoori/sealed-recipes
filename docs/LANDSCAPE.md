@@ -1,7 +1,7 @@
 # Landscape: comparable offerings, integrations, and where this project adds value
 
 Sealed Recipes is not a workflow engine. It is a market and settlement layer for **sealed workflows that other
-people pay to run**: buyers post a job, sealed recipes compete with signed and bonded quotes, and one settlement pays
+people pay to run**: buyers pick a recipe and get a signed, bonded quote on their sealed inputs, and one settlement pays
 every part author, the runner and the creator. Several products overlap with pieces of that. This page
 says what each does, where it overlaps, how this project would use it, and what is actually built in this repo.
 
@@ -52,7 +52,7 @@ Facts we could not confirm from a primary source are marked *unverified*.
   confidential compute layer coordinated on-chain.
 - **Overlap.** Private inference (used here), and IronClaw's routines cover triggers for a single agent.
 - **Integration path.** NEAR AI Cloud is already the model backend for this project's AI parts. IronClaw routines
-  could act as the buyer-side trigger that posts jobs on a schedule.
+  could act as the buyer-side trigger that asks for quotes and runs recipes on a schedule.
 - **Status.** NEAR AI Cloud: built (AI parts call it and verify its signatures; local mode uses a mock with real
   secp256k1 signatures and no hardware quote). IronClaw and GPU Marketplace: integration path (not built).
 
@@ -60,7 +60,7 @@ Facts we could not confirm from a primary source are marked *unverified*.
 - **What it is.** A marketplace where AI agents bid on tasks, funds are escrowed, and payment settles in NEAR; built on
   NEAR Intents. Third-party reporting cites several hundred agents and thousands of jobs in 2026 (figures from
   secondary sources; *unverified* by us).
-- **Overlap.** "Post a job, providers compete, escrowed payment" is close to this project's recipe intents.
+- **Overlap.** Escrowed payment for an agent's service is close to this project's paid runs; its open bidding is not something this project does.
 - **Integration path.** List recipes as Agent Market services so that its agents can buy runs (not built).
 - **Status.** Integration path (not built). Requesting new recipes is left to Agent Market itself; this project is for creating, sharing and running recipes.
 
@@ -114,8 +114,8 @@ Among the offerings above, as far as their public documentation shows:
   Buyers pay to run it without seeing it, and the marketplace stores only ciphertext. CRE's confidential workflows hide
   computation from node operators, but the workflow owner is the one who deploys and pays; selling runs of a hidden
   workflow to strangers is not part of its model. (Holds only when the runner runs in a TEE; local mode has none.)
-- **Competing signed quotes on standard job types.** Recipes that implement a job type quote from dry runs inside the
-  runner; quotes are signed, bound to buyer, job and recipe version, and single use.
+- **Signed quotes from sealed dry runs.** A recipe quotes from a dry run inside the runner on the buyer's sealed
+  inputs; quotes are signed, bound to buyer, inputs and recipe version, and single use.
 - **Guaranteed outcomes.** A creator's guarantee deposit (a performance bond) pays the buyer any shortfall against the signed promise, up to the
   quoted cover. Bond safety (conservation, never overdrawn, no bond drain) is model-checked with TLA+ and its
   arithmetic proved with Z3; the proofs are about models tied to the code by conformance tests, not about the compiled
@@ -125,8 +125,7 @@ Among the offerings above, as far as their public documentation shows:
 - **SRS-1 typed parts.** Swappable parts with typed ports, capability limits, resource limits, and disclosure of model,
   instructions, harness and verification with a withdrawal-risk label.
 - **Market-driven prices for workflows.** Each recipe's price per run follows its demand inside a band its creator
-  sets (an EIP-1559-style rule, on-chain and proved), and quotes lock the price; unique recipes for one job type compete
-  on price and promised value. CRE and n8n-style tools price compute, not outcomes.
+  sets (an EIP-1559-style rule, on-chain and proved), and quotes lock the price and the promised value. CRE and n8n-style tools price compute, not outcomes.
 - **No investment features.** Buyers pay for a service and creators post collateral; there are no shares, dividends,
   tokens or trading, so nothing in the product is plausibly a security and any wallet can use it.
 - **Durable runs with partial settlement.** Runs survive runner crashes with exactly-once deposits; in checkpoint mode

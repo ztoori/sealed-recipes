@@ -40,7 +40,7 @@ const uncard = () => page.evaluate(() => document.getElementById('rec-card')?.re
 const shot = (n) => page.screenshot({ path: resolve(out, n) });
 
 await page.goto(BASE); await page.waitForTimeout(1200);
-await card('Sealed Recipes', 'Private workflows for everyday crypto safety: they compete with signed quotes, and every builder gets paid.<br/><span style="color:#f2c14e">Built at NEAR HACKATHON</span>');
+await card('Sealed Recipes', 'Private workflows for everyday crypto safety: signed quotes before you pay, and every builder gets paid.<br/><span style="color:#f2c14e">Built at NEAR HACKATHON</span>');
 await page.waitForTimeout(3500); await uncard();
 await page.waitForTimeout(2500); await shot('01-recipes.png');
 await page.getByRole('button', { name: 'Play the demo story' }).click();
@@ -52,7 +52,7 @@ while (Date.now() - t0 < 150_000) {
   if (shots === 2 && await page.locator('.wallet-modal').count()) { await shot('04-wallet-approval.png'); shots++; }
   if (shots === 3 && await page.getByText('report_run verified').count()) { await page.waitForTimeout(800); await shot('05-execution.png'); shots++; }
   if (shots === 4 && await page.locator('.sankey').count()) { await page.waitForTimeout(1500); await shot('06-settlement.png'); shots++; }
-  if (await page.getByText('That was one job, end to end').count()) break;
+  if (await page.getByText('That was one run, end to end').count()) break;
 }
 await page.waitForTimeout(2000);
 await page.getByRole('button', { name: 'Open CLNP' }).click(); await page.waitForTimeout(3500); await shot('07-recipe-clnp.png');
@@ -65,13 +65,13 @@ await page.getByRole('button', { name: 'Recipes', exact: true }).click(); await 
 await page.fill('input[type=search]', 'contract'); await page.waitForTimeout(800);
 await page.getByText('Contract check before you sign').first().click(); await page.waitForTimeout(2500); await shot('12-recipe-search.png');
 await page.getByRole('button', { name: 'Compose', exact: true }).click(); await page.waitForTimeout(1200);
-await page.getByText('Revoke risky app keys').first().click(); await page.waitForTimeout(800);
+await page.getByRole('button', { name: /New recipe/ }).click(); await page.waitForTimeout(800);
 for (const n of ['Access Key Reader', 'Key Risk Rules', 'Key Revoker']) { await page.getByRole('button', { name: `Add ${n}` }).first().click(); await page.waitForTimeout(900); }
 await shot('10-compose-recipe.png');
 await page.getByRole('tab', { name: /Part/ }).click(); await page.waitForTimeout(800);
 await page.getByText('AI Contract Risk').first().click(); await page.waitForTimeout(1800); await shot('13-compose-part.png');
 await page.waitForTimeout(1500);
-await card('Intents for workflows.', 'Ten recipes for common crypto problems, composed from public parts without code. Sealed recipes compete with signed quotes, backed by each creator’s guarantee deposit. No shares, no tokens: you pay per run. NEAR Intents for payment and confidential swaps, an attested TEE runner, NEAR AI Cloud private models, and one settlement that pays every builder.');
+await card('Sealed workflows, paid per run.', 'Ten recipes for common crypto problems, composed from public parts without code. Each quotes with a signed promise, backed by its creator’s guarantee deposit. No shares, no tokens: you pay per run. NEAR Intents for payment and confidential swaps, an attested TEE runner, NEAR AI Cloud private models, and one settlement that pays every builder.');
 await page.waitForTimeout(4000);
 await ctx.close(); await browser.close();
 

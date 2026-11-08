@@ -23,7 +23,7 @@ Deadline: **Nov 14, 2026, 23:59 UTC** (6:59 pm Toronto). Submissions open Nov 1,
 | Team lead | *you* |
 | Email | *you* (max 2 submissions per email) |
 | Team size | *1 / 2-4 / …* |
-| Tracks | `privacy` (sealed TEE execution, NEAR AI Cloud), `agents` (agents post jobs, parts are paid per call), `defi` (Intents payment, atomic bundles, one-receipt settlement, guarantee deposits), `open` |
+| Tracks | `privacy` (sealed TEE execution, NEAR AI Cloud), `agents` (agents request quotes and pay for runs, parts are paid per call), `defi` (Intents payment, atomic bundles, one-receipt settlement, guarantee deposits), `open` |
 | NEAR wallet address | *your mainnet account* |
 | Repository link | *your public GitHub URL* |
 | Demo post link | *your X post URL* |
@@ -34,12 +34,12 @@ Deadline: **Nov 14, 2026, 23:59 UTC** (6:59 pm Toronto). Submissions open Nov 1,
 Problem: workflows that chain tools, bots and models are the edge, but they are easy to copy, hard to compare on results, and their parts' builders are rarely paid.
 
 Sealed Recipes is intents for workflows, on NEAR:
-- Get a quote: a buyer or agent fills one short form for a standard job, sealed to an attested TEE runner. 10 recipes: wallet cleanup, exits, scam audits, app-key revocation, unstaked NEAR, contract checks, position caps.
-- Compete: every recipe that does that job quotes from a dry run inside the TEE: expected value, a runner-signed promise backed by the creator's guarantee deposit, a signed price, privacy and withdrawal risk. Buyers compare results, not methods.
+- Get a quote: a buyer or agent picks a recipe and fills its one short form, sealed to an attested TEE runner. 10 recipes: wallet cleanup, exits, scam audits, app-key revocation, unstaked NEAR, contract checks, position caps.
+- Quote: the recipe quotes from a dry run inside the TEE: expected value, a runner-signed promise backed by the creator's guarantee deposit, a signed price, privacy and withdrawal risk. Buyers judge results, not methods.
 - Market prices: each recipe's price follows its own demand inside a creator-set band (EIP-1559 rule, on-chain, proved); a quote locks it.
 - Pay with NEAR Intents from any chain: a 1Click EXACT_OUTPUT quote delivers the exact run price to our contract via ft_transfer_call, carrying the signed quote.
 - Run privately: parts (code, agents, NEAR AI Cloud private models) run under resource limits; swaps use confidential intents to a fresh address; results are sealed to the buyer's browser.
-- Settle once: the contract verifies the runner's signed report and pays the protocol, the runner, every part author and the creator in one receipt, and pays any shortfall to the buyer from the deposit. Quotes are single-use and bound to buyer and job, so the deposit can't be drained.
+- Settle once: the contract verifies the runner's signed report and pays the protocol, the runner, every part author and the creator in one receipt, and pays any shortfall to the buyer from the deposit. Quotes are single-use and bound to the buyer and their sealed inputs, so the deposit can't be drained.
 - SRS-1: typed, swappable parts; a no-code composer that wires them; a part builder with conformance checks.
 - No investment features: pay per run, creators post collateral; no shares, tokens or trading.
 
@@ -55,7 +55,7 @@ Attach `docs/media/demo.mp4`, or the screenshots `03-quote.png`, `02-sealed.png`
 ```text
 Your workflow is your edge. Copy it once and it's gone.
 
-Sealed Recipes: intents for workflows. Ask for a job, sealed workflows compete with signed quotes, pay via NEAR Intents, and every builder gets paid in one settlement.
+Sealed Recipes: sealed workflows, paid per run. Pick a recipe, get a signed quote, pay via NEAR Intents, and every builder gets paid in one settlement.
 
 Built at NEAR HACKATHON @NEARProtocol #NEARHackathon
 ```
@@ -72,7 +72,7 @@ Built at NEAR HACKATHON @NEARProtocol #NEARHackathon
 3/ Bob posts "Clean up my wallet". SWPR quotes more USDC but is public and sweeps his wNEAR; CLNP is confidential, backed by a $25 deposit. He picks CLNP, pays $0.75 from Arbitrum, gets $28.02 vs $27.81 promised. 5 part authors, the runner and the creator: one receipt.
 
 4/ Repo (MIT, 143 tests + formal proofs, one-command demo, agent buyer included): <repo link>
-Question for builders: which workflow would you seal and let compete first?
+Question for builders: which workflow would you seal and sell first?
 ```
 
 Optional tags: @NearLegion @NearBuilders.
@@ -101,10 +101,10 @@ Optional tags: @NearLegion @NearBuilders.
 
 | Screen | Say |
 |---|---|
-| Title card | "Your workflow is your edge. Sealed Recipes lets workflows compete for jobs without giving their method away." |
+| Title card | "Your workflow is your edge. Sealed Recipes lets you sell runs of it without giving the method away." |
 | Composer, parts snapping in | "Five parts from five builders, type-checked as they connect. Each part discloses its model and harness, so buyers can see what could be withdrawn." |
 | Seal dialog | "We verify the runner's attestation, seal the recipe in the browser and back its quotes with a guarantee deposit. The chain stores only a hash." |
-| Job form and quotes | "A buyer posts one short job. Every recipe that does it quotes from a sealed dry run: expected value, a signed promise, price, privacy and risk. SWPR offers more but is public; Bob picks CLNP." |
+| Form and quote | "A buyer fills one short form. The recipe quotes from a sealed dry run: expected value, a signed promise, price, privacy and risk. Bob pays CLNP with its quote." |
 | Intents payment, execution | "He pays seventy-five cents from Arbitrum through NEAR Intents. The runner checks the commitments, quarantines two scam airdrops and routes four confidential swaps to a fresh address." |
 | Settlement | "One receipt pays five builders, the runner and the creator, and tops up the guarantee deposit. Delivery beat the promise, so the deposit stays untouched." |
 | Recipes, Trust | "Prices are set by demand: a busy recipe gets dearer, an idle one cheaper, inside its creator's band, by an on-chain rule we proved. Each recipe shows its track record and the deposit behind its quotes. No shares, no tokens: you pay for a run." |

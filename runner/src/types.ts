@@ -45,7 +45,7 @@ export interface PartCtx {
   requestApproval: (req: ApprovalRequest) => Promise<ApprovalResult>;
   endpoints: Endpoints;
   secrets: { nearAiKey?: string; oneClickJwt?: string };
-  /** 'quote' = dry run for recipe intents: read-only, no approvals, swaps are priced but not executed */
+  /** 'quote' = dry run for a signed quote: read-only, no approvals, swaps are priced but not executed */
   mode: 'run' | 'quote';
   /** Durable runs: the state this part saved before the runner stopped, when the run resumes inside this part. */
   resumeState?: unknown;

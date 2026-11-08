@@ -68,21 +68,19 @@ export function Icon({ name, size = 18, className, title, fill }: { name: IconNa
   );
 }
 
-/** Each job type gets an icon and a wax hue, so recipes for the same job read as a family. */
-const JOBS: Record<string, [string, number]> = {
-  'job.wallet-cleanup': ['sparkles', 42],
-  'job.wallet-exit': ['dollar', 152],
-  'job.wallet-audit': ['shieldCheck', 352],
-  'job.airdrop-claim': ['gift', 292],
-  'job.key-cleanup': ['key', 214],
-  'job.staking-claim': ['layers', 186],
-  'job.contract-check': ['fileSearch', 24],
-  'job.concentration-cap': ['pie', 262],
+/** What a recipe hands the buyer, by result type: the icon on its seal. */
+const RESULT_ICON: Record<string, string> = {
+  'swap.receipts': 'sparkles', 'swap.plan': 'dollar', report: 'fileSearch', 'key.list': 'key', 'stake.list': 'layers',
+  'contract.verdict': 'shieldCheck', 'token.flags': 'shieldCheck', 'token.holdings': 'pie',
 };
-export const jobLook = (id?: string | null): { icon: string; hue: number } => {
-  const k = (id ?? '').split('@')[0];
-  const [icon, hue] = JOBS[k] ?? ['box', 40];
-  return { icon, hue };
+/** What a recipe hands the buyer, in words. */
+export const RESULT_LABEL: Record<string, string> = { 'swap.receipts': 'Delivers funds', report: 'Report' };
+
+/** A recipe's seal: its icon comes from its result type, its wax hue from its short code, so every recipe has its own. */
+export const recipeLook = (ticker?: string | null, resultType?: string | null): { icon: string; hue: number } => {
+  let h = 40;
+  if (ticker) { h = 0; for (const c of ticker) h = (h * 31 + c.charCodeAt(0)) % 360; }
+  return { icon: RESULT_ICON[resultType ?? ''] ?? 'box', hue: h };
 };
 
 /** Part categories: the five kinds of step in a recipe. */

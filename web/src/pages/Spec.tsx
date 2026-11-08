@@ -9,8 +9,8 @@ import { Icon } from '../icons';
 import { Stat, Tip } from '../ui';
 
 /**
- * Documentation › Standard: SRS-1, the format every part, job and recipe here is written in. The full text is
- * docs/SRS-1.md itself (rendered, not copied), next to the live registries it defines: types, job types, parts.
+ * Documentation › Spec: SRS-1, the format every part and recipe here is written in. The full text is
+ * docs/SRS-1.md itself (rendered, not copied), next to the live registries it defines: types and parts.
  */
 const slug = (s: string) => s.toLowerCase().replace(/<[^>]+>/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const md = new Marked({
@@ -26,7 +26,7 @@ const md = new Marked({
   },
 });
 
-export function Standard() {
+export function Spec() {
   const { go } = useApp();
   const [cat] = usePoll<Catalog>('/api/catalog', 60000);
   const [listings] = usePoll<any[]>('/api/listings', 10000);
@@ -37,7 +37,7 @@ export function Standard() {
   const authors = new Set(parts.map((p) => p.author)).size;
   const usedBy = (t: string) => parts.filter((p) => [...Object.values(p.inputs), ...Object.values(p.outputs)].some((s) => s.type === t)).length;
   const download = () => {
-    const blob = new Blob([JSON.stringify({ srs: '1.0', types: cat?.types, jobs: cat?.jobs, parts }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ srs: '1.0', types: cat?.types, parts }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'srs-1-catalog.json'; a.click();
   };
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -48,9 +48,9 @@ export function Standard() {
         <div className="body grid" style={{ gap: 12 }}>
           <div className="row between wrap" style={{ alignItems: 'flex-start' }}>
             <div style={{ maxWidth: 820 }}>
-              <div className="tags" style={{ marginTop: 0 }}><span className="tag"><Icon name="globe" size={13} />Open standard</span><span className="tag">v1.0</span><span className="tag">MIT</span></div>
-              <h1 className="listing-name">SRS-1: the Sealed Recipe Standard</h1>
-              <p className="lede">One shared format, so parts from different builders snap together, rival recipes compete on the same job, and every builder is paid in one settlement. <Tip wide>A part declares its typed inputs and outputs, what it may reach and what it discloses. A job type is a request any wallet or agent can post. A recipe wires parts together and is sealed. A listing is all the market ever sees. The standard is open so other marketplaces, runners, wallets and agents can adopt it.</Tip></p>
+              <div className="tags" style={{ marginTop: 0 }}><span className="tag"><Icon name="globe" size={13} />Open spec</span><span className="tag">v1.0</span><span className="tag">MIT</span></div>
+              <h1 className="listing-name">SRS-1: the Sealed Recipe Spec</h1>
+              <p className="lede">One shared format, so parts from different builders snap together into recipes, and every builder is paid in one settlement. <Tip wide>A part declares its typed inputs and outputs, what it may reach and what it discloses. A recipe wires parts together and is sealed. A signed quote prices one buyer’s sealed inputs. A listing is all the market ever sees. The spec is open so other marketplaces, runners, wallets and agents can adopt it.</Tip></p>
             </div>
             <div className="row wrap" style={{ gap: 6 }}>
               <button className="btn primary" onClick={() => go({ page: 'compose', sub: 'part' })}><Icon name="code" size={15} />Build a part</button>
@@ -60,7 +60,6 @@ export function Standard() {
           </div>
           <div className="std-stats">
             <Stat icon="link" value={Object.keys(cat?.types ?? {}).length} label="types" />
-            <Stat icon="flag" value={cat?.jobs?.length ?? 0} label="job types" />
             <Stat icon="box" value={parts.length} label={`parts · ${authors} builders`} />
             <Stat icon="market" value={listings?.length ?? 0} label="recipes listed" />
             <Stat icon="shieldCheck" value={`${conform}/${parts.length}`} label="conform" tone={conform === parts.length ? 'gain' : 'loss'} tip="Parts passing the §9 conformance checks, run in this browser." />
@@ -71,9 +70,9 @@ export function Standard() {
       <div className="grid std-docs">
         {[
           ['box', 'Part manifest', 'by a builder', 'Typed ports, declared capabilities, a fee, a disclosure of model and layers, and per-run limits. Registered on-chain by hash.', '§2'],
-          ['flag', 'Job type', 'a public interface', 'A standard request: inputs, output and how value is measured. Recipes compete to fulfil it with signed quotes.', '§7'],
           ['lock', 'Recipe', 'sealed by a creator', 'A typed graph of parts with the creator’s settings and prompts. Encrypted to the attested runner; only its hash is on-chain.', '§3, §5'],
           ['eye', 'Public listing', 'derived, never typed', 'Form, parts, price and the risk and privacy labels computed from the parts. All a buyer or marketplace sees.', '§4'],
+          ['receipt', 'Signed quote', 'by the runner', 'A price for one buyer’s sealed inputs, from a dry run. For a recipe that delivers swapped funds it also promises a value, backed by the guarantee deposit.', '§7'],
         ].map(([ic, t, who, d, ref]) => (
           <div key={t} className="panel"><div className="body"><span className="dico"><Icon name={ic} size={18} /></span><b>{t} <Tip>{d}</Tip></b><span className="small muted">{who} · {ref}</span></div></div>
         ))}
@@ -86,19 +85,10 @@ export function Standard() {
             {Object.entries(cat?.types ?? {}).map(([k, t]) => <tr key={k}><td><code>{k}</code>{t.extends && <div className="muted">extends <code>{t.extends}</code></div>}</td><td>{t.description}</td><td className="r">{usedBy(k)}</td></tr>)}
           </tbody></table>
         </div>
-        <div className="panel">
-          <header><Icon name="flag" size={16} className="hd-ic" /><h2>Job types</h2><span className="small muted">§7</span></header>
-          <table className="small fixed"><thead><tr><th style={{ width: '34%' }}>Job</th><th>Buyer gives → gets</th><th style={{ width: '16%' }} className="r">Recipes</th></tr></thead><tbody>
-            {(cat?.jobs ?? []).map((j) => {
-              const n = (listings ?? []).filter((l) => l.implements === j.id).length;
-              return <tr key={j.id}><td><b>{j.name}</b><div className="muted"><code>{j.id}</code></div></td><td>{Object.values(j.inputs).map((f: any) => <code key={f.label} title={f.label}>{f.type}</code>).reduce((a: any[], c, i) => (i ? [...a, ', ', c] : [c]), [])} → <code>{j.output}</code>{j.metric && <div className="muted">value measured as {j.metric.name}</div>}</td><td className="r">{n || <span className="muted">none yet</span>}</td></tr>;
-            })}
-          </tbody></table>
-        </div>
       </div>
 
       <div className="grid std-text">
-        <nav className="panel toc" aria-label="Standard contents">
+        <nav className="panel toc" aria-label="Spec contents">
           <header><Icon name="docs" size={16} className="hd-ic" /><h2>Contents</h2></header>
           <ol>{toc.map((t) => <li key={t.id}><button onClick={() => jump(t.id)}>{t.label.replace(/^\d+\.\s*/, '')}</button></li>)}</ol>
           <div className="small muted" style={{ padding: '0 16px 14px' }}>Rendered from docs/SRS-1.md</div>

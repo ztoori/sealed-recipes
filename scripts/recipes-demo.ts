@@ -6,15 +6,15 @@
  *   TRIM  sell only the excess of any position above a cap, privately, to a fresh address
  * Each one is quoted (dry run in the runner, signed), paid through the Intents mock and run with the buyer's approval.
  */
-import { api, freshImplicitAccount, payAndRun, postJob, verifiedRunner } from './lib/client.js';
+import { api, freshImplicitAccount, payAndRun, requestQuotes, verifiedRunner } from './lib/client.js';
 
 const BUYER = 'bob.testnet';
 const say = (s: string) => console.log(`[recipes] ${s}`);
 const runner = (await verifiedRunner()).onchain;
 const checks: [string, boolean][] = [];
 const ok = (label: string, cond: boolean) => { checks.push([label, cond]); say(`${cond ? '✔' : '✘'} ${label}`); };
-const quoteOf = async (job: string, inputs: Record<string, unknown>, only: string) => {
-  const j = await postJob(job, inputs, runner, BUYER, only);
+const quoteOf = async (only: string, inputs: Record<string, unknown>) => {
+  const j = await requestQuotes([only], inputs, runner, BUYER);
   const q = j.quotes.find((x: any) => x.ok);
   if (!q) throw new Error(`${only} did not quote: ${JSON.stringify(j.quotes.map((x: any) => x.error))}`);
   return { j, q };
@@ -23,7 +23,7 @@ const items = (r: any) => (r?.output?.items ?? []) as { label: string; detail: s
 
 // KEYS
 {
-  const { j, q } = await quoteOf('job.key-cleanup@1.0.0', { wallet: BUYER }, 'KEYS');
+  const { j, q } = await quoteOf('KEYS', { wallet: BUYER });
   say(`KEYS quote: ${q.details?.output?.title ?? 'report'}`);
   const run = await payAndRun(j, q, BUYER);
   const it = items(run.result);
@@ -33,7 +33,7 @@ const items = (r: any) => (r?.output?.items ?? []) as { label: string; detail: s
 }
 // STAK
 {
-  const { j, q } = await quoteOf('job.staking-claim@1.0.0', { wallet: BUYER }, 'STAK');
+  const { j, q } = await quoteOf('STAK', { wallet: BUYER });
   say(`STAK quote: expected ${(Number(q.expected) / 1e6).toFixed(2)} USDC of NEAR, promised ${(Number(q.promised) / 1e6).toFixed(2)}`);
   const run = await payAndRun(j, q, BUYER, { onEvent: (e) => { if (e.type === 'part_log' && /NOT in the current|unbonding|paid out/.test(e.data.msg)) say(`  ${e.data.msg}`); } });
   const rec = (run.result?.output ?? []) as any[];
@@ -42,7 +42,7 @@ const items = (r: any) => (r?.output?.items ?? []) as { label: string; detail: s
 }
 // CHEK
 for (const [contract, want] of [['near-gift-claim.near', 'high'], ['v2.ref-finance.near', 'low']] as const) {
-  const { j, q } = await quoteOf('job.contract-check@1.0.0', { contract }, 'CHEK');
+  const { j, q } = await quoteOf('CHEK', { contract });
   const run = await payAndRun(j, q, BUYER);
   say(`CHEK ${contract}: ${run.result?.output?.title}`);
   for (const x of items(run.result).slice(0, 4)) say(`  ${x.label}: ${x.detail}`);
@@ -52,7 +52,7 @@ for (const [contract, want] of [['near-gift-claim.near', 'high'], ['v2.ref-finan
 {
   const fresh = freshImplicitAccount();
   const TRADER = 'dana.testnet';
-  const j0 = await postJob('job.concentration-cap@1.0.0', { wallet: TRADER, max_share: 25, target: 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1', recipient: fresh.account }, runner, TRADER, 'TRIM');
+  const j0 = await requestQuotes(['TRIM'], { wallet: TRADER, max_share: 25, target: 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1', recipient: fresh.account }, runner, TRADER);
   const q = j0.quotes.find((x: any) => x.ok); if (!q) throw new Error('TRIM did not quote');
   say(`TRIM quote for ${TRADER}: expected ${(Number(q.expected) / 1e6).toFixed(2)} USDC`);
   const before = (await api<{ wallet: { symbol: string; balance: string }[] }>(`/api/account/${TRADER}`)).wallet.find((w) => w.symbol === 'wNEAR')!.balance;

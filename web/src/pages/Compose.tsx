@@ -3,7 +3,7 @@ import { ComposeRecipe } from './ComposeRecipe';
 import { ComposePart } from './ComposePart';
 import { Icon } from '../icons';
 
-/** Compose: build a recipe from parts (no code), or build a part (code, to the SRS-1 standard). */
+/** Compose: build a recipe from parts (no code), or build a part (code, to the SRS-1 spec). */
 export function Compose({ sub, part }: { sub: 'recipe' | 'part'; part?: string }) {
   const { go } = useApp();
   return (

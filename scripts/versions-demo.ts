@@ -15,7 +15,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { open, seal, sealedHash, USDC_NEAR, type Recipe, type SealedEnvelope } from '../core/src/index.js';
-import { api, BASE, freshImplicitAccount, verifiedRunner, postJob, signedQuote, creatorCopy } from './lib/client.js';
+import { api, BASE, freshImplicitAccount, verifiedRunner, requestQuotes, signedQuote, creatorCopy } from './lib/client.js';
 
 const BUYER = 'carol.testnet';
 const T = 'SWPR';
@@ -41,7 +41,7 @@ const waitS = Math.ceil((Number(BigInt(sched.effective_ns) / 1_000_000n) - Date.
 say(`announced version ${sched.version} (${short(sched.sealed_hash)}): takes effect in ${waitS} s (recipe_update_scheduled, tx ${short(sched.tx)})`);
 
 // during the notice period: quote + run use version 1
-const job = () => postJob('job.wallet-cleanup@1.0.0', { wallet: BUYER, threshold_usd: 30, target: USDC_NEAR, recipient: freshImplicitAccount().account }, runner.onchain, BUYER, T);
+const job = () => requestQuotes([T], { wallet: BUYER, threshold_usd: 30, target: USDC_NEAR, recipient: freshImplicitAccount().account }, runner.onchain, BUYER);
 const pay = async (j: Awaited<ReturnType<typeof job>>, q: any) => {
   const r = await api<{ run_id: string; run_token: string }>('/api/runs/quote', { recipe_id: T, buyer: BUYER, pay_asset: 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near', refund_to: '0xC0c0000000000000000000000000000000000001', sealed_inputs: j.sealed_job, signed_quote: signedQuote(q) });
   await api(`/api/runs/${r.run_id}/pay?token=${r.run_token}`, {});

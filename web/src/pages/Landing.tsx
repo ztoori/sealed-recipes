@@ -11,7 +11,6 @@ import { Seal } from '../ui';
 export function Landing() {
   const { go, story } = useApp();
   const [listings] = usePoll<any[]>('/api/listings', 15000);
-  const [jobs] = usePoll<any[]>('/api/jobs', 30000);
   const [cat] = usePoll<any>('/api/catalog', 60000);
   const parts: any[] = cat?.parts ?? [];
   const builders = new Set(parts.map((p) => p.author)).size;
@@ -20,7 +19,7 @@ export function Landing() {
   const best = [...(listings ?? [])].filter((l) => l.record?.perRun).sort((a, b) => b.record.perRun.creator - a.record.perRun.creator)[0];
   const uses = (id: string) => (listings ?? []).filter((l) => l.parts.includes(id)).length;
   const popular = [...parts].sort((a, b) => uses(b.id) - uses(a.id))[0];
-  const served = (jobs ?? []).filter((j) => j.recipes.length);
+  const creators = new Set((listings ?? []).map((l) => l.creator)).size;
   return (
     <div className="lp">
       <section className="lp-hero">
@@ -37,7 +36,7 @@ export function Landing() {
           </div>
           <dl className="lp-stats" aria-label="Live from this market">
             <div><dt>recipes</dt><dd>{listings?.length ?? '–'}</dd></div>
-            <div><dt>jobs covered</dt><dd>{served.length || '–'}</dd></div>
+            <div><dt>creators</dt><dd>{creators || '–'}</dd></div>
             <div><dt>parts by {builders || '–'} builders</dt><dd>{parts.length || '–'}</dd></div>
           </dl>
         </div>
@@ -48,7 +47,7 @@ export function Landing() {
         <div className="lp-copy">
           <span className="lp-who"><Icon name="user" size={15} />If you use crypto</span>
           <h2 id="lp-buy">Crypto has a thousand pitfalls. Step around them.</h2>
-          <p>Pick a recipe for the job, see what it promises, press run. Good habits, without the homework.</p>
+          <p>Pick a recipe, see what it promises, press run. Good habits, without the homework.</p>
           <ul className="lp-beats">
             <li><Icon name="receipt" size={17} />A signed promise before you pay</li>
             <li><Icon name="shield" size={17} />Delivered less than promised? The guarantee covers the gap.</li>
@@ -57,11 +56,11 @@ export function Landing() {
           <button className="linkbtn" onClick={() => go({ page: 'recipes' })}>Find a recipe<Icon name="arrow" size={14} /></button>
         </div>
         <div className="lp-visual">
-          <div className="lp-jobs">
-            {(jobs ?? []).slice(0, 8).map((j) => (
-              <button key={j.id} className={'lp-job' + (j.recipes.length ? '' : ' open')} onClick={() => go({ page: 'recipes', ...(j.recipes[0] ? { ticker: j.recipes[0] } : {}) })} title={j.description}>
-                <Seal job={j.id} size={34} />
-                <span>{j.name}</span>
+          <div className="lp-recipes">
+            {(listings ?? []).slice(0, 8).map((l) => (
+              <button key={l.ticker} className="lp-recipe" onClick={() => go({ page: 'recipes', ticker: l.ticker })} title={l.description}>
+                <Seal ticker={l.ticker} kind={l.output_type} size={34} />
+                <span>{l.name}</span>
               </button>
             ))}
           </div>
@@ -87,7 +86,7 @@ export function Landing() {
                 <span key={c} className="lp-link" style={{ ['--cc' as any]: CAT[c].color, ['--i' as any]: i }}><Icon name={CAT[c].icon} size={15} />{CAT[c].label}</span>
               ))}
             </div>
-            <div className="lp-wax"><Seal job={best?.implements ?? 'job.wallet-cleanup'} ticker={best?.ticker ?? 'SEAL'} size={96} /></div>
+            <div className="lp-wax"><Seal ticker={best?.ticker ?? 'SEAL'} kind={best?.output_type ?? 'swap.receipts'} size={96} /></div>
             {best && <div className="lp-earn"><span>{best.ticker} creator keeps</span><b>{money(best.record.perRun.creator, 2)}</b><span>of every {money(best.record.pricePerRun, 2)} run</span></div>}
           </div>
         </div>
@@ -99,7 +98,7 @@ export function Landing() {
           <h2 id="lp-build">You make the tools. Earn every time they’re used.</h2>
           <p>Publish a part once. Every recipe that includes it pays your fee, run after run.</p>
           <ul className="lp-beats">
-            <li><Icon name="link" size={17} />Built to an open standard, so it fits anywhere</li>
+            <li><Icon name="link" size={17} />Built to an open spec, so it fits anywhere</li>
             <li><Icon name="vault" size={17} />Registered on-chain with your fee</li>
             <li><Icon name="users" size={17} />Paid in the same receipt as everyone else</li>
           </ul>
@@ -125,20 +124,20 @@ export function Landing() {
         <div>
           <span className="lp-who"><Icon name="cpu" size={15} />If you’re an AI agent</span>
           <h2 id="lp-agents">Fluent in API.</h2>
-          <p>Everything a person does here, an agent can do on its own: post a job, weigh signed quotes against its rules, pay, and check what was delivered.</p>
+          <p>Everything a person does here, an agent can do on its own: ask recipes for signed quotes, weigh them against its rules, pay, and check what was delivered.</p>
         </div>
         <pre className="lp-term" aria-label="Agent flow over the API"><code>
 <span className="c">{'# the whole market, machine-readable (SRS-1)'}</span>{'\n'}
 <span className="k">GET </span>{'/api/catalog'}{'\n\n'}
-<span className="c">{'# post a sealed job, get a signed quote from every recipe that does it'}</span>{'\n'}
-<span className="k">POST</span>{' /api/jobs        { job_type, sealed_job, max_price }'}{'\n\n'}
+<span className="c">{'# seal your inputs once, ask a recipe for a signed quote'}</span>{'\n'}
+<span className="k">POST</span>{' /api/quotes      { recipe_id, sealed_job, max_price }'}{'\n\n'}
 <span className="c">{'# pick by policy, pay through NEAR Intents, stream the run'}</span>{'\n'}
 <span className="k">POST</span>{' /api/runs/quote  { recipe_id, signed_quote, … }'}
         </code></pre>
       </section>
 
       <section className="lp-end" id="lp-s-end">
-        <Seal job="job.wallet-cleanup" ticker="CLNP" size={72} className="lp-end-seal" />
+        <Seal ticker="CLNP" kind="swap.receipts" size={72} className="lp-end-seal" />
         <h2>See the whole loop in ninety seconds.</h2>
         <p>A creator seals a recipe, a buyer runs it, and everyone gets paid in a single receipt.</p>
         <div className="lp-cta">
@@ -196,7 +195,7 @@ function Loop() {
       <div className="lp-node build" style={{ left: '14%', top: '20%' }}><span className="ring"><Icon name="box" size={22} /></span><b>Builders</b><small>make parts</small></div>
       <div className="lp-node sell" style={{ left: '86%', top: '20%' }}><span className="ring"><Icon name="compose" size={22} /></span><b>Creators</b><small>seal recipes</small></div>
       <div className="lp-node buy" style={{ left: '50%', top: '86%' }}><span className="ring"><Icon name="user" size={22} /></span><b>Buyers</b><small>people or agents</small></div>
-      <div className="lp-core"><Seal job="job.wallet-cleanup" ticker="RUN" size={132} /></div>
+      <div className="lp-core"><Seal ticker="RUN" kind="swap.receipts" size={132} /></div>
     </div>
   );
 }

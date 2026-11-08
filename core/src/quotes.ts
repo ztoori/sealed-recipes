@@ -1,6 +1,6 @@
 /**
- * Recipe intents (SRS-1 §5). A buyer posts a job of a standard type; every recipe implementing that type
- * quotes for it from a dry run inside the TEE runner.
+ * Quotes (SRS-1 §7). A buyer seals their inputs once to the attested runner and asks a recipe for a quote; the
+ * runner prices it from a dry run and signs it. The sealed request is called the "job" on-chain.
  *
  * job_hash = sha256(canonical({ inputs, salt })). The salt is random and only travels sealed, so the hash that
  * ends up on-chain cannot be brute-forced back to the buyer's wallet.

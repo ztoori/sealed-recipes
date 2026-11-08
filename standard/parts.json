@@ -538,7 +538,7 @@
       "name": "Merge Receipts",
       "category": "transform",
       "author": "tidy.testnet",
-      "summary": "Combines the receipts of two swap stages into one result, so a multi-stage workflow is measured as one job.",
+      "summary": "Combines the receipts of two swap stages into one result, so a multi-stage workflow is measured as one result.",
       "inputs": {
         "a": {
           "type": "swap.receipts"

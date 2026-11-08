@@ -5,7 +5,7 @@ import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { hexToBytes, bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import {
-  settlementSplit, LocalLedger, checkpointMessage, RUN_TIMEOUT_NS, type Outcome, runReportMessage, quoteMessage, withdrawalRisk, labelsFromParts, jobHash, base64, seal, open, sealedHash,
+  settlementSplit, LocalLedger, checkpointMessage, RUN_TIMEOUT_NS, type Outcome, runReportMessage, quoteMessage, withdrawalRisk, labelsFromParts, measuresValue, jobHash, base64, seal, open, sealedHash,
   validateRecipe, compatibleSwaps, swapPart, publicListing, recoverSigner, signEip191, addressFromPublicKey,
   verifyChat, sha256Hex, OneClick, runPaymentQuoteRequest, USDC_NEAR, reportData, verifyRunnerAttestation,
   bondLock, bondRelease, bondSettle, bondDeposit, nextPrice, creatorKeyFromSignature, creatorKeyMessage, demoWalletSign,
@@ -14,7 +14,7 @@ import {
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 
 const json = (p: string) => JSON.parse(readFileSync(new URL('../' + p, import.meta.url), 'utf8'));
-const catalog = { ...json('standard/parts.json'), jobs: json('standard/jobs.json').jobs } as Catalog;
+const catalog = json('standard/parts.json') as Catalog;
 const recipe = (t: string) => json(`seed/recipes/${t}.json`) as Recipe;
 
 test('settlement vectors match the contract spec (shared with Rust tests)', () => {
@@ -334,11 +334,10 @@ test('SRS-1 disclosure: open-weights parts are low risk, closed models high, rem
   assert.equal(publicListing(recipe('SWPR'), catalog).privacy, 'public');
 });
 
-test('recipe intents: a recipe must match the job type it claims', () => {
+test('quotes: value delivered is measured for swap-receipt results only; the sealed request hash is salted', () => {
   for (const t of ['CLNP', 'SWPR', 'EXIT', 'SAFE']) assert.ok(validateRecipe(recipe(t), catalog).ok, t);
-  const bad = { ...recipe('CLNP'), implements: 'job.wallet-exit@1.0.0' };
-  const v = validateRecipe(bad, catalog);
-  assert.ok(v.diagnostics.some((d) => d.code === 'job.input' && /threshold_usd/.test(d.message)));
+  assert.equal(measuresValue(catalog.types, validateRecipe(recipe('CLNP'), catalog).outputType), true);
+  assert.equal(measuresValue(catalog.types, validateRecipe(recipe('SAFE'), catalog).outputType), false);
   assert.notEqual(jobHash({ wallet: 'bob.testnet' }, 'a'), jobHash({ wallet: 'bob.testnet' }, 'b'), 'salted');
 });
 

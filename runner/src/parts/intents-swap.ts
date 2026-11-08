@@ -54,7 +54,7 @@ export const intentsSwap: PartHandler = async (inputs, ctx) => {
   }
   if (!quotes.length) { ctx.log('nothing to swap'); return { receipts: [] }; }
   if (ctx.mode === 'quote') {
-    // dry run for recipe intents: priced by real (dry) 1Click quotes, nothing is deposited or signed
+    // dry run for a quote: priced by real (dry) 1Click quotes, nothing is deposited or signed
     const receipts = quotes.map(({ h, q }) => ({ symbol: h.symbol, assetIn: h.assetId, assetOut: target, amountIn: q.quote.amountInFormatted, amountOut: q.quote.amountOutFormatted, amountOutUnits: q.quote.amountOut, minAmountOutUnits: q.quote.minAmountOut ?? q.quote.amountOut, status: 'QUOTED', confidentiality: confidential ? 'basic' : 'public' }));
     ctx.log(`priced ${receipts.length} swap(s) without executing`);
     return { receipts };

@@ -20,12 +20,12 @@ import { fileURLToPath } from 'node:url';
 import { utf8ToBytes } from '@noble/hashes/utils.js';
 import { open, seal, sealedHash, base64, type SealedEnvelope } from '../../core/src/seal.js';
 import { runReportMessage, quoteMessage, checkpointMessage, type Outcome } from '../../core/src/ledger.js';
-import { jobHash, type JobPayload } from '../../core/src/jobs.js';
+import { jobHash, type JobPayload } from '../../core/src/quotes.js';
 import { measure, fetchPrices, creditedDelivered } from './metrics.js';
 import { hashObject, sha256Hex } from '../../core/src/canonical.js';
 import { reportData, type RunnerAttestation } from '../../core/src/attestation.js';
 import { computeCodehash, loadCatalog } from '../../core/src/codehash.js';
-import { validateRecipe, type Recipe } from '../../core/src/srs.js';
+import { validateRecipe, measuresValue, type Recipe } from '../../core/src/srs.js';
 import { execute, parseRewrites, type ResumePoint } from './executor.js';
 import { loadKeys } from './keys.js';
 import type { ApprovalRequest, ApprovalResult } from './types.js';
@@ -147,7 +147,7 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
     let inputs: Record<string, unknown> | undefined = opened.inputs;
     replyTo = opened.reply_to;
     emit(job, 'decrypted', { nodes: recipe.nodes.length, note: 'recipe + inputs decrypted inside the runner; plaintext never leaves this process' });
-    const jobType = catalog.jobs?.find((j) => j.id === recipe?.implements);
+    const valued = measuresValue(catalog.types, v.outputType); // swap receipts: value delivered is measured (SRS-1 §7)
     const secrets = { nearAiKey: env.NEAR_AI_API_KEY, oneClickJwt: env.ONECLICK_JWT };
 
     // ---- durable runs: open the last checkpoint (if resuming) and set up checkpointing ----
@@ -190,9 +190,9 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
     // (e.g. the buyer moved funds out after paying), abort with a refund instead of paying out the bond.
     const quotedPromise = BigInt(run.promised ?? '0');
     let fresh = freshSaved ?? 0n; // the promise re-measured right before executing (bonded runs only)
-    if (!resumePoint && run.job_hash && quotedPromise > 0n && jobType) {
+    if (!resumePoint && run.job_hash && quotedPromise > 0n && valued) {
       const dry = await execute(`recheck-${job.runId}`, recipe, inputs, { catalog, rewrites, mode: 'quote', emit: () => {}, secrets, requestApproval: async () => ({ approved: false, txHashes: [] }) });
-      fresh = dry.ok ? measure(jobType, dry.output, await fetchPrices(ONECLICK)).promised : 0n;
+      fresh = dry.ok ? measure(valued, dry.output, await fetchPrices(ONECLICK)).promised : 0n;
       const okToRun = fresh * 10_000n >= quotedPromise * RECHECK_MIN_BPS;
       emit(job, 'rechecked', { ok: okToRun, threshold_bps: Number(RECHECK_MIN_BPS) });
       priv('recheck', { fresh_promised: fresh.toString(), quoted_promised: quotedPromise.toString() });
@@ -218,7 +218,7 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
     const output = res.output;
     recipe = undefined; inputs = undefined; // drop plaintext
 
-    const m = res.ok ? measure(jobType, output, await fetchPrices(ONECLICK).catch(() => new Map())) : undefined;
+    const m = res.ok ? measure(valued, output, await fetchPrices(ONECLICK).catch(() => new Map())) : undefined;
     // bonded runs report delivered value credited with anything the buyer withheld after the re-check
     const delivered = m ? (fresh > 0n ? creditedDelivered(m.delivered, fresh, m.executed) : m.delivered) : 0n;
     if (m && delivered !== m.delivered) priv('withheld', { measured: m.delivered.toString(), credited: delivered.toString() });
@@ -276,7 +276,7 @@ app.post('/runs/:id/resume', auth, (req, res) => {
   res.status(202).json({ ok: true });
 });
 /**
- * Recipe intents: dry-run one recipe for a posted job and sign a quote. Read-only: swaps are priced with dry
+ * Quotes: dry-run one recipe on the buyer's sealed request and sign a quote. Read-only: swaps are priced with dry
  * 1Click quotes and nothing is signed for the buyer. Everything describing the buyer's wallet is sealed to them.
  */
 app.post('/quotes', auth, async (req, res) => {
@@ -293,12 +293,10 @@ app.post('/quotes', auth, async (req, res) => {
     const p = open<JobPayload>(sealed_job, keys.box.secretKey);
     if (!/^[0-9a-f]{64}$/.test(p?.reply_to ?? '')) return fail('sealed job must include a reply_to key');
     if (jobHash(p.inputs, p.salt) !== job_hash) return fail('job_hash does not match the sealed job');
-    const jobType = catalog.jobs?.find((j) => j.id === recipe!.implements);
-    if (!jobType) return fail('recipe does not implement a job type');
     const dry = await execute(`quote-${recipe_id}`, recipe, p.inputs, { catalog, rewrites, mode: 'quote', emit: () => {}, secrets: { nearAiKey: env.NEAR_AI_API_KEY, oneClickJwt: env.ONECLICK_JWT }, requestApproval: async () => ({ approved: false, txHashes: [] }) });
     recipe = undefined;
     if (!dry.ok) return fail(dry.error ?? 'dry run failed');
-    const m = measure(jobType, dry.output, await fetchPrices(ONECLICK));
+    const m = measure(measuresValue(catalog.types, v.outputType), dry.output, await fetchPrices(ONECLICK));
     // the bond backs the promise up to what is free right now; the contract re-checks bond >= cover at payment
     const free = BigInt(onChain.bond_available ?? '0');
     // v6: the quote locks the recipe's current list price (market-driven, inside the creator's band); the contract

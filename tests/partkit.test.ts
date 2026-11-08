@@ -1,13 +1,13 @@
-/** Builder kit: every catalog part conforms to SRS-1; every seed recipe can be built in the composer from its job's form by adding its parts. */
+/** Builder kit: every catalog part conforms to SRS-1; every seed recipe can be built in the composer from a blank recipe by adding its parts. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { addPartAutoWired, lintPartSource, partTemplate, recipeFromJob, sourcesFor, validatePartManifest, validateRecipe, isAssignable, type Catalog, type Recipe } from '../core/src/index.js';
+import { addBuyerField, addPartAutoWired, blankRecipe, lintPartSource, partTemplate, sourcesFor, suggestNext, validatePartManifest, validateRecipe, isAssignable, type Catalog, type Recipe } from '../core/src/index.js';
 
 const root = join(import.meta.dirname, '..');
 const json = (p: string) => JSON.parse(readFileSync(join(root, p), 'utf8'));
-const catalog = { ...json('standard/parts.json'), jobs: json('standard/jobs.json').jobs } as Catalog;
+const catalog = json('standard/parts.json') as Catalog;
 const recipes: Recipe[] = [...readdirSync(join(root, 'seed/recipes')).map((f) => json(`seed/recipes/${f}`))];
 
 test('partkit: every catalog part manifest conforms to SRS-1 §2', () => {
@@ -46,17 +46,14 @@ test('partkit: the source checks reject fetch, env access and non-durable approv
   assert.deepEqual(t, []);
 });
 
-test('partkit: all 10 seed recipes can be composed from parts: job form + parts added in order, every wire available', () => {
+test('partkit: all 10 seed recipes can be composed from parts: buyer form + parts added in order, every wire available', () => {
   assert.equal(recipes.length, 10);
   for (const r of recipes) {
-    const job = catalog.jobs!.find((j) => j.id === r.implements)!;
-    assert.ok(job, `${r.meta.ticker} implements a job`);
-    // the buyer form is the job's inputs (types and ids)
-    assert.deepEqual(r.form.map((f) => [f.id, f.type]), Object.entries(job.inputs).map(([id, f]) => [id, f.type]), r.meta.ticker);
-    // rebuild by adding each part with auto-wiring, then rewire any port whose seed wiring differs, from the offered sources
-    let b: Recipe = { ...recipeFromJob(job, r.meta.creator), meta: r.meta, consts: r.consts };
+    // rebuild from a blank recipe with the seed's buyer form, adding each part with auto-wiring, then rewire any port
+    // whose seed wiring differs, from the offered sources
+    let b: Recipe = { ...blankRecipe(r.meta.creator), meta: r.meta, form: r.form, consts: r.consts };
     for (const n of r.nodes) {
-      const added = addPartAutoWired(b, n.part, catalog, job);
+      const added = addPartAutoWired(b, n.part, catalog);
       // the composer names nodes itself; map ours to the seed's id for comparison
       b = { ...added.recipe, nodes: added.recipe.nodes.map((x) => (x.id === added.nodeId ? { ...x, id: n.id, params: n.params } : x)), output: added.recipe.output.replace(`${added.nodeId}.`, `${n.id}.`) };
       for (const [port, ref] of Object.entries(n.inputs)) {
@@ -74,10 +71,9 @@ test('partkit: all 10 seed recipes can be composed from parts: job form + parts 
 test('partkit: auto-wiring alone produces a valid recipe for every seed recipe and picks its result', () => {
   let same = 0, total = 0;
   for (const r of recipes) {
-    const job = catalog.jobs!.find((j) => j.id === r.implements)!;
-    let b: Recipe = { ...recipeFromJob(job, 'x.testnet'), meta: r.meta, consts: r.consts };
+    let b: Recipe = { ...blankRecipe('x.testnet'), meta: r.meta, form: r.form, consts: r.consts };
     const ids: string[] = [];
-    for (const n of r.nodes) { const a = addPartAutoWired(b, n.part, catalog, job); b = a.recipe; ids.push(a.nodeId); }
+    for (const n of r.nodes) { const a = addPartAutoWired(b, n.part, catalog); b = a.recipe; ids.push(a.nodeId); }
     const v = validateRecipe(b, catalog);
     assert.ok(v.ok, `${r.meta.ticker}: ${v.diagnostics.map((d) => d.message).join('; ')}`);
     assert.ok(b.output, `${r.meta.ticker} has a result`);
@@ -85,4 +81,23 @@ test('partkit: auto-wiring alone produces a valid recipe for every seed recipe a
   }
   console.log(`# auto-wiring matched ${same}/${total} of the hand-made wires`);
   assert.ok(same / total > 0.9);
+});
+
+test('partkit: from a blank recipe, parts ask the buyer for what nothing else provides', () => {
+  const clnp = recipes.find((r) => r.meta.ticker === 'CLNP')!;
+  let b = blankRecipe('x.testnet');
+  assert.ok(suggestNext(b, catalog).every((m) => m.category === 'source'), 'a blank recipe starts with a Read part');
+  for (const n of clnp.nodes) b = addPartAutoWired(b, n.part, catalog, { askBuyer: true }).recipe;
+  b = { ...b, meta: { ...b.meta, ticker: 'NEWR', name: 'New recipe' } };
+  const v = validateRecipe(b, catalog);
+  assert.ok(v.ok, v.diagnostics.map((d) => d.message).join('; '));
+  // the buyer form was built from the parts' inputs: one wallet, one fresh recipient, plus what the parts asked for
+  assert.equal(b.form.filter((f) => f.type === 'near.account').length, 1);
+  const to = b.form.find((f) => f.type === 'address.near')!;
+  assert.equal(to.generator, 'fresh-implicit');
+  // the last part at the end of the chain is the result
+  assert.equal(v.outputType, 'swap.receipts');
+  // reusing a field of a type, or adding a second one with a unique id
+  assert.equal(addBuyerField(b, 'near.account', { reuse: true }).fieldId, 'wallet');
+  assert.equal(addBuyerField(b, 'near.account').fieldId, 'wallet_2');
 });

@@ -75,6 +75,5 @@
       "price_ceiling": "600000",
       "target_runs": 2
     }
-  },
-  "implements": "job.key-cleanup@1.0.0"
+  }
 }

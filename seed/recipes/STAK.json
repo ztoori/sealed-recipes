@@ -53,6 +53,5 @@
       "price_ceiling": "900000",
       "target_runs": 2
     }
-  },
-  "implements": "job.staking-claim@1.0.0"
+  }
 }

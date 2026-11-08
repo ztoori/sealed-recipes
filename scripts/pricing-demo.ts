@@ -2,17 +2,16 @@
  * Market-driven pricing (contract v6), against a running demo (`npm run test:pricing` uses 15-second periods).
  *
  * SAFE (scam-airdrop audit) has a list price of $0.15 in a $0.12–$0.40 band and a target of 2 paid runs per period.
- * Real buyers post real audit jobs, get signed quotes and pay through NEAR Intents. The script checks that:
+ * Real buyers ask an audit recipe for signed quotes and pay through NEAR Intents. The script checks that:
  *   - every quote is signed at the recipe's current list price;
  *   - a busy period (4 paid runs, twice the target) raises the price by exactly 12.5% when the period ends;
  *   - the next quotes lock the new price, and settlement still pays every party exactly the price charged;
  *   - a buyer's max price keeps a recipe that is now too dear from even being asked to quote;
  *   - idle periods pull the price back down, never below the floor.
  */
-import { api, BASE, verifiedRunner, postJob, signedQuote } from './lib/client.js';
+import { api, BASE, verifiedRunner, requestQuotes, signedQuote } from './lib/client.js';
 
 const T = 'SAFE';
-const JOB = 'job.wallet-audit@1.0.0';
 const BUYERS = ['bob.testnet', 'carol.testnet', 'dave.testnet', 'erin.testnet'];
 const say = (s: string) => console.log(`[pricing] ${s}`);
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
@@ -25,10 +24,10 @@ const rec = async () => (await api<{ record: Rec }>(`/api/recipe/${T}`)).record;
 const units = (usdAmount: number) => BigInt(Math.round(usdAmount * 1e6));
 const runner = await verifiedRunner();
 
-/** one real paid run: post the job, open the signed quote, pay through 1Click with it, wait for settlement */
+/** one real paid run: ask for a quote, open it, pay through 1Click with it, wait for settlement */
 async function buy(buyer: string) {
   // an audit is read-only, so any buyer can audit any wallet; the demo world has two funded wallets
-  const job = await postJob(JOB, { wallet: buyer === 'carol.testnet' || buyer === 'erin.testnet' ? 'carol.testnet' : 'bob.testnet' }, runner.onchain, buyer, T);
+  const job = await requestQuotes([T], { wallet: buyer === 'carol.testnet' || buyer === 'erin.testnet' ? 'carol.testnet' : 'bob.testnet' }, runner.onchain, buyer);
   const q = job.quotes.find((x) => x.recipe_id === T);
   if (!q?.ok) throw new Error(`no quote from ${T}: ${q?.error}`);
   const r = await api<{ run_id: string; run_token: string }>('/api/runs/quote', { recipe_id: T, buyer, pay_asset: 'nep141:wrap.near', refund_to: buyer, sealed_inputs: job.sealed_job, signed_quote: signedQuote(q) });
@@ -74,7 +73,7 @@ const total = settled ? settled.payouts.reduce((a, p) => a + BigInt(p.amount), 0
 check(`settlement at the market price pays out exactly ${usd(p1)} (payouts + reserve)`, total === p1 && BigInt(settled!.price) === p1);
 
 const cap = p0; // a buyer who won't pay more than the old price
-const capped = await postJob(JOB, { wallet: 'carol.testnet' }, runner.onchain, 'carol.testnet', T, cap);
+const capped = await requestQuotes([T], { wallet: 'carol.testnet' }, runner.onchain, 'carol.testnet', cap);
 const cq = capped.quotes.find((x) => x.recipe_id === T);
 check(`with max price ${usd(cap)}, ${T} at ${usd(p1)} is not asked to quote ("${cq?.error}")`, !!cq && !cq.ok && /above your max price/.test(cq.error ?? ''));
 

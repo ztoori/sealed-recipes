@@ -67,6 +67,5 @@
       "price_ceiling": "400000",
       "target_runs": 3
     }
-  },
-  "implements": "job.contract-check@1.0.0"
+  }
 }

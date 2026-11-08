@@ -207,7 +207,7 @@ Adds `aborted: u64`.
 - `run_requested` Run gains `expected: U128`.
 - `run_refunded.reason` is one of `runner_reported_failure`, `runner_aborted`, `timeout`.
 
-### v2 (recipe intents, bonded quotes, parts)
+### v2 (signed quotes, bonded quotes, parts)
 
 What changed from v1. Where v3 differs (quote message and fields, `cover`, report outcomes), v3 applies.
 
@@ -220,9 +220,9 @@ change in behaviour:
 event `block_registered`→`part_registered`, payout role `block:<id>`→`part:<id>`, error strings
 `part id must match ^[a-z0-9._@-]{1,64}$`, `recipe needs at least one part`, `parts_used not part of recipe`.
 
-#### Recipe intents: a buyer posts a job, recipes compete with signed quotes
-Off-chain, every listed recipe that implements the job's type does a **dry run** inside the TEE runner and
-returns a quote: the value it expects to deliver, in payment-token units (`promised`). The runner signs it:
+#### Signed quotes: a recipe quotes a buyer's sealed request
+Off-chain, the recipe the buyer asks does a **dry run** inside the TEE runner on the buyer's sealed request (the
+"job") and returns a quote: the value it expects to deliver, in payment-token units (`promised`). The runner signs it:
 
 ```
 srs-quote-v1|<contract_account_id>|<recipe_id>|<job_hash>|<promised>|<expires_ns>
@@ -235,6 +235,9 @@ inputs before executing. The buyer picks a quote and pays with
 after the v1 run checks: `job_hash` must be 64 lowercase hex (`job_hash must be 64 lowercase hex`), the signature
 must verify against the recipe's runner key (`invalid quote signature`), and `now <= expires_ns` (`quote expired`).
 Failures follow the v1 `on_behalf_of` rules (credit and `transfer_rejected`, or panic).
+
+(SRS-1 once also had *job types* that grouped recipes answering the same request; they were removed. The contract
+never knew about them: `job_hash` is only the hash of one buyer's sealed request.)
 
 #### Bonds: quotes backed by money
 - `ft_on_transfer` msg `{"action":"bond","recipe_id":"CLNP"}`. Anyone may add to a recipe's bond (usually the

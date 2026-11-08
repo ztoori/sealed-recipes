@@ -380,11 +380,6 @@ app.get('/api/account/:account', (req, res) => {
 });
 app.get('/api/intents/log', (_, res) => j(res, mocks.oneclick.log.slice(-60)));
 
-// ---- recipe intents: post a job, recipes compete with signed quotes ----
-const MAX_QUOTES_PER_JOB = 5; // dry runs cost compute: cap the fan-out…
-const JOBS_PER_MINUTE = 12; //   …and rate-limit job posts per client
-const jobLog = new Map<string, number[]>();
-app.get('/api/jobs', (_, res) => j(res, (catalog.jobs ?? []).map((jt) => ({ ...jt, recipes: [...listings.values()].filter((l) => l.implements === jt.id).map((l) => l.ticker) }))));
 /** Part internals for the part builder: every part in this demo is public, so its manifest and source are served. */
 app.get('/api/parts/:id/source', (req, res) => {
   const m = catalog.parts.find((p) => p.id === req.params.id);
@@ -394,30 +389,29 @@ app.get('/api/parts/:id/source', (req, res) => {
   j(res, { id: m.id, path: m.implementation, source: src, helpers, visibility: 'public' });
 });
 
-app.post('/api/jobs', guard(async (req, res) => {
+// ---- quotes: the buyer seals their inputs once and asks a recipe for a signed quote ----
+const QUOTES_PER_MINUTE = 12; // dry runs cost compute: rate-limit quote requests per client
+const quoteLog = new Map<string, number[]>();
+app.post('/api/quotes', guard(async (req, res) => {
   const ip = req.ip ?? 'local';
   const now = Date.now();
-  const recent = (jobLog.get(ip) ?? []).filter((t) => now - t < 60_000);
-  if (recent.length >= JOBS_PER_MINUTE) throw new LedgerError('too many jobs posted in the last minute');
-  jobLog.set(ip, [...recent, now]);
-  const { job_type, sealed_job, job_hash, only, buyer, max_price } = req.body as { job_type: string; sealed_job: SealedEnvelope; job_hash: string; only?: string; buyer: string; max_price?: string };
+  const recent = (quoteLog.get(ip) ?? []).filter((t) => now - t < 60_000);
+  if (recent.length >= QUOTES_PER_MINUTE) throw new LedgerError('too many quote requests in the last minute');
+  quoteLog.set(ip, [...recent, now]);
+  const { recipe_id, sealed_job, job_hash, buyer, max_price } = req.body as { recipe_id: string; sealed_job: SealedEnvelope; job_hash: string; buyer: string; max_price?: string };
   if (max_price !== undefined && !/^\d+$/.test(String(max_price))) throw new LedgerError('max_price must be an integer amount of the payment token');
   if (typeof buyer !== 'string' || !/^[a-z0-9._-]{2,64}$/.test(buyer)) throw new LedgerError('buyer account required: quotes are bound to the account that pays');
-  if (!catalog.jobs?.some((jt) => jt.id === job_type)) throw new LedgerError('unknown job type');
-  if (!/^[0-9a-f]{64}$/.test(job_hash ?? '') || sealed_job?.purpose !== 'inputs') throw new LedgerError('expected a sealed job and its job_hash');
-  const candidates = [...listings.values()].filter((l) => l.implements === job_type && (!only || l.ticker === only)).slice(0, MAX_QUOTES_PER_JOB);
-  if (!candidates.length) { j(res, { quotes: [] }); return; }
-  const quotes = await Promise.all(candidates.map(async (l) => {
-    const r = ledger.get_recipe(l.ticker)!;
-    // buyer's price cap: a recipe listed above it isn't asked to quote (no dry run, no compute spent)
-    const over = max_price !== undefined && r.price_per_run > BigInt(max_price);
-    const q = over ? { ok: false, error: `list price $${(Number(r.price_per_run) / USDC).toFixed(4)} is above your max price`, sealed_quote: undefined }
-      : await backend.quote({ recipe_id: l.ticker, sealed_recipe: currentSealed(l.ticker), sealed_job, job_hash, buyer });
-    // relay only ciphertext: the quote's values describe the buyer's wallet and are sealed to the buyer's reply key
-    return { recipe_id: l.ticker, ok: !!q.ok, error: q.error, sealed_quote: q.sealed_quote, listing: { ticker: l.ticker, name: l.name, creator: l.creator, price_per_run: r.price_per_run.toString(), price_floor: r.price_floor.toString(), price_ceiling: r.price_ceiling.toString(), privacy: l.privacy, risk: l.risk, disclosures: l.disclosures, parts: l.parts },
-      track: { runs: r.runs, failed: r.failed, promised_total: r.promised_total, delivered_total: r.delivered_total, compensated_total: r.compensated_total, aborted: r.aborted, bond_available: r.bond_available } };
-  }));
-  j(res, { quotes });
+  if (!/^[0-9a-f]{64}$/.test(job_hash ?? '') || sealed_job?.purpose !== 'inputs') throw new LedgerError('expected sealed inputs and their job_hash');
+  const l = listings.get(String(recipe_id));
+  const r = l && ledger.get_recipe(l.ticker);
+  if (!l || !r) throw new LedgerError('unknown recipe');
+  // buyer's price cap: a recipe listed above it isn't asked to quote (no dry run, no compute spent)
+  const over = max_price !== undefined && r.price_per_run > BigInt(max_price);
+  const q = over ? { ok: false, error: `list price $${(Number(r.price_per_run) / USDC).toFixed(4)} is above your max price`, sealed_quote: undefined }
+    : await backend.quote({ recipe_id: l.ticker, sealed_recipe: currentSealed(l.ticker), sealed_job, job_hash, buyer });
+  // relay only ciphertext: the quote's values describe the buyer's wallet and are sealed to the buyer's reply key
+  j(res, { quote: { recipe_id: l.ticker, ok: !!q.ok, error: q.error, sealed_quote: q.sealed_quote, listing: { ticker: l.ticker, name: l.name, creator: l.creator, price_per_run: r.price_per_run.toString(), price_floor: r.price_floor.toString(), price_ceiling: r.price_ceiling.toString(), privacy: l.privacy, risk: l.risk, disclosures: l.disclosures, parts: l.parts, output_type: l.output_type },
+    track: { runs: r.runs, failed: r.failed, promised_total: r.promised_total, delivered_total: r.delivered_total, compensated_total: r.compensated_total, aborted: r.aborted, bond_available: r.bond_available } } });
 }));
 
 // ---- runs ----
