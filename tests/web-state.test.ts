@@ -34,9 +34,9 @@ test('story: steps only move forward from the step they were called in; replay s
   assert.deepEqual(s, { run: 1, step: 1 });
   s = storyReducer(s, { type: 'advance', from: 1 }); s = storyReducer(s, { type: 'advance', from: 1 });
   assert.equal(s.step, 2, 'a stale advance from step 1 is ignored');
-  for (const f of [2, 3, 4] as const) s = storyReducer(s, { type: 'advance', from: f });
-  assert.equal(s.step, 5);
-  assert.equal(storyReducer(s, { type: 'advance', from: 5 }).step, 5);
+  for (const f of [2, 3, 4, 5, 6, 7] as const) s = storyReducer(s, { type: 'advance', from: f });
+  assert.equal(s.step, 8, 'seven chapters, then done');
+  assert.equal(storyReducer(s, { type: 'advance', from: 8 }).step, 8);
   assert.deepEqual(storyReducer(s, { type: 'start' }), { run: 2, step: 1 });
   assert.equal(storyReducer({ run: 1, step: 3 }, { type: 'stop' }).step, 0);
 });

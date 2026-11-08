@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { demoMs } from '../pace';
 import { nextPrice } from '../../../core/src/pricing';
 import { useApp } from '../App';
 import { Icon } from '../icons';
@@ -21,6 +22,16 @@ function Playground() {
   const [pattern, setPattern] = useState<keyof typeof PATTERNS>('rush');
   const [target, setTarget] = useState(3);
   const [hover, setHover] = useState<number | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const { story } = useApp();
+  // demo story, chapter 5: a rush, a slow launch, then nobody comes
+  useEffect(() => {
+    if (story.step !== 5) return;
+    const seq: (keyof typeof PATTERNS)[] = ['rush', 'launch', 'idle'];
+    const ts = [setTimeout(() => box.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), demoMs(1200)),
+      ...seq.map((k, i) => setTimeout(() => { setPattern(k); setHover(null); }, demoMs(2200 + i * 3200)))];
+    return () => ts.forEach(clearTimeout);
+  }, [story.step, story.run]);
   const runs = PATTERNS[pattern].runs;
   const prices = useMemo(() => {
     const out: bigint[] = [START];
@@ -34,7 +45,7 @@ function Playground() {
   const i = hover ?? n - 1;
   const change = Number(prices[i + 1] - prices[i]) / Number(prices[i]);
   return (
-    <div className="pg">
+    <div className="pg" ref={box}>
       <div className="pg-controls">
         <div className="pg-patterns" role="radiogroup" aria-label="Demand">
           {Object.entries(PATTERNS).map(([k, p]) => <button key={k} role="radio" aria-checked={k === pattern} className={k === pattern ? 'on' : ''} onClick={() => { setPattern(k as keyof typeof PATTERNS); setHover(null); }}><Icon name={p.icon} size={14} />{p.label}</button>)}

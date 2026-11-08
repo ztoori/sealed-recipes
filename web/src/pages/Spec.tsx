@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { demoMs } from '../pace';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Marked, type Tokens } from 'marked';
 import spec from '../../../docs/SRS-1.md?raw';
@@ -54,7 +55,13 @@ function polish(html: string): string {
 }
 
 export function Spec() {
-  const { go } = useApp();
+  const { go, story } = useApp();
+  // demo story, chapter 7: the four promises every recipe keeps
+  useEffect(() => {
+    if (story.step !== 7) return;
+    const t = setTimeout(() => document.querySelector('ol.promises')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), demoMs(1500));
+    return () => clearTimeout(t);
+  }, [story.step, story.run]);
   const [cat] = usePoll<Catalog>('/api/catalog', 60000);
   const html = useMemo(() => polish(md.parse(spec) as string), []);
   const toc = useMemo(() => [...spec.matchAll(/^## (.+)$/gm)].map((m) => ({ id: 'srs-' + slug(m[1]), label: m[1] })), []);

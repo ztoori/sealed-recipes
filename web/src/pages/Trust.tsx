@@ -3,6 +3,7 @@ import { verifyRunnerAttestation } from '../../../core/src/attestation';
 import type { Check } from '../../../core/src/nearai';
 import { api, runnerAttestation, short, usePoll } from '../api';
 import { useApp } from '../App';
+import { demoMs } from '../pace';
 import { Icon } from '../icons';
 import { Seal, Tip } from '../ui';
 import type { Catalog } from '../../../core/src/srs';
@@ -11,7 +12,7 @@ import { RecipeFilm, type FilmListing } from '../components/RecipeFilm';
 const rand = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
 
 export function Trust() {
-  const { mode, go } = useApp();
+  const { go, story } = useApp();
   const [cat] = usePoll<Catalog>('/api/catalog', 60000);
   const [film, setFilm] = useState('');
   const [att, setAtt] = useState<{ checks: Check[]; a: any; onchain: any } | null>(null);
@@ -28,12 +29,21 @@ export function Trust() {
     setAtt({ checks: verifyRunnerAttestation(attestation, { nonce, signing_pk: onchain.signing_pk, enc_pk_hex: onchain.enc_pk_hex, codehash: onchain.codehash }).checks, a: attestation, onchain });
   };
   useEffect(() => { verify(); }, []);
+  // demo story, step 6: the ciphertext and the on-chain record for CLNP, then the runner's attestation
+  useEffect(() => {
+    if (story.step !== 6) return;
+    setPick('CLNP');
+    const t1 = setTimeout(() => document.getElementById('trust-see')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), demoMs(900));
+    const t2 = setTimeout(() => document.getElementById('trust-attestation')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), demoMs(5500));
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [story.step, story.run]);
 
   const filmTicker = listings?.some((l) => l.ticker === film) ? film : listings?.[0]?.ticker;
   const filmListing = listings?.find((l) => l.ticker === filmTicker) as FilmListing | undefined;
 
   return (
     <div className="grid">
+      <div className="purpose-line"><Icon name="shieldCheck" size={16} /><p><b>Proof, live, for each recipe.</b> Watch it run, see the ciphertext the market holds and the record on-chain, and check the runner yourself.</p><button className="linkbtn small" onClick={() => go({ page: 'docs', sub: 'runner' })}>How it works: Runner · TEE<Icon name="arrow" size={12} /></button></div>
       <div className="panel">
         <header><Icon name="play" size={16} className="hd-ic" /><h2>Every recipe, start to finish</h2><Tip wide>Each film is drawn live from the recipe’s public listing and the part catalog: its form, its parts, the services they may reach, and how the price is split. It can’t show anything a buyer couldn’t already see, which is why the order the parts run in stays hidden. The answers and results are an example run.</Tip></header>
         <div className="body grid" style={{ gap: 12 }}>
@@ -48,8 +58,8 @@ export function Trust() {
           {filmListing && cat && <RecipeFilm listing={filmListing} catalog={cat} onQuote={() => go({ page: 'quote', ticker: filmListing.ticker })} />}
         </div>
       </div>
-      <div className="panel">
-        <header><Icon name="eye" size={16} className="hd-ic" /><h2>Who can see what</h2><span className="spacer" />
+      <div className="panel" id="trust-see">
+        <header><Icon name="eye" size={16} className="hd-ic" /><h2>Who can see what</h2><button className="linkbtn small" onClick={() => go({ page: 'docs', sub: 'runner' })}>How the runner keeps it this way<Icon name="arrow" size={12} /></button><span className="spacer" />
           <select aria-label="Recipe" value={t ?? ''} onChange={(e) => setPick(e.target.value)}>{(listings ?? []).map((l) => <option key={l.ticker} value={l.ticker}>{l.ticker} · {l.name}</option>)}</select></header>
         <div className="body grid xray">
           <div><h3><span className="xray-ic"><Icon name="market" size={16} /></span>Marketplace</h3>
@@ -65,7 +75,7 @@ export function Trust() {
       </div>
 
       <div className="grid trust-grid">
-        <div className="panel">
+        <div className="panel" id="trust-attestation">
           <header><Icon name="cpu" size={16} className="hd-ic" /><h2>Runner attestation</h2><span className="spacer" /><button className="btn ghost sm" onClick={verify}><Icon name="refresh" size={13} />Verify again</button></header>
           <div className="body">
             {att?.checks.map((c) => <div key={c.id} className={'check ' + c.status}><span className="i">{c.status === 'pass' ? '✓' : c.status === 'skip' ? '○' : '✕'}</span><span>{c.label}</span><span className="d">{c.detail}</span></div>)}
@@ -77,16 +87,6 @@ export function Trust() {
               <dt>Compose hash</dt><dd className="hash">{short(att.a.compose_hash, 10, 6)}</dd>
             </dl>}
             <div className="small muted row" style={{ marginTop: 10 }}>How the code hash is pinned <Tip wide>The owner pins the audited release in AUDITED_CODEHASH and registers it on-chain. Edit a file under runner/src or core/src and restart without re-pinning: this check turns red. In local-dev the code hash is self-reported; inside a TDX CVM it is only meaningful together with a DCAP-verified quote.</Tip></div>
-          </div>
-        </div>
-        <div className="panel">
-          <header><Icon name="check" size={16} className="hd-ic" /><h2>What is real in local mode</h2></header>
-          <div className="body small realness">
-            <div><span className="pill ok">real</span> SRS-1 validation, sealing (X25519/XSalsa20-Poly1305), ed25519 run reports, settlement math, guarantee-deposit accounting and market-driven pricing (same vectors as the Rust contract)</div>
-            <div><span className="pill ok">real</span> the runner's HTTP calls use the exact request shapes of FastNEAR, NEAR RPC, 1Click and NEAR AI Cloud</div>
-            <div><span className="pill ok">real</span> NEAR AI chat signatures: secp256k1, EIP-191, recovered and matched to the attested address</div>
-            {mode && Object.entries(mode.services).map(([k, v]) => <div key={k}><span className="pill warn">local</span> {k}: {String(v)}</div>)}
-            <div><span className="pill warn">local</span> the contract runs as an in-process mirror; the Rust contract in contracts/ passes the same vectors with cargo test</div>
           </div>
         </div>
         <div className="panel">

@@ -30,10 +30,6 @@ export function Landing() {
             <span><i className="lp-dot build" />Supply the ingredients.</span>
           </h1>
           <p className="lp-lede">A market for crypto workflows that are proven, private and paid for one run at a time, by people and AI agents alike.</p>
-          <div className="lp-cta">
-            <button className="btn primary lg" onClick={() => go({ page: 'recipes' })}>Explore recipes<Icon name="arrow" size={16} /></button>
-            <button className="btn ghost lg" onClick={() => story.start()}><Icon name="play" size={14} fill />Watch it work</button>
-          </div>
           <dl className="lp-stats" aria-label="Live from this market">
             <div><dt>recipes</dt><dd>{listings?.length ?? '–'}</dd></div>
             <div><dt>creators</dt><dd>{creators || '–'}</dd></div>

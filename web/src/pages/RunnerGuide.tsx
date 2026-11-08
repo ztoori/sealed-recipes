@@ -1,7 +1,3 @@
-import { useState } from 'react';
-import { verifyRunnerAttestation } from '../../../core/src/attestation';
-import type { Check } from '../../../core/src/nearai';
-import { runnerAttestation } from '../api';
 import { useApp } from '../App';
 import { Icon } from '../icons';
 import { ForAgents, GuideHero, GuideSection, Steps, Tiles } from './guide-kit';
@@ -65,22 +61,23 @@ function Leash() {
   );
 }
 
-function LiveCheck() {
-  const [checks, setChecks] = useState<Check[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const run = async () => {
-    setBusy(true);
-    try {
-      const nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
-      const { attestation, onchain } = await runnerAttestation(nonce);
-      setChecks(verifyRunnerAttestation(attestation, { nonce, signing_pk: onchain.signing_pk, enc_pk_hex: onchain.enc_pk_hex, codehash: onchain.codehash }).checks);
-    } catch { setChecks([]); } finally { setBusy(false); }
-  };
+/** what in this demo is the real thing, and what stands in for a service (moved here from Trust & privacy) */
+function Realness() {
+  const { mode, go } = useApp();
+  const real = [
+    'SRS-1 validation, sealing (X25519 · XSalsa20-Poly1305), ed25519 run reports, settlement, guarantee deposits and market pricing, on the same test vectors as the Rust contract',
+    'every HTTP call a part makes, in the exact shape FastNEAR, NEAR RPC, 1Click and NEAR AI Cloud expect',
+    'NEAR AI chat signatures: secp256k1, EIP-191, recovered and matched to the attested address',
+  ];
+  const local = [...Object.entries(mode?.services ?? {}).map(([k, v]) => `${k}: ${String(v)}`), 'the contract runs as an in-process mirror; the Rust contract passes the same vectors with cargo test'];
   return (
-    <div className="live">
-      <div className="live-hd"><div><b>Don’t take our word for it</b><span>Ask the runner for a fresh attestation and check it here, in your browser.</span></div>
-        <button className="btn primary" onClick={run} disabled={busy}><Icon name="shieldCheck" size={15} />{busy ? 'Checking…' : checks ? 'Check again' : 'Check the runner now'}</button></div>
-      {checks && <div className="live-list">{checks.length ? checks.map((c) => <div key={c.id} className={'check ' + c.status}><span className="i">{c.status === 'pass' ? '✓' : c.status === 'skip' ? '○' : '✕'}</span><span>{c.label}</span><span className="d">{c.detail}</span></div>) : <div className="diag error">The runner could not be reached.</div>}</div>}
+    <div className="real">
+      <div className="real-col"><b><Icon name="check" size={14} />Real in this demo</b>{real.map((r) => <p key={r}>{r}</p>)}</div>
+      <div className="real-col local"><b><Icon name="sliders" size={14} />Standing in locally</b>{local.map((r) => <p key={r}>{r}</p>)}</div>
+      <div className="real-proof">
+        <div><b>Don’t take our word for it</b><span>Trust &amp; privacy checks the runner’s attestation live, in your browser, next to the real ciphertext and on-chain record.</span></div>
+        <button className="btn primary" onClick={() => { go({ page: 'docs', sub: 'trust' }); setTimeout(() => document.getElementById('trust-attestation')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400); }}><Icon name="shieldCheck" size={15} />See the live attestation</button>
+      </div>
     </div>
   );
 }
@@ -90,7 +87,7 @@ export function RunnerGuide() {
   return (
     <div className="grid">
       <GuideHero kicker="Runner · TEE" icon="cpu" title="It runs where nobody can look." accent="And proves what it ran."
-        lede="The runner is the only place a recipe is ever opened: inside sealed hardware, with keys that never leave it. Every part runs on a short leash, and every run ends in a signed report the contract checks before anyone is paid.">
+        lede="How it works, for every recipe. The runner is the only place a recipe is ever opened: inside sealed hardware, with keys that never leave it. Every part runs on a short leash, and every run ends in a signed report the contract checks before anyone is paid.">
         <button className="btn ghost" onClick={() => go({ page: 'docs', sub: 'trust' })}><Icon name="play" size={15} />Watch a run, step by step</button>
       </GuideHero>
 
@@ -105,6 +102,7 @@ export function RunnerGuide() {
 
       <GuideSection n={2} icon="lock" title="The boundary" line="Everything that matters stays inside. Three things cross, and all three are safe to see.">
         <Boundary />
+        <button className="linkbtn small" style={{ justifySelf: 'start' }} onClick={() => go({ page: 'docs', sub: 'trust' })}>See the real ciphertext and on-chain record for any recipe<Icon name="arrow" size={12} /></button>
       </GuideSection>
 
       <GuideSection n={3} icon="refresh" title="A run, from the inside" line="Seven moves, from a paid run to a signed receipt.">
@@ -147,7 +145,7 @@ export function RunnerGuide() {
           <div><b><Icon name="cpu" size={15} />Production</b><p>The same container in a dstack Intel TDX VM. Keys come from the VM’s key service, and Intel’s DCAP verification checks the hardware quote.</p></div>
           <div><b><Icon name="layers" size={15} />Other backends</b><p>Anything that can keep the keys in attested hardware and sign the same three messages can run recipes. Chainlink CRE and OutLayer are designed paths.</p></div>
         </div>
-        <LiveCheck />
+        <Realness />
       </GuideSection>
 
       <ForAgents rows={[

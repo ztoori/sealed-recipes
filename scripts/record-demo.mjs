@@ -43,19 +43,21 @@ await page.goto(BASE); await page.waitForTimeout(1200);
 await card('Sealed Recipes', 'Private workflows for everyday crypto safety: signed quotes before you pay, and every builder gets paid.<br/><span style="color:#f2c14e">Built at NEAR HACKATHON</span>');
 await page.waitForTimeout(3500); await uncard();
 await page.waitForTimeout(2500); await shot('01-recipes.png');
-await page.getByRole('button', { name: 'Play the demo story' }).click();
+// the landing page has no header controls: the demo starts from its last section
+await page.getByRole('button', { name: 'Watch the demo' }).scrollIntoViewIfNeeded(); await page.waitForTimeout(800);
+await page.getByRole('button', { name: 'Watch the demo' }).click();
 const t0 = Date.now(); let shots = 0;
-while (Date.now() - t0 < 150_000) {
+while (Date.now() - t0 < 360_000) {
   await page.waitForTimeout(500);
   if (shots === 0 && await page.locator('.waxseal.on').count()) { await page.waitForTimeout(700); await shot('02-sealed.png'); shots++; }
   if (shots === 1 && await page.locator('#quote').count()) { await page.waitForTimeout(1200); await shot('03-quote.png'); shots++; }
   if (shots === 2 && await page.locator('.wallet-modal').count()) { await shot('04-wallet-approval.png'); shots++; }
   if (shots === 3 && await page.getByText('report_run verified').count()) { await page.waitForTimeout(800); await shot('05-execution.png'); shots++; }
   if (shots === 4 && await page.locator('.sankey').count()) { await page.waitForTimeout(1500); await shot('06-settlement.png'); shots++; }
-  if (await page.getByText('That was one run, end to end').count()) break;
+  if (await page.getByText('That was the whole loop').count()) break;
 }
 await page.waitForTimeout(2000);
-await page.getByRole('button', { name: 'Open CLNP' }).click(); await page.waitForTimeout(3500); await shot('07-recipe-clnp.png');
+await page.getByRole('button', { name: 'Run a recipe' }).click(); await page.waitForTimeout(3500); await shot('07-recipe-clnp.png');
 await page.selectOption('select[aria-label="Acting as account"]', 'chef.testnet');
 await page.getByRole('button', { name: 'Wallet', exact: true }).click(); await page.waitForTimeout(2500); await shot('08-wallet.png');
 await page.getByRole('button', { name: 'Documentation', exact: true }).click(); await page.waitForTimeout(3000); await shot('14-standard.png');

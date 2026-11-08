@@ -1208,3 +1208,25 @@ pre.code.diff .del { background: rgba(242, 104, 124, 0.12); color: #ffb3c0; }
 .live-hd { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
 .live-hd b { display: block; font-size: 15px; color: var(--ink); }
 .live-hd span { font-size: 13px; color: var(--ink-2); }
+
+/* Trust ↔ Runner: one line that says what each page is for */
+.purpose-line { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 16px; border-radius: 14px; border: 1px solid rgba(60,203,154,.35); background: linear-gradient(90deg, rgba(60,203,154,.08), transparent 70%); }
+.purpose-line > .ic { color: var(--gain); }
+.purpose-line p { margin: 0; flex: 1; min-width: 240px; font-size: 14px; color: var(--ink-2); }
+.purpose-line p b { color: var(--ink); }
+.real { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.real-col { display: grid; align-content: start; gap: 6px; padding: 14px; border-radius: 14px; background: var(--bg-2); border: 1px solid rgba(60,203,154,.35); }
+.real-col.local { border-color: rgba(240,180,76,.35); }
+.real-col b { display: flex; align-items: center; gap: 7px; font-size: 13.5px; color: var(--gain); }
+.real-col.local b { color: var(--wax-2); }
+.real-col p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); padding-left: 21px; position: relative; }
+.real-col p::before { content: ''; position: absolute; left: 6px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--gain); }
+.real-col.local p::before { background: var(--wax); }
+.real-proof { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 16px; border-radius: 16px; border: 1px solid rgba(60,203,154,.35); background: linear-gradient(180deg, rgba(60,203,154,.06), transparent); }
+.real-proof b { display: block; font-size: 15px; color: var(--ink); }
+.real-proof span { font-size: 13px; color: var(--ink-2); }
+
+/* the demo's chapters */
+.cap-kicker { display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 650; letter-spacing: .12em; text-transform: uppercase; color: var(--wax); margin-bottom: 3px; }
+.caption.done button.ghost { background: none; color: var(--ink-2); border-color: var(--line-2); }
+.caption.done .cap-actions { flex-wrap: wrap; }
