@@ -4,12 +4,16 @@ import type { Check } from '../../../core/src/nearai';
 import { api, runnerAttestation, short, usePoll } from '../api';
 import { useApp } from '../App';
 import { Icon } from '../icons';
-import { Tip } from '../ui';
+import { Seal, Tip } from '../ui';
+import type { Catalog } from '../../../core/src/srs';
+import { RecipeFilm, type FilmListing } from '../components/RecipeFilm';
 
 const rand = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
 
 export function Trust() {
-  const { mode } = useApp();
+  const { mode, go } = useApp();
+  const [cat] = usePoll<Catalog>('/api/catalog', 60000);
+  const [film, setFilm] = useState('');
   const [att, setAtt] = useState<{ checks: Check[]; a: any; onchain: any } | null>(null);
   const [listings] = usePoll<any[]>('/api/listings', 10000);
   const [pick, setPick] = useState('');
@@ -25,8 +29,25 @@ export function Trust() {
   };
   useEffect(() => { verify(); }, []);
 
+  const filmTicker = listings?.some((l) => l.ticker === film) ? film : listings?.[0]?.ticker;
+  const filmListing = listings?.find((l) => l.ticker === filmTicker) as FilmListing | undefined;
+
   return (
     <div className="grid">
+      <div className="panel">
+        <header><Icon name="play" size={16} className="hd-ic" /><h2>Every recipe, start to finish</h2><Tip wide>Each film is drawn live from the recipe’s public listing and the part catalog: its form, its parts, the services they may reach, and how the price is split. It can’t show anything a buyer couldn’t already see, which is why the order the parts run in stays hidden. The answers and results are an example run.</Tip></header>
+        <div className="body grid" style={{ gap: 12 }}>
+          <p className="small muted" style={{ margin: 0 }}>How a buyer uses each recipe, every part of the stack it touches, in order, and who gets paid. About 45 seconds each.</p>
+          <div className="film-picker" role="tablist" aria-label="Recipe films">
+            {(listings ?? []).map((l) => (
+              <button key={l.ticker} role="tab" aria-selected={l.ticker === filmTicker} className={l.ticker === filmTicker ? 'on' : ''} onClick={() => setFilm(l.ticker)} title={l.name}>
+                <Seal ticker={l.ticker} kind={l.output_type} size={22} /><b>{l.ticker}</b>{l.name}
+              </button>
+            ))}
+          </div>
+          {filmListing && cat && <RecipeFilm listing={filmListing} catalog={cat} onQuote={() => go({ page: 'quote', ticker: filmListing.ticker })} />}
+        </div>
+      </div>
       <div className="panel">
         <header><Icon name="eye" size={16} className="hd-ic" /><h2>Who can see what</h2><span className="spacer" />
           <select aria-label="Recipe" value={t ?? ''} onChange={(e) => setPick(e.target.value)}>{(listings ?? []).map((l) => <option key={l.ticker} value={l.ticker}>{l.ticker} · {l.name}</option>)}</select></header>
