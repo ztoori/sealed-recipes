@@ -9,6 +9,7 @@ import { Docs } from './pages/Docs';
 import { Landing } from './pages/Landing';
 import { Icon, ROLE_ICON } from './icons';
 
+import { SpeedControl } from './components/SpeedControl';
 import { storyReducer, type StoryStep } from './story-machine';
 export type { StoryStep } from './story-machine';
 
@@ -113,7 +114,7 @@ export function App() {
           <div className="cap-steps" aria-hidden>{[1, 2, 3, 4].map((n) => <i key={n} className={n < story.step ? 'done' : n === story.step ? 'now' : ''} />)}</div>
           <div className="stepno">{story.step}</div>
           <div><h3>{cap.title}</h3><p>{cap.body}</p></div>
-          <button onClick={() => dispatch({ type: 'stop' })} aria-label="Stop the story"><Icon name="stop" size={14} fill />Stop</button>
+          <div className="cap-actions"><SpeedControl kind="demo" /><button onClick={() => dispatch({ type: 'stop' })} aria-label="Stop the story"><Icon name="stop" size={14} fill />Stop</button></div>
         </div>
       )}
       {story.step === 5 && (

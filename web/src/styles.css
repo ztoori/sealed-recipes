@@ -941,3 +941,29 @@ pre.code.diff .del { background: rgba(242, 104, 124, 0.12); color: #ffb3c0; }
 .tee .parts.many .pchip { padding: 5px 7px; }
 .tee .parts.many .pchip b { font-size: 11px; }
 .tee .parts.many .pchip span { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* films and the demo: fit any screen, at any speed */
+.film { width: 100%; max-width: max(300px, calc((100dvh - 230px) * 960 / 540)); margin: 0 auto; }
+.film.full { max-width: none; width: 100vw; height: 100dvh; padding: 18px; display: grid; align-content: center; justify-items: center; gap: 12px; background: #070b14; }
+.film.full .film-frame { width: min(100%, calc((100dvh - 90px) * 960 / 540)); }
+.film.full .film-controls { width: min(100%, calc((100dvh - 90px) * 960 / 540)); }
+.film-controls { flex-wrap: wrap; row-gap: 6px; }
+.film-track { min-width: 220px; }
+.speed { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--bg-2); }
+.speed > span { font-size: 11px; color: var(--muted); padding: 0 6px 0 8px; }
+.speed button { border: 0; background: none; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; padding: 3px 7px; border-radius: 999px; cursor: pointer; }
+.speed button:hover { color: var(--ink); }
+.speed button.on { background: var(--wax-bg); color: var(--wax-2); box-shadow: inset 0 0 0 1px rgba(240, 180, 76, 0.4); }
+.cap-actions { display: flex; align-items: center; gap: 8px; }
+@media (max-width: 700px) {
+  .film-seg span { display: none; }
+  .film-time { min-width: 0; }
+  .caption { grid-template-columns: 40px 1fr; padding: 16px 14px 12px; bottom: 12px; }
+  .caption .stepno { width: 40px; height: 40px; font-size: 20px; }
+  .cap-actions { grid-column: 1 / -1; justify-content: space-between; }
+  .caption h3 { font-size: 17px; }
+}
+.film-subs { display: grid; gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--bg-2); border: 1px solid var(--line); }
+.film-subs > b { font-family: var(--serif); font-weight: 500; font-size: 19px; color: var(--ink); }
+.film-subs p { margin: 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.45; }
+.film-subs .film-step { position: static; margin-top: 4px; }

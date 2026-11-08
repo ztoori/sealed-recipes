@@ -10,6 +10,7 @@ import { SealModal } from '../components/SealModal';
 import { CAT, Icon } from '../icons';
 import { ConditionEditor, OnErrorEditor, Fallbacks, chipWhen, describeWhen, resultOptions } from './compose-logic';
 import { Empty, Seal, Tip } from '../ui';
+import { demoMs } from '../pace';
 import CLNP from '../../../seed/recipes/CLNP.json';
 
 /**
@@ -207,21 +208,21 @@ function Builder() {
   // ---------- story step 1: the creator composes CLNP by adding its parts one by one, then seals it ----------
   useEffect(() => {
     if (story.step !== 1 || !catalog || !listings || !once('compose')) return;
-    if (listings.some((l) => l.ticker === 'CLNP')) { toast('CLNP is already published: on to the buyer'); setTimeout(() => story.advance(1), 1500); return; }
+    if (listings.some((l) => l.ticker === 'CLNP')) { toast('CLNP is already published: on to the buyer'); setTimeout(() => story.advance(1), demoMs(1500)); return; }
     (async () => {
       const t = structuredClone(CREATOR_COPY_OF_CLNP);
       let r: Recipe = { ...blankRecipe('chef.testnet'), meta: { ...t.meta, creator: 'chef.testnet' }, form: t.form, listing: t.listing };
       setRecipe(r); setBase(null); setSel(null); fit(30);
       for (const n of t.nodes) {
-        await new Promise((ok) => setTimeout(ok, 700));
+        await new Promise((ok) => setTimeout(ok, demoMs(700)));
         const a = addPartAutoWired(r, n.part, catalog);
         // her private settings for this step (the prompt, thresholds, routing): sealed when she publishes
         r = { ...a.recipe, nodes: a.recipe.nodes.map((x) => (x.id === a.nodeId ? { ...x, params: n.params, ui: n.ui } : x)) };
         setRecipe(r); setSel(a.nodeId); fit(60);
       }
-      await new Promise((ok) => setTimeout(ok, 1600));
+      await new Promise((ok) => setTimeout(ok, demoMs(1600)));
       setSel(r.nodes.find((x) => x.part.startsWith('ai.spam-shield'))?.id ?? null);
-      await new Promise((ok) => setTimeout(ok, 1800));
+      await new Promise((ok) => setTimeout(ok, demoMs(1800)));
       setSealing(true);
     })();
   }, [story.step, story.run, !!catalog, !!listings]);
@@ -427,7 +428,7 @@ function Builder() {
         onClose={(published) => {
           setSealing(false); if (!published) return;
           const t = recipe.meta.ticker; clearDraft();
-          if (story.step === 1) setTimeout(() => story.advance(1), 600);
+          if (story.step === 1) setTimeout(() => story.advance(1), demoMs(600));
           else if (asVersion) toast(`${t} version ${base!.version + 1} announced: it takes effect after the notice period`);
           else go({ page: 'recipes', ticker: t });
         }} />}

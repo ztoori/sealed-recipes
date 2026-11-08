@@ -5,6 +5,7 @@ import { verifyRunnerAttestation } from '../../../core/src/attestation';
 import { creatorKeyFromSignature, creatorKeyMessage, demoWalletSign } from '../../../core/src/creator';
 import type { Check } from '../../../core/src/nearai';
 import { api, runnerAttestation, short } from '../api';
+import { demoMs } from '../pace';
 import { Icon } from '../icons';
 
 const rand = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -61,10 +62,10 @@ export function SealModal({ recipe, catalog, auto, asVersion, onClose }: { recip
     (async () => {
       const pk = await verify();
       if (!pk || !auto) return;
-      await new Promise((r) => setTimeout(r, 1600));
+      await new Promise((r) => setTimeout(r, demoMs(1600)));
       const e = doSeal(pk);
-      await new Promise((r) => setTimeout(r, 2200));
-      if (await publish(e)) setTimeout(() => onClose(true), 2600);
+      await new Promise((r) => setTimeout(r, demoMs(2200)));
+      if (await publish(e)) setTimeout(() => onClose(true), demoMs(2600));
     })();
   }, []);
 

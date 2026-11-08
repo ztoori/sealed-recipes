@@ -10,6 +10,7 @@ import { SettlementFlow } from '../components/Sankey';
 import { Output, timeline, type Ev } from '../components/RunViews';
 import { LOCKED, quoteReducer } from './quote-machine';
 import { Icon } from '../icons';
+import { demoMs } from '../pace';
 import { Empty, Head, Seal, Tip } from '../ui';
 
 const STAGES: [string, string][] = [['lock', 'Seal inputs'], ['receipt', 'Quote'], ['wallet', 'Pay'], ['cpu', 'Run'], ['check', 'Settled']];
@@ -124,7 +125,7 @@ export function Quote({ ticker }: { ticker: string }) {
   // reveal events one by one so a human can follow the run (presentation only; the run itself is not slowed)
   useEffect(() => {
     if (shown >= allEvents.length) return;
-    const t = setTimeout(() => setShown((n) => n + 1), story.step ? 420 : 160);
+    const t = setTimeout(() => setShown((n) => n + 1), story.step ? demoMs(420) : 160);
     return () => clearTimeout(t);
   }, [shown, allEvents.length, story.step]);
   const events = useMemo(() => allEvents.slice(0, shown), [allEvents, shown]);
@@ -153,18 +154,18 @@ export function Quote({ ticker }: { ticker: string }) {
   useEffect(() => {
     if (story.step !== 2 || !listing || phase.name !== 'form' || !once('quote')) return;
     (async () => {
-      await new Promise((r) => setTimeout(r, 900));
+      await new Promise((r) => setTimeout(r, demoMs(900)));
       const fid = form.find((f) => f.generator === 'fresh-implicit')?.id; if (fid) genFresh(fid);
-      await new Promise((r) => setTimeout(r, 1200));
+      await new Promise((r) => setTimeout(r, demoMs(1200)));
       document.getElementById('get-quote-btn')?.click();
     })();
   }, [story.step, !!listing]);
-  useEffect(() => { if (story.step === 2 && phase.name === 'quoted' && once('choose')) { const t = setTimeout(() => document.getElementById('choose-guaranteed')?.click(), 4200); return () => clearTimeout(t); } }, [phase.name, story.step]);
-  useEffect(() => { if (story.step === 2 && phase.name === 'ready' && once('pay')) { const t = setTimeout(() => document.getElementById('pay-btn')?.click(), 2200); return () => clearTimeout(t); } }, [phase.name, story.step]);
+  useEffect(() => { if (story.step === 2 && phase.name === 'quoted' && once('choose')) { const t = setTimeout(() => document.getElementById('choose-guaranteed')?.click(), demoMs(4200)); return () => clearTimeout(t); } }, [phase.name, story.step]);
+  useEffect(() => { if (story.step === 2 && phase.name === 'ready' && once('pay')) { const t = setTimeout(() => document.getElementById('pay-btn')?.click(), demoMs(2200)); return () => clearTimeout(t); } }, [phase.name, story.step]);
   useEffect(() => { if (story.step === 2 && events.some((e) => e.type === 'decrypted')) story.advance(2); }, [events, story.step]);
-  useEffect(() => { if (story.step === 3 && approval) { const t = setTimeout(() => approve(true), 2600); return () => clearTimeout(t); } }, [approval, story.step]);
+  useEffect(() => { if (story.step === 3 && approval) { const t = setTimeout(() => approve(true), demoMs(2600)); return () => clearTimeout(t); } }, [approval, story.step]);
   useEffect(() => { if (story.step === 3 && completed) { story.advance(3); setTimeout(() => document.getElementById('settlement')?.scrollIntoView({ behavior: 'smooth' }), 400); } }, [completed, story.step]);
-  useEffect(() => { if (story.step === 4) { const t = setTimeout(() => story.advance(4), 9000); return () => clearTimeout(t); } }, [story.step]);
+  useEffect(() => { if (story.step === 4) { const t = setTimeout(() => story.advance(4), demoMs(9000)); return () => clearTimeout(t); } }, [story.step]);
 
   if (m && !listing) return <div className="panel body">No recipe {ticker}. <button className="btn ghost sm" onClick={() => go({ page: 'recipes' })}>Back to Recipes</button></div>;
   if (!listing) return <div className="panel body muted">Loading {ticker}…</div>;

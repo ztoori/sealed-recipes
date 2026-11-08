@@ -3,6 +3,7 @@ import { nextPrice } from '../../../core/src/pricing';
 import { api, money, short, usd, usePoll } from '../api';
 import { useApp, useStoryOnce } from '../App';
 import { CAT, Icon, RESULT_LABEL, recipeLook } from '../icons';
+import { demoMs } from '../pace';
 import { Empty, Head, Seal, Stat, Tip } from '../ui';
 
 /**
@@ -41,9 +42,9 @@ export function Recipes({ ticker: wanted }: { ticker?: string }) {
   // story step 2: the buyer searches, opens CLNP, then asks it for a quote
   useEffect(() => {
     if (story.step !== 2 || !listings?.some((l) => l.ticker === 'CLNP') || !once('find')) return;
-    const t1 = setTimeout(() => setQ('clean'), 700);
-    const t2 = setTimeout(() => select('CLNP'), 1700);
-    const t3 = setTimeout(() => go({ page: 'quote', ticker: 'CLNP' }), 5200);
+    const t1 = setTimeout(() => setQ('clean'), demoMs(700));
+    const t2 = setTimeout(() => select('CLNP'), demoMs(1700));
+    const t3 = setTimeout(() => go({ page: 'quote', ticker: 'CLNP' }), demoMs(5200));
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [story.step, story.run, !!listings?.some((l) => l.ticker === 'CLNP')]);
 

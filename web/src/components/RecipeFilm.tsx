@@ -10,6 +10,8 @@ import { ASSET_LABEL } from '../api';
 import { Icon } from '../icons';
 import { Seal } from '../ui';
 import { FILM_SCRIPTS, exampleInput, type FilmScript } from './film-scripts';
+import { SpeedControl } from './SpeedControl';
+import { useSpeed } from '../pace';
 
 const W = 960, H = 540;
 const clamp = (x: number) => Math.max(0, Math.min(1, x));
@@ -32,6 +34,9 @@ const CHAPTERS = [
   { id: 'why', label: 'Why', a: 39.6, b: 47 },
 ] as const;
 const END = 47;
+/** film seconds per real second at 1×: a calm pace, about 72 seconds a film */
+const PACE = 0.65;
+const clock = (x: number) => { const s = Math.round(x / PACE); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
 type NodeId = 'browser' | 'wallet' | 'intents' | 'contract' | 'market' | 'runner' | 'services';
 const RAIL: { id: NodeId; label: string; sub: string; icon: string }[] = [
@@ -92,6 +97,16 @@ export function RecipeFilm({ listing: l, catalog, onQuote }: { listing: FilmList
   const [playing, setPlaying] = useState(false);
   const [scale, setScale] = useState(1);
   const frame = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const [speed] = useSpeed('film');
+  const speedRef = useRef(speed); speedRef.current = speed;
+  const [full, setFull] = useState(false);
+  useEffect(() => { const on = () => setFull(document.fullscreenElement === root.current); document.addEventListener('fullscreenchange', on); return () => document.removeEventListener('fullscreenchange', on); }, []);
+  // full screen; on a phone, also turn to landscape where the browser allows it
+  const fullscreen = () => {
+    if (document.fullscreenElement) { void document.exitFullscreen(); return; }
+    void root.current?.requestFullscreen?.().then(() => (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.('landscape').catch(() => {})).catch(() => {});
+  };
   const seen = useRef(false);
   const reduce = useMemo(() => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches, []);
 
@@ -117,7 +132,7 @@ export function RecipeFilm({ listing: l, catalog, onQuote }: { listing: FilmList
     if (!playing) return;
     let raf = 0, last = performance.now();
     const tick = (now: number) => {
-      const dt = Math.min(0.1, (now - last) / 1000); last = now;
+      const dt = (Math.min(0.1, (now - last) / 1000)) * PACE * speedRef.current; last = now;
       setT((x) => { const n = x + dt; if (n >= END) { setPlaying(false); return END; } return n; });
       raf = requestAnimationFrame(tick);
     };
@@ -134,9 +149,13 @@ export function RecipeFilm({ listing: l, catalog, onQuote }: { listing: FilmList
   const builders = new Set(parts.map((p) => p.author)).size;
   const live = [...hops].reverse().find((h) => t >= h.at);
   const toggle = () => { if (t >= END) setT(0); setPlaying((p) => !p); };
+  // on a small screen the stage's own text gets too small to read, so the words also run underneath it, full size
+  const small = scale < 0.62;
+  const chapter = CHAPTERS.find((c) => t >= c.a && t < c.b) ?? CHAPTERS[CHAPTERS.length - 1];
+  const [subHead, subText] = COPY[chapter.id]({ l, s, n: l.parts.length, b: builders, measured });
 
   return (
-    <div className="film">
+    <div className={'film' + (full ? ' full' : '')} ref={root}>
       <div className="film-frame" ref={frame} role="region" aria-label={`Film: how ${l.name} works, step by step`} style={{ aspectRatio: `${W} / ${H}` }} onClick={(e) => { if ((e.target as HTMLElement).closest('button')) return; toggle(); }}>
         <div className="film-stage" style={{ width: W, height: H, transform: `scale(${scale})` }} aria-hidden={false}>
           <Backdrop t={t} />
@@ -155,6 +174,13 @@ export function RecipeFilm({ listing: l, catalog, onQuote }: { listing: FilmList
         </div>
         {!playing && (t < 0.05 || t >= END) && <button className="film-bigplay" aria-label={t >= END ? 'Replay' : 'Play'} onClick={toggle}><Icon name={t >= END ? 'refresh' : 'play'} size={26} /></button>}
       </div>
+      {small && (
+        <div className="film-subs" aria-live="polite">
+          <div className="film-kicker">{String(CHAPTERS.indexOf(chapter) + 1).padStart(2, '0')} · {chapter.label}</div>
+          <b>{subHead}</b><p>{subText}</p>
+          {live && <div className="film-step"><b>{live.n}</b><span>of {hops.length}</span>{live.text}</div>}
+        </div>
+      )}
       <div className="film-controls">
         <button className="btn ghost sm icon-only" onClick={toggle} aria-label={playing ? 'Pause' : 'Play'}><Icon name={playing ? 'stop' : t >= END ? 'refresh' : 'play'} size={14} /></button>
         <div className="film-track" role="slider" aria-label="Position in the film" aria-valuemin={0} aria-valuemax={END} aria-valuenow={Math.round(t)} tabIndex={0}
@@ -167,7 +193,9 @@ export function RecipeFilm({ listing: l, catalog, onQuote }: { listing: FilmList
             </div>
           ))}
         </div>
-        <span className="film-time">{Math.floor(t)}s / {END}s</span>
+        <span className="film-time">{clock(t)} / {clock(END)}</span>
+        <SpeedControl kind="film" />
+        <button className="btn ghost sm icon-only" onClick={fullscreen} aria-label={full ? 'Exit full screen' : 'Full screen'} title={full ? 'Exit full screen' : 'Full screen'}><Icon name={full ? 'shrink' : 'expand'} size={14} /></button>
       </div>
     </div>
   );
