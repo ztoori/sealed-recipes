@@ -127,8 +127,8 @@ export function ComposePart({ part }: { part?: string }) {
     <div className="grid">
     <div className="banner" role="note"><BrandSeal /><div><b className="big">Build a part, get paid on every run.</b> <Tip wide>A part is a building block other people put inside private recipes and pay for on every run. It may only read its declared inputs, reach its declared hosts, ask for signatures if it is an “Act” part, and must be read-only during quotes. The conformance checks must pass before it can be registered, and the code is reviewed before it ships in the audited runner.</Tip><div className="small">Every part follows SRS-1: typed ports, declared capabilities, read-only quotes.</div></div></div>
     <div className="grid partpage">
-      <aside className="grid" style={{ alignContent: 'start' }}>
-        <div className="panel">
+      <aside className="stack">
+        <div className="panel partlist">
           <header><Icon name="box" size={16} className="hd-ic" /><h2>Parts</h2><Tip>All public in this demo: open one to read its code.</Tip></header>
           <div className="body" style={{ paddingBottom: 6 }}>
             <button className="btn primary" style={{ width: '100%' }} onClick={startNew}><Icon name="plus" size={15} />New part</button>
@@ -229,7 +229,7 @@ export function ComposePart({ part }: { part?: string }) {
         )}
       </section>
 
-      <aside className="grid" style={{ alignContent: 'start', minWidth: 0 }}>
+      <aside className="stack">
         <div className="panel">
           <header><Icon name="shieldCheck" size={16} className="hd-ic" /><h2>Conformance</h2><span className="spacer" /><span className={'pill ' + (errs.length ? 'bad' : 'ok')}>{errs.length ? `${errs.length} to fix` : 'conforms'}</span></header>
           <div className="body">

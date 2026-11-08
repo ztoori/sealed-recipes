@@ -18,6 +18,7 @@ export function Wallet() {
   if (!p) return null;
   return (
     <div className="grid wallet-grid">
+      <div className="stack">
       <div className="panel balance">
         <Head icon="wallet" title={acting} tip="Fees, creator earnings, refunds and shortfall payments all land here inside the settlement receipt. Withdraw sends an ft_transfer of the payment token (1 yoctoNEAR attached on testnet)." />
         <div className="body">
@@ -39,6 +40,8 @@ export function Wallet() {
           ))}
         </tbody></table>}
       </div>
+      </div>
+      <div className="stack">
       <AccountHealth chain={p.chain} />
       <div className="panel">
         <Head icon="trend" title="Income" tip="From settlements, most recent first. Part authors, creators and the runner are paid inside each run’s settlement." />
@@ -47,6 +50,8 @@ export function Wallet() {
           {income.slice(0, 12).map((x: any, i: number) => <tr key={i}><td><span className="tk">{x.ref}</span></td><td style={{ textTransform: 'capitalize' }}>{x.what}<div className="muted hash">tx {short(x.tx, 6, 4)}</div></td><td className="r gain"><b>+{usd(x.amount)}</b></td></tr>)}
         </tbody></table>
       </div>
+      </div>
+      <div className="stack">
       <div className="panel">
         <Head icon="layers" title="Tokens" tip="Local world: fictional balances." />
         {p.wallet.length === 0 && <Empty icon="layers">No tokens.</Empty>}
@@ -55,6 +60,7 @@ export function Wallet() {
             <tr key={w.contract_id} className="tokrow"><td><span className="tokdot">{String(w.symbol).slice(0, 3)}</span><span><b>{w.symbol}</b><div className="muted hash">{short(w.contract_id, 16, 6)}</div></span></td><td className="r">{(Number(w.balance) / 10 ** (w.decimals ?? 0)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td></tr>
           ))}
         </tbody></table>
+      </div>
       </div>
     </div>
   );
