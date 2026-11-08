@@ -1,20 +1,31 @@
 import { useApp } from '../App';
+import type { DocsSub } from '../route';
 import { Trust } from './Trust';
 import { Landscape } from './Landscape';
 import { Spec } from './Spec';
+import { PricingGuide } from './PricingGuide';
+import { ComposeRecipeGuide } from './ComposeRecipeGuide';
+import { ComposePartGuide } from './ComposePartGuide';
 import { Icon } from '../icons';
 
-/** Documentation: the spec everything is built on, how to trust what you see, and where this project sits. */
-export function Docs({ sub }: { sub: 'spec' | 'trust' | 'landscape' }) {
+/** Documentation: the spec, where the project sits, how to trust it, how prices move, and how to build recipes and parts. */
+const TABS: [DocsSub, string, string][] = [
+  ['spec', 'docs', 'Spec (SRS-1)'],
+  ['landscape', 'globe', 'Landscape'],
+  ['trust', 'shieldCheck', 'Trust & privacy'],
+  ['pricing', 'trend', 'Price & demand'],
+  ['compose-recipe', 'compose', 'Compose Recipe'],
+  ['compose-part', 'box', 'Compose Part'],
+];
+
+export function Docs({ sub }: { sub: DocsSub }) {
   const { go } = useApp();
   return (
     <div className="grid">
       <div className="subnav" role="tablist" aria-label="Documentation">
-        <button role="tab" aria-selected={sub === 'spec'} onClick={() => go({ page: 'docs', sub: 'spec' })}><Icon name="docs" size={16} />Spec (SRS-1)</button>
-        <button role="tab" aria-selected={sub === 'trust'} onClick={() => go({ page: 'docs', sub: 'trust' })}><Icon name="shieldCheck" size={16} />Trust &amp; privacy</button>
-        <button role="tab" aria-selected={sub === 'landscape'} onClick={() => go({ page: 'docs', sub: 'landscape' })}><Icon name="globe" size={16} />Landscape</button>
+        {TABS.map(([id, icon, label]) => <button key={id} role="tab" aria-selected={sub === id} onClick={() => go({ page: 'docs', sub: id })}><Icon name={icon} size={16} />{label}</button>)}
       </div>
-      {sub === 'spec' ? <Spec /> : sub === 'trust' ? <Trust /> : <Landscape />}
+      {sub === 'spec' ? <Spec /> : sub === 'landscape' ? <Landscape /> : sub === 'trust' ? <Trust /> : sub === 'pricing' ? <PricingGuide /> : sub === 'compose-recipe' ? <ComposeRecipeGuide /> : <ComposePartGuide />}
     </div>
   );
 }

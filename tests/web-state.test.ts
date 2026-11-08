@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { parseRoute, routeHash } from '../web/src/route.js';
 
 test('route: every page round-trips through the URL hash', () => {
-  for (const h of ['#/', '#/recipes', '#/recipes/CLNP', '#/quote/STAK', '#/compose/recipe', '#/compose/part', '#/compose/part/ai.spam-shield%401.1.0', '#/wallet', '#/docs/spec', '#/docs/trust', '#/docs/landscape']) assert.equal(routeHash(parseRoute(h)), h, h);
+  for (const h of ['#/', '#/recipes', '#/recipes/CLNP', '#/quote/STAK', '#/compose/recipe', '#/compose/part', '#/compose/part/ai.spam-shield%401.1.0', '#/wallet', '#/docs/spec', '#/docs/landscape', '#/docs/trust', '#/docs/pricing', '#/docs/compose-recipe', '#/docs/compose-part']) assert.equal(routeHash(parseRoute(h)), h, h);
   assert.deepEqual(parseRoute(''), { page: 'home' }, 'the landing page is the front door');
   assert.deepEqual(parseRoute('#/nonsense'), { page: 'recipes' });
   assert.deepEqual(parseRoute('#/docs'), { page: 'docs', sub: 'spec' }, 'Documentation opens on the spec');
