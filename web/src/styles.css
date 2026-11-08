@@ -295,8 +295,10 @@ tr.click:hover td { background: var(--bg-3); }
 .sealed-box { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; border: 1px solid rgba(240,180,76,.3); background: repeating-linear-gradient(-45deg, rgba(240,180,76,.06), rgba(240,180,76,.06) 6px, rgba(240,180,76,.02) 6px, rgba(240,180,76,.02) 12px); border-radius: var(--r-md); padding: 9px 12px; font-size: 12.5px; color: var(--wax-2); }
 .sealed-box .hash { color: var(--ink-2); margin-left: auto; }
 
-.cards { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
-.stack { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.cards { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
+/* a column of panels in a stretched row: the last panel grows, so columns end on one line instead of leaving a gap */
+.stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.stack > :last-child { flex: 1 1 auto; }
 .splitbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; margin-bottom: 14px; }
 .splitbar i { display: block; min-width: 3px; }
 .splitbar.thin { height: 6px; margin: 0; }
@@ -472,8 +474,8 @@ tr.click:hover td { background: var(--bg-3); }
 .meter i { display: block; height: 100%; background: linear-gradient(90deg, var(--wax-deep), var(--wax)); border-radius: 6px; transition: width .3s; }
 .earn { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 14px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); margin-top: 12px; }
 .earn b { font-size: 22px; font-weight: 650; font-stretch: 112%; color: var(--wax-2); }
-.compose-start { grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); align-items: start; }
-.newcard { text-align: left; cursor: pointer; padding: 22px; display: grid; gap: 8px; justify-items: start; border-style: dashed; transition: border-color .15s, transform .15s, background .15s; }
+.compose-start { grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); align-items: stretch; }
+.newcard { text-align: left; cursor: pointer; padding: 22px; display: grid; gap: 8px; justify-items: start; align-content: start; border-style: dashed; transition: border-color .15s, transform .15s, background .15s; }
 .newcard:hover { border-color: var(--wax); background: var(--bg-3); transform: translateY(-2px); }
 .newcard .plus { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: var(--wax-bg); color: var(--wax-2); border: 1px solid rgba(240,180,76,.35); margin-bottom: 4px; }
 .newcard b { font-family: var(--serif); font-weight: 500; font-size: 26px; letter-spacing: -0.01em; }
