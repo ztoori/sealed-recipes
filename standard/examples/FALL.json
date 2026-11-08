@@ -1,0 +1,21 @@
+{
+  "srs": "1.1",
+  "kind": "recipe",
+  "meta": {
+    "ticker": "FALL",
+    "name": "Scam audit that survives an AI outage",
+    "creator": "chef.testnet",
+    "description": "A private AI classifies every token. If the model is down, over its limits or returns nothing, an allowlist classifier takes over, so the buyer always gets a report and is never refunded for a provider's outage."
+  },
+  "form": [
+    { "id": "wallet", "label": "Wallet to audit", "type": "near.account", "required": true, "placeholder": "bob.near" }
+  ],
+  "nodes": [
+    { "id": "scan", "part": "near.wallet-scanner@1.0.0", "inputs": { "account": "form.wallet" }, "params": {} },
+    { "id": "ai", "part": "ai.spam-shield@1.1.0", "inputs": { "holdings": "scan.holdings" }, "params": { "policy": "Flag SCAM tokens: URLs in the symbol, reward bait, impersonation of listed tokens. Answer JSON only." }, "on_error": "skip" },
+    { "id": "rules", "part": "rules.spam-shield@1.0.0", "inputs": { "holdings": "scan.holdings" }, "params": {}, "when": { "ref": "ai.flags", "is": "empty" } },
+    { "id": "report", "part": "report.summary@1.0.0", "inputs": { "flags": ["ai.flags", "rules.flags"], "holdings": "scan.holdings" }, "params": {} }
+  ],
+  "output": "report.report",
+  "listing": { "price_per_run": "200000", "reserve_bps": 1000, "bond": "0", "pricing": { "price_floor": "150000", "price_ceiling": "500000", "target_runs": 3 } }
+}

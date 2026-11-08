@@ -7,7 +7,7 @@
  *  - lintPartSource: static checks on a part's TypeScript source against its manifest. These catch common mistakes;
  *    they are not a sandbox. A part only runs after it is reviewed and shipped in an audited runner release.
  */
-import { isAssignable, partIndex, type Catalog, type Diagnostic, type FormField, type PartManifest, type Recipe } from './srs.js';
+import { isAssignable, partIndex, refsOf, TYPE_VAR_RE, type Catalog, type Diagnostic, type FormField, type PartManifest, type Recipe } from './srs.js';
 
 // ---------------------------------------------------------------- composing
 
@@ -27,7 +27,7 @@ export function sourcesFor(recipe: Recipe, nodeId: string | null, catalog: Catal
     const stack = [nodeId];
     while (stack.length) {
       const cur = stack.pop()!;
-      for (const n of recipe.nodes) if (!downstream.has(n.id) && Object.values(n.inputs).some((r) => r.startsWith(cur + '.'))) { downstream.add(n.id); stack.push(n.id); }
+      for (const n of recipe.nodes) if (!downstream.has(n.id) && Object.values(n.inputs).some((b) => refsOf(b).some((r) => r.startsWith(cur + '.')))) { downstream.add(n.id); stack.push(n.id); }
     }
   }
   const out: Source[] = [];
@@ -106,7 +106,7 @@ export function addPartAutoWired(recipe: Recipe, partId: string, catalog: Catalo
   }
   const nodes = draft.nodes.map((n) => (n.id === id ? { ...n, inputs } : n));
   const outPort = Object.keys(m.outputs)[0];
-  const resultNode = draft.output.split('.')[0];
+  const resultNode = (refsOf(draft.output)[0] ?? '').split('.')[0];
   const takesOver = !draft.output || Object.values(inputs).some((r) => r.split('.')[0] === resultNode);
   return { recipe: { ...draft, nodes, output: takesOver && outPort ? `${id}.${outPort}` : draft.output }, nodeId: id, unwired, asked };
 }
@@ -146,10 +146,19 @@ export function validatePartManifest(m: PartManifest, catalog: Catalog, opts: { 
   if (!/^[a-z0-9._-]{2,64}$/.test(m.author ?? '')) err('author', 'author must be the NEAR account that is paid the fee');
   if ((m.summary ?? '').trim().length < 20) err('summary', 'summary must say in one sentence what the part does (at least 20 characters)');
   const portRe = /^[a-z_][a-z0-9_]*$/;
+  // type variables (SRS-1.1 §1.3): one capital letter, a known bound or none, and bound by at least one input
+  const tvars = m.type_params ?? {};
+  for (const [T, tp] of Object.entries(tvars)) {
+    if (!TYPE_VAR_RE.test(T)) err('type_params.name', `type variable "${T}" must be one capital letter`);
+    if (tp?.extends !== null && tp?.extends !== undefined && !catalog.types[tp.extends]) err('type_params.bound', `type variable ${T} extends unknown type "${tp.extends}"`);
+    const inIn = Object.values(m.inputs ?? {}).some((s) => s.type === T), inOut = Object.values(m.outputs ?? {}).some((s) => s.type === T);
+    if (inOut && !inIn) err('type_params.unbound', `${T} appears only in outputs: a recipe could never bind it`);
+    if (!inIn && !inOut) warn('type_params.unused', `${T} is declared but no port uses it`);
+  }
   for (const [kind, ports] of [['input', m.inputs], ['output', m.outputs]] as const) {
     for (const [p, s] of Object.entries(ports ?? {})) {
       if (!portRe.test(p)) err('port.name', `${kind} "${p}": port names are lower_snake_case`, p);
-      if (!catalog.types[s.type]) err('port.type', `${kind} "${p}" has unknown type "${s.type}": use a type from the spec or propose a new one`, p);
+      if (!catalog.types[s.type] && !Object.prototype.hasOwnProperty.call(tvars, s.type)) err('port.type', `${kind} "${p}" has unknown type "${s.type}": use a type from the spec or propose a new one`, p);
     }
   }
   if (!Object.keys(m.outputs ?? {}).length) err('outputs', 'a part must produce at least one output');

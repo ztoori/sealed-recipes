@@ -40,7 +40,7 @@ export function Spec() {
   const tierCounts = parts.reduce<Partial<Record<Tier, number>>>((c, p) => { const t = partTier(p).tier; c[t] = (c[t] ?? 0) + 1; return c; }, {});
   const usedBy = (t: string) => parts.filter((p) => [...Object.values(p.inputs), ...Object.values(p.outputs)].some((s) => s.type === t)).length;
   const download = () => {
-    const blob = new Blob([JSON.stringify({ srs: '1.0', types: cat?.types, parts }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ srs: cat?.srs ?? '1.1', types: cat?.types, parts }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'srs-1-catalog.json'; a.click();
   };
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });

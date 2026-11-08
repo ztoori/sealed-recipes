@@ -107,7 +107,8 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
   let reportable = false; // true once the run is verified as paid, pending and assigned to this runner
   let reported = false;
   // buyer-derived data leaves the runner only sealed to the buyer's one-time reply key
-  const priv = (type: string, data: Record<string, unknown>) => { if (replyTo) emit(job, 'sealed', { node: data.node ?? null, envelope: seal({ type, data }, replyTo, 'output') }); };
+  // sealed events carry nothing in the clear: not even the node id, which is part of the sealed method (SRS-1.1 §5.3)
+  const priv = (type: string, data: Record<string, unknown>) => { if (replyTo) emit(job, 'sealed', { node: null, envelope: seal({ type, data }, replyTo, 'output') }); };
   const report = async (outcome: Outcome, outputHash: string, delivered: bigint, partsUsed: string[]) => {
     const msg = runReportMessage(CONTRACT_ID, job.runId, job.recipeId, outcome, outputHash, delivered.toString(), partsUsed);
     const signature = base64.enc(nacl.sign.detached(utf8ToBytes(msg), keys.sign.secretKey));
@@ -166,7 +167,7 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
       const st = open<DurableState>(cp.envelope, keys.box.secretKey);
       if (st.run_id !== job.runId || st.local_seq !== cp.local_seq) throw new Error('checkpoint belongs to another run');
       resumePoint = st.point; localSeq = st.local_seq; freshSaved = BigInt(st.fresh);
-      emit(job, 'resuming', { local_seq: localSeq, completed_parts: st.point.index, mid_part: st.point.node ?? null, onchain_seq: onchainSeq });
+      emit(job, 'resuming', { local_seq: localSeq, completed_parts: st.point.index, mid_part: st.point.node !== undefined ? `s${st.point.index + 1}` : null, onchain_seq: onchainSeq });
     }
     const settleMode = recipeOnChain.settle_mode ?? 'final';
     const checkpoint = async (point: ResumePoint, partsDone: string[]) => {
@@ -178,7 +179,7 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
       // durable write first: the run does not move past this point until the marketplace has stored the checkpoint
       const st = await fetch(`${MARKET}/api/internal/checkpoints`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-runner-token': TOKEN }, body: JSON.stringify({ run_id: job.runId, local_seq: localSeq, state_hash, envelope, signature } satisfies CheckpointRecord) });
       if (!st.ok) throw new Error('checkpoint store failed: ' + (await st.text()));
-      emit(job, 'checkpoint', { local_seq: localSeq, state_hash, completed_parts: point.index, mid_part: point.node ?? null });
+      emit(job, 'checkpoint', { local_seq: localSeq, state_hash, completed_parts: point.index, mid_part: point.node !== undefined ? `s${point.index + 1}` : null });
       const bill = settleMode === 'checkpoint' ? partsDone : [];
       if (bill.length || Date.now() - lastOnchain >= HEARTBEAT_MS) {
         const seq = onchainSeq + 1;
@@ -209,13 +210,21 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
       }
     }
 
-    const PUBLIC = new Set(['part_start', 'part_done']);
+    // SRS-1.1 §5.3: in the clear the marketplace sees only coarse progress (step i of n, also for skipped steps).
+    // Part names, node ids, order and skips go to the buyer, sealed. Approvals are keyed by step, not by node id.
+    const stepOf = (node: string) => `s${v.order.indexOf(node) + 1}`;
+    const priorApprovals = Object.fromEntries(Object.entries(resumeIn?.approvals ?? {}).map(([k, a]) => [/^s\d+$/.test(k) ? v.order[Number(k.slice(1)) - 1] ?? k : k, a]));
+    let stepsDone = resumePoint?.index ?? 0;
     const res = await execute(job.runId, recipe, inputs, {
-      catalog, rewrites, secrets, checkpoint, resume: resumePoint, priorApprovals: resumeIn?.approvals,
-      emit: (t, d) => (PUBLIC.has(t) ? emit(job, t, d) : priv(t, d)),
+      catalog, rewrites, secrets, checkpoint, resume: resumePoint, priorApprovals,
+      emit: (t, d) => {
+        priv(t, d);
+        if (t === 'part_done' || t === 'part_skipped') emit(job, 'progress', { step: ++stepsDone, of: v.order.length });
+      },
       requestApproval: (node, req) => new Promise<ApprovalResult>((resolveApproval) => {
-        job.approval = { resolve: resolveApproval, req, node };
-        emit(job, 'approval_pending', { node, transactions: req.transactions.length });
+        const step = stepOf(node);
+        job.approval = { resolve: resolveApproval, req, node: step };
+        emit(job, 'approval_pending', { node: step, transactions: req.transactions.length });
         priv('approval_required', { node, ...req });
         setTimeout(() => { if (job.approval?.req === req) { job.approval = undefined; resolveApproval({ approved: false, txHashes: [] }); } }, 5 * 60_000);
       }),
@@ -228,8 +237,9 @@ async function runJob(job: Job, sealedRecipe: SealedEnvelope, sealedInputs: Seal
     const delivered = m ? (fresh > 0n ? creditedDelivered(m.delivered, fresh, m.executed) : m.delivered) : 0n;
     if (m && delivered !== m.delivered) priv('withheld', { measured: m.delivered.toString(), credited: delivered.toString() });
     const settlement = await report(res.ok ? 'ok' : 'fail', res.outputHash, delivered, res.ok ? res.partsUsed : []);
-    priv('result', { ok: res.ok, error: res.error, output });
-    emit(job, 'completed', { ok: res.ok, outcome: res.ok ? 'ok' : 'fail', output_hash: res.outputHash, output_commitment: hashObject({ run_id: job.runId, output }), settlement });
+    // the buyer gets the salt, so only the buyer can check output_hash against the output (SRS-1.1 §6)
+    priv('result', { ok: res.ok, error: res.error, output, salt: res.salt, skipped: res.skipped });
+    emit(job, 'completed', { ok: res.ok, outcome: res.ok ? 'ok' : 'fail', output_hash: res.outputHash, settlement });
   } catch (e) {
     emit(job, 'failed', { error: (e as Error).message });
     // a verified run that cannot complete is refunded now (signed fail), not after the reclaim timeout

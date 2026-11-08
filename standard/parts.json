@@ -1,66 +1,329 @@
 {
-  "srs": "1.0",
+  "srs": "1.1",
   "kind": "part-catalog",
   "types": {
     "near.account": {
       "description": "NEAR account id (named or implicit)",
-      "extends": null
+      "extends": null,
+      "schema": {
+        "type": "string",
+        "pattern": "^[a-z0-9._-]{2,64}$"
+      }
     },
     "address.near": {
       "description": "Any NEAR recipient address",
-      "extends": null
+      "extends": null,
+      "schema": {
+        "type": "string",
+        "pattern": "^[a-z0-9._-]{2,64}$"
+      }
     },
     "address.near.fresh": {
       "description": "NEAR address proven to have no on-chain history",
-      "extends": "address.near"
+      "extends": "address.near",
+      "proof": true
     },
     "asset.id": {
       "description": "NEAR Intents asset id from 1Click /v0/tokens (e.g. nep141:wrap.near)",
-      "extends": null
+      "extends": null,
+      "schema": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]+:.+$"
+      }
     },
     "usd": {
       "description": "USD amount (decimal number)",
-      "extends": null
+      "extends": null,
+      "schema": {
+        "type": "number",
+        "minimum": 0
+      }
     },
     "token.holdings": {
       "description": "List of {assetId, symbol, contract, amount, decimals, usd}",
-      "extends": null
+      "extends": null,
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "assetId",
+            "symbol",
+            "amount",
+            "decimals",
+            "usd"
+          ],
+          "properties": {
+            "assetId": {
+              "type": "string"
+            },
+            "symbol": {
+              "type": "string"
+            },
+            "contract": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "decimals": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "usd": {
+              "type": "number"
+            },
+            "listed": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
     },
     "token.flags": {
       "description": "List of {assetId, verdict, reason} produced by a guard",
-      "extends": null
+      "extends": null,
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "assetId",
+            "verdict",
+            "reason"
+          ],
+          "properties": {
+            "assetId": {
+              "type": "string"
+            },
+            "symbol": {
+              "type": "string"
+            },
+            "verdict": {
+              "type": "string",
+              "enum": [
+                "SCAM",
+                "OK"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          }
+        }
+      }
     },
     "swap.plan": {
       "description": "Ordered 1Click quotes with deposit addresses",
-      "extends": null
+      "extends": null,
+      "schema": {
+        "type": "array"
+      }
     },
     "swap.receipts": {
-      "description": "Final 1Click statuses with tx hashes",
-      "extends": null
+      "description": "Receipts of value delivered to the buyer's recipient (swaps, staking withdrawals, claimed drops): one per transfer, with status, amounts in smallest units and tx hashes. The type a bonded quote measures (SRS-1 §7)",
+      "extends": null,
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "symbol": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "amountOutUnits": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "minAmountOutUnits": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "confidentiality": {
+              "type": "string",
+              "enum": [
+                "basic",
+                "public"
+              ]
+            }
+          }
+        }
+      }
     },
     "report": {
       "description": "Human-readable summary object",
-      "extends": null
+      "extends": null,
+      "schema": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        }
+      }
     },
     "percent": {
       "description": "Percentage between 0 and 100 (decimal number)",
-      "extends": null
+      "extends": null,
+      "schema": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100
+      }
     },
     "key.list": {
       "description": "Access keys of an account: {public_key, kind: full|function-call, receiver, methods, allowance, nonce, action?, reason?}",
-      "extends": null
+      "extends": null,
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "public_key",
+            "kind"
+          ],
+          "properties": {
+            "public_key": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "full",
+                "function-call"
+              ]
+            },
+            "receiver": {
+              "type": "string"
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "revoke",
+                "review",
+                "keep"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            }
+          }
+        }
+      }
     },
     "stake.list": {
       "description": "Delegations to staking pools: {pool, staked, unstaked, can_withdraw, fee_pct, active}",
-      "extends": null
+      "extends": null,
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "pool",
+            "staked",
+            "unstaked",
+            "can_withdraw"
+          ],
+          "properties": {
+            "pool": {
+              "type": "string"
+            },
+            "staked": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "unstaked": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "can_withdraw": {
+              "type": "boolean"
+            },
+            "fee_pct": {
+              "type": "number"
+            },
+            "active": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
     },
     "contract.facts": {
       "description": "What a contract account exposes on-chain: existence, code, full-access keys, NEP-330 source metadata, token listing",
-      "extends": null
+      "extends": null,
+      "schema": {
+        "type": "object",
+        "required": [
+          "account",
+          "exists",
+          "has_code",
+          "full_access_keys",
+          "listed_token"
+        ],
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "has_code": {
+            "type": "boolean"
+          },
+          "full_access_keys": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "listed_token": {
+            "type": "boolean"
+          }
+        }
+      }
     },
     "contract.verdict": {
       "description": "Risk verdict on a contract: {risk: low|medium|high, reasons[], source}",
-      "extends": null
+      "extends": null,
+      "schema": {
+        "type": "object",
+        "required": [
+          "risk",
+          "reasons",
+          "source"
+        ],
+        "properties": {
+          "risk": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      }
     }
   },
   "parts": [

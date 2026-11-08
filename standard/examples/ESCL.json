@@ -1,0 +1,27 @@
+{
+  "srs": "1.1",
+  "kind": "recipe",
+  "meta": {
+    "ticker": "ESCL",
+    "name": "Contract check, escalated only when needed",
+    "creator": "chef.testnet",
+    "description": "Cheap rules judge every contract. Only when they are unsure or alarmed does a private AI review it, and the report uses the AI's verdict when there is one. Which threshold escalates, and what the AI is told, stay sealed."
+  },
+  "form": [
+    { "id": "contract", "label": "Contract you are about to sign for", "type": "near.account", "required": true, "placeholder": "app.ref-finance.near" }
+  ],
+  "nodes": [
+    { "id": "facts", "part": "near.contract-facts@1.0.0", "inputs": { "contract": "form.contract" }, "params": {} },
+    { "id": "rules", "part": "rules.contract-risk@1.0.0", "inputs": { "facts": "facts.facts" }, "params": { "lookalikes": ["ref-finance", "aurora", "meteor", "burrow", "near", "intear"] } },
+    {
+      "id": "judge",
+      "part": "ai.contract-risk@1.0.0",
+      "inputs": { "facts": "facts.facts" },
+      "params": { "policy": "You review NEAR contracts for phishing. Weigh upgradability, unpublished source and lookalike names. Answer JSON only." },
+      "when": { "ref": "rules.verdict", "match": { "risk": ["medium", "high"] } }
+    },
+    { "id": "report", "part": "report.contract@1.0.0", "inputs": { "facts": "facts.facts", "verdict": ["judge.verdict", "rules.verdict"] }, "params": {} }
+  ],
+  "output": "report.report",
+  "listing": { "price_per_run": "150000", "reserve_bps": 1000, "bond": "0", "bill": "declared", "pricing": { "price_floor": "120000", "price_ceiling": "400000", "target_runs": 3 } }
+}

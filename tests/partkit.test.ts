@@ -55,7 +55,7 @@ test('partkit: all 10 seed recipes can be composed from parts: buyer form + part
     for (const n of r.nodes) {
       const added = addPartAutoWired(b, n.part, catalog);
       // the composer names nodes itself; map ours to the seed's id for comparison
-      b = { ...added.recipe, nodes: added.recipe.nodes.map((x) => (x.id === added.nodeId ? { ...x, id: n.id, params: n.params } : x)), output: added.recipe.output.replace(`${added.nodeId}.`, `${n.id}.`) };
+      b = { ...added.recipe, nodes: added.recipe.nodes.map((x) => (x.id === added.nodeId ? { ...x, id: n.id, params: n.params } : x)), output: String(added.recipe.output).replace(`${added.nodeId}.`, `${n.id}.`) };
       for (const [port, ref] of Object.entries(n.inputs)) {
         const offered = sourcesFor(b, n.id, catalog).find((s) => s.ref === ref);
         assert.ok(offered, `${r.meta.ticker}: ${n.id}.${port} ← ${ref} is offered by the composer`);
@@ -77,7 +77,7 @@ test('partkit: auto-wiring alone produces a valid recipe for every seed recipe a
     const v = validateRecipe(b, catalog);
     assert.ok(v.ok, `${r.meta.ticker}: ${v.diagnostics.map((d) => d.message).join('; ')}`);
     assert.ok(b.output, `${r.meta.ticker} has a result`);
-    r.nodes.forEach((n, i) => { for (const [p, ref] of Object.entries(n.inputs)) { total++; const [h, ...t] = ref.split('.'); const idx = r.nodes.findIndex((x) => x.id === h); const mapped = idx >= 0 ? `${ids[idx]}.${t.join('.')}` : ref; if (b.nodes[i].inputs[p] === mapped) same++; } });
+    r.nodes.forEach((n, i) => { for (const [p, ref] of Object.entries(n.inputs)) { total++; const [h, ...t] = String(ref).split('.'); const idx = r.nodes.findIndex((x) => x.id === h); const mapped = idx >= 0 ? `${ids[idx]}.${t.join('.')}` : ref; if (b.nodes[i].inputs[p] === mapped) same++; } });
   }
   console.log(`# auto-wiring matched ${same}/${total} of the hand-made wires`);
   assert.ok(same / total > 0.9);

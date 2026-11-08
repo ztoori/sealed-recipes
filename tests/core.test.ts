@@ -124,7 +124,7 @@ test('SRS-1: seed recipes validate; listing hides wiring and secret params', () 
   const s = JSON.stringify(l);
   assert.ok(!s.includes('token-safety classifier'), 'secret policy prompt must not leak');
   assert.ok(!s.includes('slippage_bps'));
-  assert.deepEqual(l.parts, ['near.wallet-scanner@1.0.0', 'addr.fresh-check@1.0.0', 'ai.spam-shield@1.1.0', 'filter.dust@1.0.0', 'intents.confidential-swap@1.0.0']);
+  assert.deepEqual(l.parts, ['addr.fresh-check@1.0.0', 'ai.spam-shield@1.1.0', 'filter.dust@1.0.0', 'intents.confidential-swap@1.0.0', 'near.wallet-scanner@1.0.0'], 'a sorted multiset: execution order stays sealed');
 });
 
 test('SRS-1: type errors, cycles and unwired ports are caught', () => {

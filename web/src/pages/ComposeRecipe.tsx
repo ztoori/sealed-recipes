@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ReactFlow, Background, Controls, Handle, Position, applyNodeChanges, type Connection, type Edge, type Node, type NodeChange, type NodeProps, type EdgeChange, ReactFlowProvider, useReactFlow } from '@xyflow/react';
-import { compatibleSwaps, swapPart, validateRecipe, withdrawalRisk, isAssignable, type PartManifest, type Catalog, type Recipe, type FormField, type Diagnostic } from '../../../core/src/srs';
+import { compatibleSwaps, swapPart, validateRecipe, withdrawalRisk, isAssignable, refsOf, type PartManifest, type Catalog, type Recipe, type FormField, type Diagnostic } from '../../../core/src/srs';
 import { addBuyerField, addPartAutoWired, blankRecipe, BUYER_TYPES, sourcesFor, suggestNext } from '../../../core/src/partkit';
 import { open, type SealedEnvelope } from '../../../core/src/seal';
 import { creatorKeyFromSignature, creatorKeyMessage, demoWalletSign } from '../../../core/src/creator';
@@ -130,7 +130,7 @@ function Builder() {
     if (!recipe || !catalog) return;
     const a = addPartAutoWired(recipe, partId, catalog, { askBuyer: true });
     const n = a.recipe.nodes.find((x) => x.id === a.nodeId)!;
-    const fromNodes = Object.values(n.inputs).map((ref) => recipe.nodes.find((x) => x.id === ref.split('.')[0])).filter(Boolean) as typeof recipe.nodes;
+    const fromNodes = Object.values(n.inputs).flatMap(refsOf).map((ref) => recipe.nodes.find((x) => x.id === ref.split('.')[0])).filter(Boolean) as typeof recipe.nodes;
     const x = at?.x ?? (fromNodes.length ? Math.max(...fromNodes.map((f) => f.ui?.x ?? 0)) + 270 : 0);
     let y = at?.y ?? (fromNodes[0]?.ui?.y ?? 80);
     while (!at && recipe.nodes.some((o) => Math.abs((o.ui?.x ?? 0) - x) < 200 && Math.abs((o.ui?.y ?? 0) - y) < 150)) y += 170;
@@ -140,17 +140,17 @@ function Builder() {
     else if (a.asked.length) toast(`Added to the buyer’s form: ${a.asked.map((id) => a.recipe.form.find((f) => f.id === id)?.label).join(', ')}`);
     fit(80);
   };
-  const remove = (id: string) => setRecipe((r) => r && ({ ...r, output: r.output.startsWith(id + '.') ? '' : r.output, nodes: r.nodes.filter((n) => n.id !== id).map((n) => ({ ...n, inputs: Object.fromEntries(Object.entries(n.inputs).filter(([, ref]) => !ref.startsWith(id + '.'))) })) }));
+  const remove = (id: string) => setRecipe((r) => r && ({ ...r, output: refsOf(r.output).some((x) => x.startsWith(id + '.')) ? '' : r.output, nodes: r.nodes.filter((n) => n.id !== id).map((n) => ({ ...n, inputs: Object.fromEntries(Object.entries(n.inputs).filter(([, ref]) => !refsOf(ref).some((x) => x.startsWith(id + '.')))) })) }));
 
   // ---------- recipe <-> flow ----------
   const nodes: Node[] = useMemo(() => !recipe ? [] : [
     { id: 'form', type: 'form', position: formPos, measured: dims.form, data: { fields: recipe.form, consts: Object.entries(recipe.consts ?? {}) }, selected: sel === 'form', deletable: false },
-    ...recipe.nodes.filter((n) => manifests.has(n.part)).map((n) => ({ id: n.id, type: 'part', position: n.ui ?? { x: 0, y: 0 }, measured: dims[n.id], selected: sel === n.id, data: { manifest: manifests.get(n.part)!, errors: v?.diagnostics.filter((d) => d.node === n.id && d.severity === 'error').length ?? 0, isResult: recipe.output.startsWith(n.id + '.') } })),
+    ...recipe.nodes.filter((n) => manifests.has(n.part)).map((n) => ({ id: n.id, type: 'part', position: n.ui ?? { x: 0, y: 0 }, measured: dims[n.id], selected: sel === n.id, data: { manifest: manifests.get(n.part)!, errors: v?.diagnostics.filter((d) => d.node === n.id && d.severity === 'error').length ?? 0, isResult: refsOf(recipe.output).some((x) => x.startsWith(n.id + '.')) } })),
   ], [recipe, manifests, sel, v, formPos, dims]);
-  const edges: Edge[] = useMemo(() => !recipe ? [] : recipe.nodes.flatMap((n) => Object.entries(n.inputs).map(([port, ref]) => {
+  const edges: Edge[] = useMemo(() => !recipe ? [] : recipe.nodes.flatMap((n) => Object.entries(n.inputs).flatMap(([port, b]) => refsOf(b).map((ref) => [port, ref] as const)).map(([port, ref], i) => {
     const [src, ...rest] = ref.split('.'); const p = rest.join('.');
     const bad = v?.diagnostics.some((d) => d.node === n.id && d.port === port && d.severity === 'error');
-    return { id: `${n.id}:${port}`, source: src === 'const' || src === 'form' ? 'form' : src, sourceHandle: src === 'const' ? 'const:' + p : p, target: n.id, targetHandle: port, animated: story.step === 1, style: { stroke: bad ? '#b8364a' : '#15233f', strokeWidth: 1.5 } } as Edge;
+    return { id: `${n.id}:${port}:${i}`, source: src === 'const' || src === 'form' ? 'form' : src, sourceHandle: src === 'const' ? 'const:' + p : p, target: n.id, targetHandle: port, animated: story.step === 1, style: { stroke: bad ? '#b8364a' : '#15233f', strokeWidth: 1.5 } } as Edge;
   })), [recipe, v, story.step]);
   const onNodesChange = useCallback((ch: NodeChange[]) => {
     const dimCh = ch.filter((c) => c.type === 'dimensions' && (c as { dimensions?: unknown }).dimensions) as { id: string; dimensions: { width: number; height: number } }[];
@@ -447,7 +447,8 @@ function InputsEditor({ recipe, nodeId, m, catalog, wire, setRecipe }: { recipe:
       <div className="sectlabel"><Icon name="link" size={13} />Inputs<Tip>Where each value comes from: an earlier part, the buyer’s form, or a fixed value.</Tip></div>
       {Object.entries(m.inputs).map(([port, spec]) => {
         const opts = all.filter((s) => isAssignable(catalog.types, s.type, spec.type));
-        const ref = node.inputs[port] ?? '';
+        // the inspector edits one wire per input; a list of alternatives (SRS-1.1) shows its first entry
+        const ref = refsOf(node.inputs[port])[0] ?? '';
         const fixedKey = ref.startsWith('const.') ? ref.slice(6) : null;
         const fixable = ['asset.id', 'usd', 'percent', 'near.account', 'address.near'].includes(spec.type);
         return (
