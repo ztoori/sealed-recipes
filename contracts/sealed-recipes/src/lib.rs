@@ -39,6 +39,11 @@ pub const CHECKPOINT_MESSAGE_PREFIX: &str = "srs-ckpt-v1";
 pub const SETTLE_MODES: [&str; 2] = ["final", "checkpoint"];
 const GAS_FT_TRANSFER: Gas = Gas::from_tgas(10);
 const GAS_ON_WITHDRAW: Gas = Gas::from_tgas(10);
+/// Size limits on the fixed-format fields of `register_part` and `publish_recipe` (a semver version,
+/// hashes). Names and part lists have no cap (SRS-1 §12: nothing caps the nodes in a recipe); the
+/// caller pays for every byte stored (see `charge_storage`), so the contract's NEAR can't be drained.
+pub const MAX_VERSION_LEN: usize = 32;
+pub const MAX_HASH_LEN: usize = 128;
 
 #[derive(BorshStorageKey)]
 #[near]
@@ -311,6 +316,26 @@ fn valid_hash(h: &str) -> bool {
     h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// Charges the caller for the storage this call added since `before` (`env::storage_usage()`):
+/// the attached deposit must cover it, and the rest is refunded to the caller.
+fn charge_storage(before: u64) {
+    let used = env::storage_usage().saturating_sub(before);
+    let cost = env::storage_byte_cost().saturating_mul(used as u128);
+    let attached = env::attached_deposit();
+    require!(
+        attached >= cost,
+        format!(
+            "attach at least {} yoctoNEAR to pay for {} bytes of storage",
+            cost.as_yoctonear(),
+            used
+        )
+    );
+    let refund = attached.saturating_sub(cost);
+    if !refund.is_zero() {
+        let _ = Promise::new(env::predecessor_account_id()).transfer(refund);
+    }
+}
+
 fn valid_ticker(id: &str) -> bool {
     (3..=6).contains(&id.len())
         && id
@@ -521,6 +546,9 @@ impl Contract {
 
     // ---------------------------------------------------- builders & creators
 
+    /// Registers a part. Payable: attach enough NEAR for the part's storage (the error says how
+    /// much); the rest is refunded.
+    #[payable]
     pub fn register_part(
         &mut self,
         id: String,
@@ -528,8 +556,17 @@ impl Contract {
         fee_per_call: U128,
         manifest_hash: String,
     ) {
+        let before = env::storage_usage();
         require!(valid_part_id(&id), "part id must match ^[a-z0-9._@-]{1,64}$");
         require!(!self.parts.contains_key(&id), "part exists");
+        require!(
+            (1..=MAX_VERSION_LEN).contains(&version.len()),
+            "version must be 1..=32 bytes"
+        );
+        require!(
+            (1..=MAX_HASH_LEN).contains(&manifest_hash.len()),
+            "manifest_hash must be 1..=128 bytes"
+        );
         let part = Part {
             id: id.clone(),
             version,
@@ -540,9 +577,14 @@ impl Contract {
         };
         emit("part_registered", json!(part));
         self.parts.insert(id, part);
+        self.parts.flush();
+        charge_storage(before);
     }
 
+    /// Publishes a recipe. Payable: attach enough NEAR for the recipe's storage (the error says how
+    /// much); the rest is refunded.
     #[allow(clippy::too_many_arguments)]
+    #[payable]
     pub fn publish_recipe(
         &mut self,
         id: String,
@@ -555,7 +597,12 @@ impl Contract {
         settle_mode: Option<String>,
         pricing: Option<PricingInput>,
     ) {
+        let before = env::storage_usage();
         require!(valid_ticker(&id), "recipe id must match ^[A-Z0-9]{3,6}$");
+        require!(
+            sealed_hash.len() <= MAX_HASH_LEN,
+            "sealed_hash must be at most 128 bytes"
+        );
         let settle_mode = settle_mode.unwrap_or_else(|| "final".to_string());
         require!(
             SETTLE_MODES.contains(&settle_mode.as_str()),
@@ -621,6 +668,8 @@ impl Contract {
         };
         emit("recipe_published", json!(recipe));
         self.recipes.insert(id, recipe);
+        self.recipes.flush();
+        charge_storage(before);
     }
 
     /// Validates a pricing band: `floor` must cover the protocol fee on itself plus the runner and

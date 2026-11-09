@@ -22,6 +22,6 @@ const listings = await api<{ ticker: string }[]>('/api/listings');
 for (const t of SEEDED) {
   if (listings.some((l) => l.ticker === t)) continue;
   const r = await publish(load(t), catalog, onchain.enc_pk_hex);
-  console.log(`[seed] published ${t}  sealed_hash ${r.sealed_hash.slice(0, 16)}…  tx ${r.tx}`);
+  console.log(`[seed] published ${t}  sealed_hash ${r.sealed_hash.slice(0, 16)}…  simulated tx ${r.tx}`);
 }
 console.log('[seed] done');

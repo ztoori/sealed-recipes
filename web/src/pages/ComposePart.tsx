@@ -6,7 +6,7 @@ import { partTier, reviewedManifestHash, securityScan, submissionMessage, TIER_I
 import { base64 } from '../../../core/src/seal';
 import { demoWalletSign } from '../../../core/src/creator';
 import { TierPill, admissionLine, TiersTip } from '../components/Admission';
-import { api, short, usd, usePoll } from '../api';
+import { api, short, txRef, usd, usePoll } from '../api';
 import { useApp } from '../App';
 import { RiskPill } from './ComposeRecipe';
 import { CAT, Icon } from '../icons';
@@ -138,7 +138,7 @@ export function ComposePart({ part }: { part?: string }) {
   const register = async () => {
     try {
       const r = await api('/api/chain/tx', { signer: acting, method: 'register_part', args: { id: m.id, version: m.id.split('@')[1], fee_per_call: m.fee_per_call, manifest_hash: hashObject(m) } });
-      setRegistered({ tx: r.tx }); toast(`Registered ${m.id} on-chain · tx ${short(r.tx, 6, 4)}`);
+      setRegistered({ tx: r.tx }); toast(`Registered ${m.id} · ${txRef(r.tx)}`);
     } catch (e) { toast((e as Error).message, true); }
   };
 
@@ -273,7 +273,7 @@ export function ComposePart({ part }: { part?: string }) {
               </ol>
               {draft.author !== acting && <div className="diag warning">The author is {draft.author}; switch “Acting as” to that account to register and submit.</div>}
               {mine && <button className="linkbtn" onClick={() => go({ page: 'compose', sub: 'review', part: mine.id })}><Icon name="shieldCheck" size={13} />Submission: {mine.status.replace('_', ' ')}{mine.needed ? ` · ${mine.approvals}/${mine.needed} approvals` : ''}</button>}
-              <button className="btn" disabled={!!errs.length || isRegistered || draft.author !== acting} onClick={register}>{isRegistered ? <><Icon name="check" size={14} />Registered{registered ? ` · tx ${short(registered.tx, 6, 4)}` : ''}</> : 'Register on-chain'}</button>
+              <button className="btn" disabled={!!errs.length || isRegistered || draft.author !== acting} onClick={register}>{isRegistered ? <><Icon name="check" size={14} />Registered{registered ? ` · ${txRef(registered.tx)}` : ''}</> : 'Register on-chain'}</button>
               <button className="btn primary" disabled={!!errs.length || !isRegistered || draft.author !== acting || !!(mine && mine.status !== 'failed_checks' && mine.status !== 'changes_requested')} onClick={submit}><Icon name="shieldCheck" size={14} />Submit for review</button>
               <button className="btn ghost" disabled={!!errs.length} onClick={download}><Icon name="download" size={14} />Download submission</button>
             </div>

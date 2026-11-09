@@ -67,6 +67,18 @@ test('pay-per-run → signed report → every party credited in one settlement',
   assert.equal(String((ev.data[0] as { reserve: unknown }).reserve), '63500');
 });
 
+test('register_part and publish_recipe limit versions and hashes, and cap neither parts nor names (SRS-1 §12)', () => {
+  const { L, parts } = setupLedger();
+  const part = (id: string, version: string, manifest_hash: string) => L.call('author9.testnet', (l) => l.register_part({ id, version, fee_per_call: '1', manifest_hash }));
+  assert.throws(() => part('big@1', 'v'.repeat(33), 'h'), /version must be 1..=32 bytes/);
+  assert.throws(() => part('big@1', '1', 'h'.repeat(129)), /manifest_hash must be 1..=128 bytes/);
+  const publish = (id: string, name: string, sealed_hash: string, ps: string[]) => L.call('creator.testnet', (l) => l.publish_recipe({ id, name, sealed_hash, runner_id: 'runner.testnet', parts: ps, price_per_run: '5000000' }));
+  assert.throws(() => publish('LONG', 'n', 'h'.repeat(129), parts), /sealed_hash must be at most 128 bytes/);
+  assert.throws(() => publish('LONG', 'n', 'é'.repeat(65), parts), /sealed_hash must be at most 128 bytes/, 'counted in UTF-8 bytes, as the contract does');
+  publish('MANY', 'n'.repeat(200), 'h'.repeat(128), Array(40).fill(parts[0]));
+  assert.equal(L.get_recipe('MANY')?.parts.length, 40);
+});
+
 test('forged or replayed reports are rejected; failure refunds; timeout reclaim', () => {
   const { L, sign, pay, parts, advance } = setupLedger();
   pay('r1');

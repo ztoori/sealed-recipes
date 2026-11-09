@@ -2,17 +2,25 @@
 
 Everything the NEAR Hackathon asks for, ready to use. Per the organizers' rules, **a human must** publish the repo, post on X and send the form. Nothing in this repo does any of those automatically.
 
-Deadline: **Nov 14, 2026, 23:59 UTC** (6:59 pm Toronto). Submissions open Nov 1, 00:00 UTC. One submission per repo, and it can't be edited afterwards. Suggested timing: deploy to testnet around Nov 10–11, then submit by Nov 12–13.
+Deadline: **Nov 14, 2026, 23:59 UTC** (6:59 pm Toronto). Judging runs Nov 16–18. One submission per project; corrections afterwards go through the site's *Request changes* page, which the organizers review by hand. Suggested timing: deploy around Nov 10–11, then submit by Nov 12–13.
+
+Projects are screened first by Claude Code and Codex, which check that the repo runs and does what its README says, then judged by a panel. The site names technical implementation, design, impact, originality and sustainability as past criteria, without weights.
 
 ## 1. Checklist
 
-- [ ] Tag `baseline-2026-10-31` exists. It marks the work done before the window opened; everything after it was built during the hackathon, as HACKATHON.md asks.
-- [ ] Push to a **public** GitHub repo (you do this; nothing was uploaded).
-- [ ] On a clean machine: `npm install && npm run test:e2e` ends with `✔ story complete`; `npm test` (47), `npm run test:rust` (105) and `npm run test:recipes` pass.
-- [ ] Strongly recommended: `NEAR_AI_API_KEY=… npm run live-check`, and deploy the contract to testnet (commands in `contracts/sealed-recipes/README.md`). Add the results to the README.
-- [ ] Post the demo on X (below) with `docs/media/demo.mp4` attached.
+- [ ] Create the **public** GitHub repo `ztoori/sealed-recipes` (the URL in `contracts/sealed-recipes/Cargo.toml`, which cargo-near publishes through NEP-330; if you choose another name, change it there too) and push with tags:
+  ```bash
+  git remote add origin https://github.com/ztoori/sealed-recipes.git
+  git push -u origin main --tags
+  ```
+  The tag `baseline-2026-10-31` marks the first build, written after the hackathon was announced; the rules count code written since the announcement. `git diff baseline-2026-10-31..main` shows everything built during the window.
+- [ ] On a clean machine: `npm install && npm run test:e2e` ends with `✔ story complete`; `npm test` (72 tests), `npm run test:rust` (112 tests), `npm run verify` and `npm run test:recipes` pass.
+- [ ] Strongly recommended: deploy the contract (mainnet with small amounts, because NEAR Intents has no testnet; commands in `contracts/sealed-recipes/README.md`) and run `NEAR_AI_API_KEY=… npm run live-check`. Put the explorer links and the live-check output at the top of the README, and update the **Status** paragraph of the project description below.
+- [ ] Optional: record a voice-over for `docs/media/demo.mp4` with the script in §5. The video has on-screen captions, so it also works silent.
+- [ ] Post the demo on X (§3).
 - [ ] Create a **mainnet** NEAR account for the prize payout.
-- [ ] Check that no keys are in the repo history (`.env` is git-ignored).
+- [ ] Check that no keys are in the repo history: `.env` is git-ignored, and `git log -p | grep -iE "NEAR_AI_API_KEY=.|ONECLICK_JWT=."` prints nothing.
+- [ ] If the same person enters a second project, each README must name the other (up to 2 independent projects per person).
 - [ ] Fill in the form at https://nearhackathon.com/#apply.
 
 ## 2. Form fields
@@ -21,41 +29,50 @@ Deadline: **Nov 14, 2026, 23:59 UTC** (6:59 pm Toronto). Submissions open Nov 1,
 |---|---|
 | Project name | Sealed Recipes |
 | Team lead | *you* |
-| Email | *you* (max 2 submissions per email) |
-| Team size | *1 / 2-4 / …* |
-| Tracks | `privacy` (sealed TEE execution, NEAR AI Cloud), `agents` (agents request quotes and pay for runs, parts are paid per call), `defi` (Intents payment, atomic bundles, one-receipt settlement, guarantee deposits), `open` |
+| Email address | *you* |
+| Team size | *1 — Solo builder / 2 - 4 people / 4 - 6 people / 6 - 8 people / 8+ people* |
+| Tracks | **Privacy & Private AI**, **Agent Economy** (why: below) |
 | NEAR wallet address | *your mainnet account* |
-| Repository link | *your public GitHub URL* |
+| Repository link | https://github.com/ztoori/sealed-recipes |
 | Demo post link | *your X post URL* |
-| Website | leave empty |
-| Project description (1916 / 2000 chars) | see below |
+| What did you build? (1836 / 2000 characters) | see below |
+| Website | leave empty, or a hosted demo if you deploy one |
+
+Why these tracks:
+
+| Track | What in this project fits it |
+|---|---|
+| Privacy & Private AI | Recipes are sealed to an attested TEE runner (dstack TDX); buyers' inputs and results are sealed end to end; AI parts use NEAR AI Cloud private inference and verify its TEE signatures; swaps use confidential intents to a fresh address |
+| Agent Economy | Agents ask recipes for signed quotes, compare them against a policy, pay per run through NEAR Intents and check delivery against the promise; part authors earn a fee on every call, in the same settlement |
 
 ```text
-Problem: workflows that chain tools, bots and models are the edge, but they are easy to copy, hard to compare on results, and their parts' builders are rarely paid.
+Problem: workflows that chain tools, bots and AI models are often the real edge, but they are easy to copy, hard to compare on results, and the builders of their parts are rarely paid.
 
-Sealed Recipes is intents for workflows, on NEAR:
-- Get a quote: a buyer or agent picks a recipe and fills its one short form, sealed to an attested TEE runner. 10 recipes: wallet cleanup, exits, scam audits, app-key revocation, unstaked NEAR, contract checks, position caps.
-- Quote: the recipe quotes from a dry run inside the TEE: expected value, a runner-signed promise backed by the creator's guarantee deposit, a signed price, privacy and withdrawal risk. Buyers judge results, not methods.
-- Market prices: each recipe's price follows its own demand inside a creator-set band (EIP-1559 rule, on-chain, proved); a quote locks it.
-- Pay with NEAR Intents from any chain: a 1Click EXACT_OUTPUT quote delivers the exact run price to our contract via ft_transfer_call, carrying the signed quote.
-- Run privately: parts (code, agents, NEAR AI Cloud private models) run under resource limits; swaps use confidential intents to a fresh address; results are sealed to the buyer's browser.
-- Settle once: the contract verifies the runner's signed report and pays the protocol, the runner, every part author and the creator in one receipt, and pays any shortfall to the buyer from the deposit. Quotes are single-use and bound to the buyer and their sealed inputs, so the deposit can't be drained.
-- SRS-1: typed, swappable parts; a no-code composer that wires them; a part builder with conformance checks.
-- No investment features: pay per run, creators post collateral; no shares, tokens or trading.
+Sealed Recipes is a platform to compose and run sealed workflows on NEAR, paid per run:
+- Compose: SRS-1, an open spec for typed, swappable parts (code, agents, NEAR AI Cloud models, data). A no-code composer wires parts by type and builds the buyer's form from what they need; a part builder checks conformance live; parts are admitted by tier (automated checks, sandbox, reviewers).
+- Seal: a recipe is encrypted in the creator's browser to an attested TEE runner; only its hash and part list go on-chain.
+- Quote: a buyer or agent fills one short form, sealed once. The recipe quotes from a dry run inside the TEE: expected value, a runner-signed promise backed by the creator's guarantee deposit, a signed price, privacy and withdrawal risk.
+- Pay with NEAR Intents from any chain: a 1Click EXACT_OUTPUT quote delivers the run price to the contract via ft_transfer_call, carrying the signed quote.
+- Run privately: parts run under resource limits, with durable checkpoints; swaps use confidential intents; results are sealed to the buyer.
+- Settle once: the contract verifies the runner's signed report and pays the protocol, the runner, every part author and the creator in one receipt, plus any shortfall to the buyer from the deposit.
+- Prices follow demand inside a creator-set band (EIP-1559 rule, proved with Z3). No shares, tokens or trading.
+10 sample recipes (wallet cleanup, exits, app keys, staking, contract checks, position caps) show what it runs.
 
-Includes: Rust NEAR contract (105 tests) with Z3/TLA+ proofs of its money, pricing, durable-run and version logic, a TS mirror on shared vectors, the TEE runner, an agent buyer, the UI, an e2e story, a live-check against real 1Click and NEAR AI Cloud.
+Status: one command runs the whole loop locally (contract mirror, mocked Intents and NEAR AI). Rust contract with 112 tests and Z3/TLA+ proofs; agent buyer; TEE runner for dstack TDX.
 ```
+
+If you deploy before submitting, replace the **Status** paragraph with what is live (contract account, a settled run's tx hash) and recount the characters.
 
 ## 3. X demo post
 
-Attach `docs/media/demo.mp4`, or the screenshots `03-quote.png`, `02-sealed.png`, `06-settlement.png` and `10-compose-recipe.png`.
+Attach `docs/media/demo.mp4` (135 s, within X's 140 s limit), or the screenshots `10-compose-recipe.png`, `02-sealed.png`, `03-quote.png` and `06-settlement.png`. The post must say it was built at NEAR HACKATHON and tag @NEARProtocol and #NEARHackathon.
 
-**Main post** (277 characters):
+**Main post** (270 characters):
 
 ```text
-Your workflow is your edge. Copy it once and it's gone.
+Your workflow is your edge. Publish it and it's gone.
 
-Sealed Recipes: sealed workflows, paid per run. Pick a recipe, get a signed quote, pay via NEAR Intents, and every builder gets paid in one settlement.
+Sealed Recipes: compose workflows from other builders' parts, seal them, sell them per run. Buyers pay via NEAR Intents; every builder is paid in one settlement.
 
 Built at NEAR HACKATHON @NEARProtocol #NEARHackathon
 ```
@@ -63,48 +80,43 @@ Built at NEAR HACKATHON @NEARProtocol #NEARHackathon
 **Thread:**
 
 ```text
-2/ What NEAR does here:
-• 1Click EXACT_OUTPUT delivers the run price to our contract with the signed quote
-• confidential intents for swaps
-• quotes + reports signed by an attested TEE runner, verified on-chain
+2/ How it works: creators compose recipes without code from other builders' typed parts (SRS-1) and seal them to an attested TEE runner. Buyers and agents get signed quotes from sealed dry runs, then pay per run.
+
+3/ What NEAR does here:
+• 1Click EXACT_OUTPUT delivers the run price to the contract with the signed quote
+• confidential intents for swaps inside a run
+• quotes and reports signed by an attested TEE runner, checked by the contract
 • NEAR AI Cloud private models
 
-3/ Bob posts "Clean up my wallet". SWPR quotes more USDC but is public and sweeps his wNEAR; CLNP is confidential, backed by a $25 deposit. He picks CLNP, pays $0.75 from Arbitrum, gets $28.02 vs $27.81 promised. 5 part authors, the runner and the creator: one receipt.
+4/ Bob wants his wallet cleaned up. Two recipes quote one sealed request: SWPR returns more but is public; CLNP is confidential and backed by a $25 deposit. He pays CLNP $0.75 from Arbitrum and gets $28.02 vs $27.81 promised. Part authors, runner, creator: one receipt.
 
-4/ Repo (MIT, 143 tests + formal proofs, one-command demo, agent buyer included): <repo link>
-Question for builders: which workflow would you seal and sell first?
+5/ Repo (MIT, 184 tests + Z3/TLA+ proofs, one-command local demo, agent buyer included): https://github.com/ztoori/sealed-recipes
+Which workflow would you seal and sell first?
 ```
+
+If the contract is live by then, change "one-command local demo" in 5/ to the explorer link of a settled run.
 
 Optional tags: @NearLegion @NearBuilders.
 
-## 4. Submission API (only if you prefer it to the form)
+## 4. Submitting
 
-`POST https://nearhackathon.com/api/applications`. Generate `requestId` once and reuse it on retries. Show this payload to the team and get their OK before sending. Leave `website` empty.
+Use the form. The site documents no submission API, so don't script it.
 
-```json
-{
-  "requestId": "<uuid v4>",
-  "projectName": "Sealed Recipes",
-  "leadName": "<lead name>",
-  "email": "<email>",
-  "size": "<1 | 2-4 | 4-6 | 6-8 | 8+>",
-  "tracks": ["privacy", "agents", "defi", "open"],
-  "nearAddress": "<mainnet account>",
-  "projectUrl": "<public repo URL>",
-  "demoUrl": "<X post URL>",
-  "idea": "<the project description above>",
-  "consent": true
-}
-```
+## 5. Narration (if you record a voice-over for `demo.mp4`)
 
-## 5. Narration (if you record your own voice-over over `demo.mp4`)
+In the order the video shows them:
 
 | Screen | Say |
 |---|---|
 | Title card | "Your workflow is your edge. Sealed Recipes lets you sell runs of it without giving the method away." |
-| Composer, parts snapping in | "Five parts from five builders, type-checked as they connect. Each part discloses its model and harness, so buyers can see what could be withdrawn." |
+| Recipes | "Sealed Recipes is a platform for composing and running sealed workflows. These sample recipes are each built from other people's parts." |
+| Composer, parts snapping in | "A creator adds five parts from five builders, type-checked as they connect. Each part discloses its model and harness, so buyers can see what could be withdrawn." |
 | Seal dialog | "We verify the runner's attestation, seal the recipe in the browser and back its quotes with a guarantee deposit. The chain stores only a hash." |
-| Form and quote | "A buyer fills one short form. The recipe quotes from a sealed dry run: expected value, a signed promise, price, privacy and risk. Bob pays CLNP with its quote." |
-| Intents payment, execution | "He pays seventy-five cents from Arbitrum through NEAR Intents. The runner checks the commitments, quarantines two scam airdrops and routes four confidential swaps to a fresh address." |
+| Form and quote | "A buyer fills one short form. The recipe quotes from a sealed dry run: expected value, a signed promise, price, privacy and risk." |
+| Intents payment, execution | "Bob pays seventy-five cents from Arbitrum through NEAR Intents. The runner checks the commitments, quarantines two scam airdrops and routes four confidential swaps to a fresh address." |
 | Settlement | "One receipt pays five builders, the runner and the creator, and tops up the guarantee deposit. Delivery beat the promise, so the deposit stays untouched." |
-| Recipes, Trust | "Prices are set by demand: a busy recipe gets dearer, an idle one cheaper, inside its creator's band, by an on-chain rule we proved. Each recipe shows its track record and the deposit behind its quotes. No shares, no tokens: you pay for a run." |
+| Recipe page, Wallet | "Prices follow demand inside the creator's band, by a rule we proved. Each recipe shows its track record and the deposit behind its quotes. No shares, no tokens: you pay for a run." |
+| Documentation | "The spec, SRS-1, is open. The Trust page shows exactly what the marketplace, the contract and the runner can each see." |
+| Recipe search | "Every recipe on the platform shows its parts, track record and price, never its method." |
+| Compose a recipe and a part | "Anyone can build a recipe without code, or a new part with live conformance checks." |
+| End card | "Sealed workflows, paid per run, on NEAR." |

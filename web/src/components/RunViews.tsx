@@ -1,4 +1,4 @@
-import { short, usd, usePoll } from '../api';
+import { txRef, usd, usePoll } from '../api';
 
 export type Ev = { seq: number; at: number; source: string; type: string; data: any; sealed?: boolean };
 
@@ -31,9 +31,9 @@ export function timeline(events: Ev[]): Row[] {
     const d = e.data;
     switch (e.type) {
       case 'quote': rows.push({ title: 'Quote from 1Click', sub: `${d.quote.amountInFormatted} in → ${usd(d.quote.amountOut, 2)} USDC to ${d.request.recipient}`, source: 'NEAR Intents', logs: [] }); break;
-      case 'deposit_submitted': rows.push({ title: 'Deposit sent to the Intents deposit address', sub: `tx ${short(d.txHash, 8, 6)}`, source: 'NEAR Intents', logs: [] }); break;
+      case 'deposit_submitted': rows.push({ title: 'Deposit sent to the Intents deposit address', sub: txRef(d.txHash, 8, 6), source: 'NEAR Intents', logs: [] }); break;
       case 'status': { const last = rows.at(-1); if (last?.title.startsWith('Deposit')) last.logs.push(`1Click: ${d.status}`); break; }
-      case 'run_requested': rows.push({ title: 'Solver delivered via ft_transfer_call: run escrowed on-chain', sub: `tx ${short(d.tx, 8, 6)} · block ${d.height}`, source: 'contract', logs: [] }); break;
+      case 'run_requested': rows.push({ title: 'Solver delivered via ft_transfer_call: run escrowed by the contract', sub: `${txRef(d.tx, 8, 6)} · block ${d.height}`, source: 'contract', logs: [] }); break;
       case 'accepted': rows.push({ title: `Runner ${d.runner_id} accepted the run`, sub: d.tee === 'local-dev' ? 'local-dev runner (no hardware TEE)' : 'Intel TDX', source: 'runner', logs: [] }); break;
       case 'verified': rows.push({ title: 'Runner checked the on-chain commitments', source: 'runner', logs: d.checks.map((c: any) => `${c.ok ? '✓' : '✕'} ${c.label}`) }); break;
       case 'rechecked': rows.push({ title: d.ok ? 'Runner re-priced the run before executing: quote still holds' : 'Wallet changed since the quote: run aborted', sub: `threshold ${d.threshold_bps / 100}% of the quoted promise`, source: 'runner', logs: [], ...(d.ok ? {} : { state: 'fail' as const }) }); break;
@@ -52,7 +52,7 @@ export function timeline(events: Ev[]): Row[] {
       case 'approval_required': part?.logs.push(`wallet approval requested: ${d.transactions.length} transfers`); break;
       case 'approval_result': part?.logs.push(d.approved ? `approved, ${d.transfers} transfers sent` : 'rejected by buyer'); break;
       case 'signed': rows.push({ title: 'Runner signed the report', sub: d.message.length > 100 ? d.message.slice(0, 100) + '…' : d.message, source: 'runner', logs: [] }); break;
-      case 'srs_settlement': rows.push({ title: 'report_run verified the ed25519 signature and settled', sub: `tx ${short(d.tx, 8, 6)} · ${d.payouts.length} payees + guarantee deposit`, source: 'contract', logs: [] }); break;
+      case 'srs_settlement': rows.push({ title: 'report_run verified the ed25519 signature and settled', sub: `${txRef(d.tx, 8, 6)} · ${d.payouts.length} payees + guarantee deposit`, source: 'contract', logs: [] }); break;
       case 'run_refunded': rows.push({ title: 'Run refunded to the buyer', sub: d.reason, source: 'contract', logs: [] }); break;
       case 'failed': rows.push({ title: 'Run failed', sub: d.error, source: 'runner', logs: [], state: 'fail' }); break;
       case 'completed': if (!d.ok) rows.push({ title: d.outcome === 'abort' ? 'Run aborted and refunded' : 'Run failed and was refunded', sub: d.reason ?? d.error, source: 'runner', logs: [], state: 'fail' }); break;

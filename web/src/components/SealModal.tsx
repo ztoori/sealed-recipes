@@ -4,7 +4,7 @@ import { publicListing, type Catalog, type Recipe } from '../../../core/src/srs'
 import { verifyRunnerAttestation } from '../../../core/src/attestation';
 import { creatorKeyFromSignature, creatorKeyMessage, demoWalletSign } from '../../../core/src/creator';
 import type { Check } from '../../../core/src/nearai';
-import { api, runnerAttestation, short } from '../api';
+import { api, runnerAttestation, short, txRef } from '../api';
 import { demoMs } from '../pace';
 import { Icon } from '../icons';
 
@@ -89,7 +89,7 @@ export function SealModal({ recipe, catalog, auto, asVersion, onClose }: { recip
             {checks.map((c) => <div key={c.id} className={'check ' + c.status}><span className="i">{c.status === 'pass' ? '✓' : c.status === 'skip' ? '○' : '✕'}</span><span>{c.label}</span>{c.status === 'skip' && <span className="d">{c.detail}</span>}</div>)}
           </div>}
           {env && <div className="small"><span className="muted">on-chain commitment</span><div className="hash">{sealedHash(env)}</div></div>}
-          {tx && <div className="small"><span className="muted">{asVersion ? `update_sealed · version ${tx.version}` : 'publish_recipe'}</span><div className="hash">tx {tx.tx}{tx.height ? ` · block ${tx.height}` : ''}</div>{asVersion && tx.effective_ns && <div className="muted">takes effect {new Date(Number(BigInt(tx.effective_ns) / 1_000_000n)).toLocaleString()}; buyers keep the current version until then</div>}</div>}
+          {tx && <div className="small"><span className="muted">{asVersion ? `update_sealed · version ${tx.version}` : 'publish_recipe'}</span><div className="hash">{txRef(tx.tx, 10, 8)}{tx.height ? ` · block ${tx.height}` : ''}</div>{asVersion && tx.effective_ns && <div className="muted">takes effect {new Date(Number(BigInt(tx.effective_ns) / 1_000_000n)).toLocaleString()}; buyers keep the current version until then</div>}</div>}
           {err && <div className="diag error">{err}</div>}
           <div className="row wrap">
             {phase === 'verify_failed' && <button className="btn ghost" onClick={() => verify()}>Verify again</button>}

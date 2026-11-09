@@ -38,7 +38,7 @@ say(`announced a draft as version ${first.version}; cancelling it`);
 await api(`/api/recipes/${T}/cancel-update`, { signer: creator });
 const sched = await api<any>(`/api/recipes/${T}/update`, { signer: creator, sealed, creator_copy: creatorCopy(recipe) });
 const waitS = Math.ceil((Number(BigInt(sched.effective_ns) / 1_000_000n) - Date.now()) / 1000);
-say(`announced version ${sched.version} (${short(sched.sealed_hash)}): takes effect in ${waitS} s (recipe_update_scheduled, tx ${short(sched.tx)})`);
+say(`announced version ${sched.version} (${short(sched.sealed_hash)}): takes effect in ${waitS} s (recipe_update_scheduled, simulated tx ${short(sched.tx)})`);
 
 // during the notice period: quote + run use version 1
 const job = () => requestQuotes([T], { wallet: BUYER, threshold_usd: 30, target: USDC_NEAR, recipient: freshImplicitAccount().account }, runner.onchain, BUYER);

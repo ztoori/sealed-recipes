@@ -54,7 +54,7 @@ for (let done = false; !done;) {
         if (e.data.mid_part === 's5' && n === 1 && crashes === 1) { crashes++; setTimeout(() => void crash('6 s into the 20 s wait'), 6000); }
         break;
       }
-      case 'run_checkpoint': say(`${t}   on-chain checkpoint seq ${e.data.seq}: paid ${e.data.payouts.map((p: any) => `${p.role.slice(5).split('@')[0]} ${usd(p.amount)}`).join(', ') || 'heartbeat'} (billed so far ${usd(e.data.billed)})`); break;
+      case 'run_checkpoint': say(`${t}   contract checkpoint seq ${e.data.seq}: paid ${e.data.payouts.map((p: any) => `${p.role.slice(5).split('@')[0]} ${usd(p.amount)}`).join(', ') || 'heartbeat'} (billed so far ${usd(e.data.billed)})`); break;
       case 'approval_required': {
         approvals++;
         say(`${t}   🔐 buyer asked to sign ${e.data.transactions.length} deposit(s) (request #${approvals})`);
@@ -84,7 +84,7 @@ const exactlyTwoHalves = moved.every((m) => m.delta === 2n * (BigInt(m.balance) 
 
 const checks: [string, boolean][] = [
   ['the runner was killed twice and the run still completed', crashes === 2 && final?.type === 'completed' && final.data.ok],
-  ['settled exactly once on-chain', chainRun.status === 'Settled' && settle.length === 1],
+  ['settled exactly once in the contract mirror', chainRun.status === 'Settled' && settle.length === 1],
   ['buyer signed exactly twice (once per tranche), never again after a crash', approvals === 2],
   [`every swapped token left the wallet exactly once per tranche (${moved.length} tokens)`, moved.length > 0 && exactlyTwoHalves],
   ['every part paid exactly once across checkpoints and the final receipt', JSON.stringify(paidParts.map((p) => p.slice(5)).sort()) === JSON.stringify([...recipeParts].sort())],

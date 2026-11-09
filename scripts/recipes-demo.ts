@@ -28,7 +28,7 @@ const items = (r: any) => (r?.output?.items ?? []) as { label: string; detail: s
   const run = await payAndRun(j, q, BUYER);
   const it = items(run.result);
   for (const x of it) say(`  ${x.tag ?? ''} ${x.label}: ${x.detail}`);
-  ok('KEYS revoked the two risky app keys and confirmed it on-chain', run.final?.type === 'completed' && run.result?.output?.title === '2 of 2 risky app keys revoked');
+  ok('KEYS revoked the two risky app keys and confirmed it on the (mock) chain', run.final?.type === 'completed' && run.result?.output?.title === '2 of 2 risky app keys revoked');
   ok('KEYS never touched a full-access key (both reported for review)', it.filter((x) => x.label === 'Full-access key' && x.tag === 'warn').length === 2);
 }
 // STAK

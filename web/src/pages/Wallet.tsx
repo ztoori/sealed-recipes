@@ -1,4 +1,4 @@
-import { api, short, usd, usePoll } from '../api';
+import { api, short, txRef, usd, usePoll } from '../api';
 import { useApp } from '../App';
 import { Icon } from '../icons';
 import { Empty, Head } from '../ui';
@@ -13,7 +13,7 @@ export function Wallet() {
     return [];
   }).reverse();
   const tx = async (method: string, args: Record<string, unknown>, ok: string) => {
-    try { const r = await api('/api/chain/tx', { signer: acting, method, args }); toast(`${ok} · tx ${short(r.tx, 6, 4)}`); refresh(); } catch (e) { toast((e as Error).message, true); }
+    try { const r = await api('/api/chain/tx', { signer: acting, method, args }); toast(`${ok} · ${txRef(r.tx)}`); refresh(); } catch (e) { toast((e as Error).message, true); }
   };
   if (!p) return null;
   return (
@@ -47,7 +47,7 @@ export function Wallet() {
         <Head icon="trend" title="Income" tip="From settlements, most recent first. Part authors, creators and the runner are paid inside each run’s settlement." />
         {income.length === 0 && <Empty icon="receipt">Nothing yet.</Empty>}
         <table className="small"><tbody>
-          {income.slice(0, 12).map((x: any, i: number) => <tr key={i}><td><span className="tk">{x.ref}</span></td><td style={{ textTransform: 'capitalize' }}>{x.what}<div className="muted hash">tx {short(x.tx, 6, 4)}</div></td><td className="r gain"><b>+{usd(x.amount)}</b></td></tr>)}
+          {income.slice(0, 12).map((x: any, i: number) => <tr key={i}><td><span className="tk">{x.ref}</span></td><td style={{ textTransform: 'capitalize' }}>{x.what}<div className="muted hash">{txRef(x.tx)}</div></td><td className="r gain"><b>+{usd(x.amount)}</b></td></tr>)}
         </tbody></table>
       </div>
       </div>

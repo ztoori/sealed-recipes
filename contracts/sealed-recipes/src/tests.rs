@@ -34,6 +34,17 @@ fn ctx(predecessor: &str, ts: u64) {
     testing_env!(b.build());
 }
 
+/// Context for `register_part` / `publish_recipe`, which charge the caller for storage.
+fn ctx_storage(predecessor: &str, ts: u64) {
+    let mut b = VMContextBuilder::new();
+    b.current_account_id(acct(CONTRACT))
+        .predecessor_account_id(acct(predecessor))
+        .signer_account_id(acct(predecessor))
+        .block_timestamp(ts)
+        .attached_deposit(NearToken::from_millinear(100));
+    testing_env!(b.build());
+}
+
 fn ctx_yocto(predecessor: &str) {
     let mut b = VMContextBuilder::new();
     b.current_account_id(acct(CONTRACT))
@@ -52,7 +63,12 @@ const PARTS: [(&str, &str, u128); 5] = [
 
 /// Contract with the demo recipe "CLNP" published by creator.testnet.
 fn setup() -> Contract {
+    // Fresh storage: `register_part` / `publish_recipe` flush to storage (to measure the bytes they
+    // charge for), so a second `setup()` in the same test must not see the first one's entries.
     ctx("owner.testnet", 0);
+    near_sdk::mock::with_mocked_blockchain(|b| {
+        b.take_storage();
+    });
     let mut c = Contract::new(acct("owner.testnet"), acct(USDC), acct("protocol.testnet"), 200, U64(DELAY), U64(PERIOD));
     c.add_runner(
         acct("runner.testnet"),
@@ -62,10 +78,10 @@ fn setup() -> Contract {
         U128(30_000),
     );
     for (id, author, fee) in PARTS {
-        ctx(author, 0);
+        ctx_storage(author, 0);
         c.register_part(id.into(), "1.0.0".into(), U128(fee), format!("sha256:{id}"));
     }
-    ctx("creator.testnet", 0);
+    ctx_storage("creator.testnet", 0);
     c.publish_recipe(
         "CLNP".into(),
         "Clean up and protect".into(),
@@ -149,7 +165,7 @@ fn settlement_rejects_bad_inputs() {
 #[should_panic(expected = "price_floor below minimum viable price")]
 fn publish_rejects_price_below_fees() {
     let mut c = setup();
-    ctx("creator.testnet", 0);
+    ctx_storage("creator.testnet", 0);
     // fees: protocol 2% + runner 30_000 + parts 140_000 => 170_000 > 150_000
     c.publish_recipe("CHEAP".into(), "x".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(150_000), 0, None, None);
 }
@@ -158,7 +174,7 @@ fn publish_rejects_price_below_fees() {
 #[should_panic(expected = "recipe id must match")]
 fn publish_rejects_bad_ticker() {
     let mut c = setup();
-    ctx("creator.testnet", 0);
+    ctx_storage("creator.testnet", 0);
     c.publish_recipe("bad".into(), "x".into(), "h".into(), acct("runner.testnet"), vec![], U128(1_000_000), 0, None, None);
 }
 
@@ -166,7 +182,7 @@ fn publish_rejects_bad_ticker() {
 #[should_panic(expected = "unknown part")]
 fn publish_rejects_unknown_part() {
     let mut c = setup();
-    ctx("creator.testnet", 0);
+    ctx_storage("creator.testnet", 0);
     c.publish_recipe("NOPE".into(), "x".into(), "h".into(), acct("runner.testnet"), vec!["ghost".into()], U128(1_000_000), 0, None, None);
 }
 
@@ -174,14 +190,14 @@ fn publish_rejects_unknown_part() {
 #[should_panic(expected = "reserve_bps must be <= 10000")]
 fn publish_rejects_reserve_above_10000() {
     let mut c = setup();
-    ctx("creator.testnet", 0);
+    ctx_storage("creator.testnet", 0);
     c.publish_recipe("RSV".into(), "r".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 10_001, None, None);
 }
 
 #[test]
 fn publish_accepts_full_reserve_and_quotes_it() {
     let mut c = setup();
-    ctx("creator.testnet", 0);
+    ctx_storage("creator.testnet", 0);
     c.publish_recipe("RSV".into(), "r".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 10_000, None, None);
     let q = c.quote_settlement("RSV".into(), None);
     assert_eq!((q.remainder.0, q.reserve.0, q.creator.0), (565_000, 565_000, 0));
@@ -478,7 +494,7 @@ fn direct_transfer_failure_still_panics() {
 #[should_panic(expected = "part id must match")]
 fn part_id_cannot_contain_report_delimiters() {
     let mut c = setup();
-    ctx("evil.testnet", 0);
+    ctx_storage("evil.testnet", 0);
     c.register_part("a,b".into(), "1".into(), U128(1), "h".into());
 }
 
@@ -486,7 +502,7 @@ fn part_id_cannot_contain_report_delimiters() {
 #[should_panic(expected = "part id must match")]
 fn part_id_cannot_contain_pipe() {
     let mut c = setup();
-    ctx("evil.testnet", 0);
+    ctx_storage("evil.testnet", 0);
     c.register_part("a|b".into(), "1".into(), U128(1), "h".into());
 }
 
@@ -494,7 +510,7 @@ fn part_id_cannot_contain_pipe() {
 #[should_panic(expected = "recipe needs at least one part")]
 fn publish_rejects_empty_parts() {
     let mut c = setup();
-    ctx("creator.testnet", 0);
+    ctx_storage("creator.testnet", 0);
     c.publish_recipe("EMPTY".into(), "e".into(), "h".into(), acct("runner.testnet"), vec![], U128(100_000), 0, None, None);
 }
 
@@ -1188,7 +1204,7 @@ fn apply_update_without_pending() {
 #[should_panic(expected = r#"settle_mode must be "final" or "checkpoint""#)]
 fn publish_rejects_unknown_settle_mode() {
     let mut c = setup();
-    ctx("creator.testnet", 0);
+    ctx_storage("creator.testnet", 0);
     c.publish_recipe("ODD".into(), "o".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 0, Some("weekly".into()), None);
 }
 
@@ -1224,7 +1240,7 @@ fn checkpoint(c: &mut Contract, run_id: &str, recipe: &str, seq: u32, parts: &[&
 /// CLNP plus "DURA": the same five parts in checkpoint mode.
 fn setup_checkpoint_mode() -> Contract {
     let mut c = setup();
-    ctx("creator.testnet", 0);
+    ctx_storage("creator.testnet", 0);
     c.publish_recipe("DURA".into(), "Durable".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 1000, Some("checkpoint".into()), None);
     ctx(USDC, 0);
     let msg = json!({"action":"run","recipe_id":"DURA","run_id":"d1","inputs_hash":"ff".repeat(32)}).to_string();
@@ -1423,7 +1439,7 @@ fn checkpoint_needs_active_runner() {
 /// CLNP plus "RSRV": the same five parts, final mode, reserve_bps 2500.
 fn setup_reserve() -> Contract {
     let mut c = setup();
-    ctx("creator.testnet", 0);
+    ctx_storage("creator.testnet", 0);
     c.publish_recipe("RSRV".into(), "Reserve".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 2500, None, None);
     c
 }
@@ -1545,7 +1561,7 @@ fn recipe_fields_in_spec_order() {
 /// CLNP-like recipe "MKT": list price 1.00, band 0.50..2.00, target 2 runs per period.
 fn setup_market() -> Contract {
     let mut c = setup();
-    ctx("creator.testnet", 0);
+    ctx_storage("creator.testnet", 0);
     c.publish_recipe(
         "MKT".into(),
         "Market priced".into(),
@@ -1720,7 +1736,7 @@ fn set_pricing_keeps_the_floor_viable() {
 #[should_panic(expected = "price_per_run must be within price_floor and price_ceiling")]
 fn publish_rejects_a_start_price_outside_the_band() {
     let mut c = setup();
-    ctx("creator.testnet", 0);
+    ctx_storage("creator.testnet", 0);
     c.publish_recipe(
         "BAD".into(), "x".into(), "sha256:x".into(), acct("runner.testnet"), all_parts(), U128(3_000_000), 0, None,
         Some(PricingInput { price_floor: U128(500_000), price_ceiling: U128(2_000_000), target_runs: 2 }),
@@ -1762,4 +1778,84 @@ fn anyone_can_apply_ended_periods() {
     let before = near_sdk::test_utils::get_logs().len();
     c.update_price("MKT".into());
     assert_eq!(near_sdk::test_utils::get_logs().len(), before);
+}
+
+// ---------------------------------------------------- storage paid by the caller
+
+#[test]
+#[should_panic(expected = "to pay for")]
+fn register_part_without_a_storage_deposit_is_rejected() {
+    let mut c = setup();
+    ctx("spammer.testnet", 0);
+    c.register_part("spam.part@1".into(), "1".into(), U128(1), "h".into());
+}
+
+#[test]
+#[should_panic(expected = "to pay for")]
+fn publish_recipe_without_a_storage_deposit_is_rejected() {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.publish_recipe("FREE".into(), "f".into(), "h".into(), acct("runner.testnet"), all_parts(), U128(750_000), 0, None, None);
+}
+
+#[test]
+fn storage_is_charged_by_the_bytes_written_and_the_rest_is_refunded() {
+    let mut c = setup();
+    ctx_storage("author.testnet", 0);
+    let before = env::storage_usage();
+    c.register_part("x.part@1".into(), "1.0.0".into(), U128(1), "h".into());
+    let used = env::storage_usage() - before;
+    assert!(used > 0, "the part is stored");
+    let cost = env::storage_byte_cost().saturating_mul(used as u128);
+    // one refund receipt back to the caller: the deposit minus exactly the storage cost
+    let receipts = near_sdk::test_utils::get_created_receipts();
+    let refund = receipts.last().expect("refund receipt");
+    assert_eq!(refund.receiver_id, acct("author.testnet"));
+    match &refund.actions[..] {
+        [near_sdk::mock::MockAction::Transfer { deposit, .. }] => {
+            assert_eq!(*deposit, NearToken::from_millinear(100).saturating_sub(cost));
+        }
+        other => panic!("expected one transfer, got {other:?}"),
+    }
+}
+
+#[test]
+#[should_panic(expected = "version must be 1..=32 bytes")]
+fn register_part_rejects_an_oversized_version() {
+    let mut c = setup();
+    ctx_storage("author.testnet", 0);
+    c.register_part("big.part@1".into(), "v".repeat(33), U128(1), "h".into());
+}
+
+#[test]
+#[should_panic(expected = "manifest_hash must be 1..=128 bytes")]
+fn register_part_rejects_an_oversized_manifest_hash() {
+    let mut c = setup();
+    ctx_storage("author.testnet", 0);
+    c.register_part("big.part@1".into(), "1".into(), U128(1), "h".repeat(129));
+}
+
+#[test]
+#[should_panic(expected = "sealed_hash must be at most 128 bytes")]
+fn publish_rejects_an_oversized_sealed_hash() {
+    let mut c = setup();
+    ctx_storage("creator.testnet", 0);
+    c.publish_recipe("LONG".into(), "n".into(), "h".repeat(129), acct("runner.testnet"), all_parts(), U128(750_000), 0, None, None);
+}
+
+#[test]
+fn publish_has_no_cap_on_parts_or_name_length_the_creator_pays_for_the_bytes() {
+    // SRS-1 §12: nothing caps the nodes in a recipe. A big recipe only costs more storage.
+    let mut c = setup();
+    let parts = vec!["dust-filter".to_string(); 40];
+    ctx_storage("creator.testnet", 0);
+    let small = env::storage_usage();
+    c.publish_recipe("ONE".into(), "n".into(), "h".into(), acct("runner.testnet"), vec!["dust-filter".to_string()], U128(750_000), 0, None, None);
+    let small = env::storage_usage() - small;
+    ctx_storage("creator.testnet", 0);
+    let big = env::storage_usage();
+    c.publish_recipe("MANY".into(), "n".repeat(200), "h".into(), acct("runner.testnet"), parts, U128(5_000_000), 0, None, None);
+    let big = env::storage_usage() - big;
+    assert!(big > small, "the bigger recipe stores (and pays for) more bytes");
+    assert_eq!(c.get_recipe("MANY".into()).unwrap().parts.len(), 40);
 }

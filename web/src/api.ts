@@ -27,6 +27,15 @@ export const usd = (units: string | number | bigint, dp = 4) => '$' + (Number(un
 export const money = (n: number, dp = 2) => '$' + n.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
 export const px = (n: number | null | undefined) => (n == null ? 'n/a' : n < 0.1 ? n.toFixed(5) : n.toFixed(4));
 export const short = (s: string, a = 8, b = 6) => (s && s.length > a + b + 1 ? `${s.slice(0, a)}…${s.slice(-b)}` : s);
+/**
+ * Label for a transaction hash. In local mode the server talks to its in-process contract mirror
+ * (core/src/ledger.ts) and to mocked services, so every hash it returns is simulated and is shown as
+ * "simulated tx". A NEAR RPC chain adapter would report `mode: 'near'` from /api/mode, and App passes
+ * it to setLedgerMode.
+ */
+let ledgerMode: 'local' | 'near' = 'local';
+export const setLedgerMode = (mode?: string) => { ledgerMode = mode === 'near' ? 'near' : 'local'; };
+export const txRef = (hash: string, a = 6, b = 4) => `${ledgerMode === 'near' ? 'tx' : 'simulated tx'} ${short(hash, a, b)}`;
 export const pct = (x: number) => (x >= 0 ? '+' : '') + (x * 100).toFixed(2) + '%';
 export const compact = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : n.toFixed(0);
 

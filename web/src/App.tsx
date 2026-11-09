@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState } from 'react';
-import { ACCOUNTS, usePoll } from './api';
+import { ACCOUNTS, setLedgerMode, usePoll } from './api';
 import { parseRoute, routeHash, section, type Route } from './route';
 import { Recipes } from './pages/Recipes';
 import { Quote } from './pages/Quote';
@@ -57,6 +57,7 @@ export function App() {
   const [story, dispatch] = useReducer(storyReducer, { run: 0, step: 0 });
   const [toastMsg, setToast] = useState<{ msg: string; err?: boolean; id: number } | null>(null);
   const [mode] = usePoll<any>('/api/mode', 30000);
+  setLedgerMode(mode?.mode);
 
   const toast = useCallback((msg: string, err?: boolean) => {
     const id = Date.now();

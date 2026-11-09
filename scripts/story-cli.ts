@@ -21,6 +21,7 @@ const catalog = loadCatalog(fileURLToPath(root));
 const recipe = JSON.parse(readFileSync(new URL('seed/recipes/CLNP.json', root), 'utf8')) as Recipe;
 const usd = (u: string | number) => '$' + (Number(u) / 1e6).toFixed(4);
 const h = (s: string) => console.log(`\n\x1b[1m\x1b[38;5;48m${s}\x1b[0m`);
+console.log('Local mode: the contract is the in-process mirror (core/src/ledger.ts); 1Click, NEAR AI Cloud, FastNEAR and RPC are local mocks.\nTransaction hashes below are simulated: none of them is on a NEAR network.');
 
 h('STEP 1 · creator chains parts into "Clean up and protect" and publishes it privately');
 const v = validateRecipe(recipe, catalog);
@@ -32,7 +33,7 @@ if (listings.some((l) => l.ticker === 'CLNP')) console.log('  CLNP already publi
 else {
   const p = await publish(recipe, catalog, runner.onchain.enc_pk_hex);
   console.log(`  sealed in the client to runner key ${runner.onchain.enc_pk_hex.slice(0, 12)}…; server received ciphertext only`);
-  console.log(`  publish_recipe → tx ${p.tx} (block ${p.height}) · on-chain sealed_hash ${p.sealed_hash.slice(0, 20)}…`);
+  console.log(`  publish_recipe → simulated tx ${p.tx} (contract mirror block ${p.height}) · sealed_hash ${p.sealed_hash.slice(0, 20)}…`);
   console.log(`  ${usd(recipe.listing.bond ?? '0')} bond posted to back CLNP's quotes`);
 }
 
@@ -73,7 +74,7 @@ while (!done) {
     if (e.type === 'result') { result = e.data; continue; }
     const tag = `  [${((Date.now() - t0) / 1000).toFixed(1)}s ${e.source}]`;
     if (e.type === 'status') console.log(`${tag} 1Click payment ${e.data.status}`);
-    else if (e.type === 'run_requested') console.log(`${tag} ft_on_transfer → run escrowed on-chain (tx ${e.data.tx})`);
+    else if (e.type === 'run_requested') console.log(`${tag} ft_on_transfer → run escrowed by the contract mirror (simulated tx ${e.data.tx})`);
     else if (e.type === 'verified') for (const c of e.data.checks) console.log(`${tag} ${c.ok ? '✔' : '✘'} ${c.label}`);
     else if (e.type === 'rechecked') console.log(`${tag} re-priced the run right before executing: ${e.data.ok ? 'quote still holds' : 'wallet changed, aborting with a refund'}`);
     else if (e.type === 'recheck') console.log(`${tag}     fresh promise ${usd(e.data.fresh_promised)} vs quoted ${usd(e.data.quoted_promised)} (needs ≥ 98%)`);
@@ -82,7 +83,7 @@ while (!done) {
     else if (e.type === 'part_log') console.log(`${tag}     ${e.data.msg}`);
     else if (e.type === 'approval_required') { console.log(`${tag} 🔐 wallet: "${e.data.title}" — ${e.data.transactions.length} ft_transfer(s); approving`); await api(`/api/runs/${q.run_id}/approve?token=${q.run_token}`, { approved: true, transactions: e.data.transactions }); }
     else if (e.type === 'signed') console.log(`${tag} runner signed report: ${e.data.message.slice(0, 90)}…`);
-    else if (e.type === 'srs_settlement') console.log(`${tag} report_run verified on-chain (tx ${e.data.tx})`);
+    else if (e.type === 'srs_settlement') console.log(`${tag} report_run verified by the contract mirror (simulated tx ${e.data.tx})`);
     else if (e.type === 'completed' || e.type === 'failed') { final = e; done = true; break; }
   }
 }
@@ -104,7 +105,7 @@ console.log(`  ${usd(m.settlements[0].reserve).padStart(10)}  CLNP guarantee dep
 const paidOut = m.settlements[0].payouts.reduce((a, p) => a + BigInt(p.amount), 0n) + BigInt(m.settlements[0].reserve);
 if (paidOut !== BigInt(m.settlements[0].price)) { console.error(`✘ payouts + reserve ${paidOut} != price ${m.settlements[0].price}`); process.exit(1); }
 console.log(`  payouts + reserve == price (${usd(m.settlements[0].price)}): every unit accounted for`);
-console.log(`  one receipt: tx ${s.tx} at block ${s.height}`);
+console.log(`  one receipt: simulated tx ${s.tx} at contract mirror block ${s.height}`);
 const st = m.settlements[0] as unknown as { delivered: string; compensation: string };
 console.log(`  delivered ${usd(st.delivered)} vs promised ${usd(chosen.promised)} → compensation from the guarantee deposit ${usd(st.compensation)}`);
 if (BigInt(st.delivered) < BigInt(chosen.promised) && st.compensation === '0') { console.error('✘ shortfall not compensated'); process.exit(1); }

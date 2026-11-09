@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { nextPrice } from '../../../core/src/pricing';
-import { api, money, short, usd, usePoll } from '../api';
+import { api, money, short, txRef, usd, usePoll } from '../api';
 import { useApp, useStoryOnce } from '../App';
 import { CAT, Icon, RESULT_LABEL, recipeLook } from '../icons';
 import { demoMs } from '../pace';
@@ -172,7 +172,7 @@ function RecipeDetail({ ticker, listings }: { ticker: string; listings: any[] })
           {m.settlements.length === 0 ? <Empty icon="receipt">No paid runs yet.</Empty> :
           <table><tbody>
             {m.settlements.slice(0, 8).map((x: any) => (
-              <tr key={x.run_id} title={`${x.payouts.length} payees · ${usd(x.reserve)} to the guarantee`}><td><span className="hash">{short(x.tx, 6, 4)}</span>{x.compensation !== '0' && <div className="small gain">{usd(x.compensation)} to buyer</div>}</td><td className="muted small"><Icon name="users" size={13} /> {x.payouts.length}</td><td className="r"><b>{usd(x.price, 2)}</b></td></tr>
+              <tr key={x.run_id} title={`${x.payouts.length} payees · ${usd(x.reserve)} to the guarantee`}><td><span className="hash">{txRef(x.tx)}</span>{x.compensation !== '0' && <div className="small gain">{usd(x.compensation)} to buyer</div>}</td><td className="muted small"><Icon name="users" size={13} /> {x.payouts.length}</td><td className="r"><b>{usd(x.price, 2)}</b></td></tr>
             ))}
           </tbody></table>}
         </div>
@@ -309,7 +309,7 @@ function Deposit({ ticker, rec, deposits, onDone }: { ticker: string; rec: any; 
   const mine = acting === rec.creator;
   const units = String(Math.round(Number(amt) * 1e6));
   const tx = async (method: string, args: Record<string, string>, ok: string) => {
-    try { const r = await api('/api/chain/tx', { signer: acting, method, args }); toast(`${ok} · tx ${short(r.tx, 6, 4)}`); onDone(); } catch (e) { toast((e as Error).message, true); }
+    try { const r = await api('/api/chain/tx', { signer: acting, method, args }); toast(`${ok} · ${txRef(r.tx)}`); onDone(); } catch (e) { toast((e as Error).message, true); }
   };
   const d = rec.deposit;
   const tot = d.available + d.locked || 1;
@@ -327,7 +327,7 @@ function Deposit({ ticker, rec, deposits, onDone }: { ticker: string; rec: any; 
             <button className="btn ghost sm" disabled={!Number(amt) || Number(amt) > d.available} onClick={() => tx('withdraw_bond', { recipe_id: ticker, amount: units }, `Withdrew ${money(Number(amt))}`)}>Withdraw</button>
           </div>
         )}
-        {deposits.length > 0 && <table className="small"><tbody>{deposits.slice(0, 3).map((x: any, i: number) => <tr key={i}><td>{x.event === 'bond_posted' ? x.from : 'withdrawn'}</td><td className="muted hash">{short(x.tx, 6, 4)}</td><td className={'r ' + (x.event === 'bond_posted' ? 'gain' : 'loss')}>{x.event === 'bond_posted' ? '+' : '−'}{usd(x.amount, 2)}</td></tr>)}</tbody></table>}
+        {deposits.length > 0 && <table className="small"><tbody>{deposits.slice(0, 3).map((x: any, i: number) => <tr key={i}><td>{x.event === 'bond_posted' ? x.from : 'withdrawn'}</td><td className="muted hash">{txRef(x.tx)}</td><td className={'r ' + (x.event === 'bond_posted' ? 'gain' : 'loss')}>{x.event === 'bond_posted' ? '+' : '−'}{usd(x.amount, 2)}</td></tr>)}</tbody></table>}
       </div>
     </div>
   );

@@ -4,7 +4,7 @@ import { seal, open, sealedHash, type SealedEnvelope } from '../../../core/src/s
 import { jobHash, openQuote } from '../../../core/src/quotes';
 import { measuresValue } from '../../../core/src/srs';
 import { verifyRunnerAttestation } from '../../../core/src/attestation';
-import { api, ASSET_LABEL, money, PAY_ASSETS, runnerAttestation, short, usd, usePoll } from '../api';
+import { api, ASSET_LABEL, money, PAY_ASSETS, runnerAttestation, short, txRef, usd, usePoll } from '../api';
 import { useApp, useStoryOnce } from '../App';
 import { SettlementFlow } from '../components/Sankey';
 import { Output, timeline, type Ev } from '../components/RunViews';
@@ -308,7 +308,7 @@ export function Quote({ ticker }: { ticker: string }) {
           )}
           {settlement?.payouts && (
             <div className="panel" id="settlement">
-              <Head icon="receipt" title="Settled in one receipt"><span className="spacer" /><span className="small muted hash">tx {short(settlement.tx, 8, 6)} · #{settlement.height}</span></Head>
+              <Head icon="receipt" title="Settled in one receipt"><span className="spacer" /><span className="small muted hash">{txRef(settlement.tx, 8, 6)} · #{settlement.height}</span></Head>
               <div className="body">
                 {guaranteed && metric && settleEv && <p className="small" style={{ marginTop: 0 }}>Delivered <b>{usd(settleEv.delivered, 2)}</b> against a signed promise of {usd(q.promised, 2)}{Number(settleEv.compensation) > 0 ? <>: the guarantee deposit paid you <b>{usd(settleEv.compensation, 2)}</b>.</> : ': promise kept, the deposit is untouched.'}</p>}
                 <SettlementFlow price={Number(settleEv?.price ?? q?.price ?? 0)} payouts={settlement.payouts} reserve={Number(settleEv?.reserve ?? 0)} />

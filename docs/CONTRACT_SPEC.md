@@ -304,13 +304,15 @@ Run     { run_id, recipe_id, buyer, amount, inputs_hash, sealed_hash (snapshot a
 - `set_runner_active(id, active)` — owner only.
 
 ### Builders & creators
-- `register_part(id, version, fee_per_call, manifest_hash)` — author = predecessor. Id unique and must match `^[a-z0-9._@-]{1,64}$` (no `,` or `|`, which delimit the signed report).
+- `register_part(id, version, fee_per_call, manifest_hash)` — `#[payable]`, author = predecessor. Id unique and must match `^[a-z0-9._@-]{1,64}$` (no `,` or `|`, which delimit the signed report). `version` 1..=32 bytes, `manifest_hash` 1..=128 bytes.
 - `publish_recipe(id, name, sealed_hash, runner_id, parts, price_per_run, reserve_bps, settle_mode?, pricing?)`
   - creator = predecessor. `price_per_run` is the starting list price; `pricing` sets the band (see v6), omitted = fixed price.
   - rejects if `price_floor < protocol_fee(price_floor) + runner.fee_per_run + Σ part.fee_per_call` (minimum viable price).
   - `parts` must be non-empty; every part exists & active; runner active.
   - `reserve_bps <= 10000` (`reserve_bps must be <= 10000`): the share of the creator's cut kept in the guarantee deposit.
   - `settle_mode` is `"final"` (default) or `"checkpoint"` (see v4).
+  - `#[payable]`. `sealed_hash` at most 128 bytes. `name` and `parts` have no cap (SRS-1 §12); they cost storage.
+- **Storage** (`register_part`, `publish_recipe`): the call measures the bytes it added (`env::storage_usage()` before and after) and requires an attached deposit of at least `bytes × env::storage_byte_cost()` (`attach at least … yoctoNEAR to pay for … bytes of storage`); the rest is refunded to the caller in the same call. Records created by `ft_on_transfer` (runs, used quotes, credited balances) can't carry NEAR and are paid from the contract's balance.
 - `withdraw_bond(recipe_id, amount)` — creator only, `amount <= bond_available`; credited to the creator's balance. Locked cover cannot be withdrawn.
 - `update_sealed(id, sealed_hash)`, `cancel_update(id)`, `apply_update(id)` — versions with a notice period (see v4).
 - `set_pricing(id, pricing)` (creator) and `update_price(id)` (anyone) — market-driven pricing (see v6).

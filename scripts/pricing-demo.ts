@@ -64,7 +64,7 @@ const p1 = units((await rec()).pricePerRun);
 const want = p0 + (p0 * 2n * 1n) / (8n * 2n) > units(r0.pricing.ceiling) ? units(r0.pricing.ceiling) : p0 + p0 / 8n;
 check(`after the busy period the price rose 12.5%: ${usd(p0)} → ${usd(p1)}`, p1 === want);
 const ev = (await api<{ events: { event: string; data: any[] }[] }>('/api/chain/events?last=400')).events.filter((e) => e.event === 'price_updated' && e.data[0].recipe_id === T).at(-1);
-check(`price_updated on-chain: runs ${ev?.data[0].runs}, previous ${usd(ev?.data[0].previous ?? 0)}, price ${usd(ev?.data[0].price ?? 0)}`, ev?.data[0].runs === String(BUYERS.length) && BigInt(ev?.data[0].price ?? 0) === p1);
+check(`price_updated in the contract mirror: runs ${ev?.data[0].runs}, previous ${usd(ev?.data[0].previous ?? 0)}, price ${usd(ev?.data[0].price ?? 0)}`, ev?.data[0].runs === String(BUYERS.length) && BigInt(ev?.data[0].price ?? 0) === p1);
 
 const again = await buy('bob.testnet');
 check(`the next quote locks the new price ${usd(p1)}`, again.price === p1);

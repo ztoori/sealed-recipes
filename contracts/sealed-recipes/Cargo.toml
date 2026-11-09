@@ -1,10 +1,11 @@
 [package]
 name = "sealed-recipes"
-description = "Sealed Recipes: sealed no-code workflows as tradable, revenue-sharing financial instruments on NEAR"
+description = "Sealed Recipes: sealed workflows paid per run through NEAR Intents, with signed quotes, guarantee deposits and one-receipt settlement"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/<your-org>/funrecs"
+# NEP-330: cargo-near publishes this link through the `contract_source_metadata` view.
+repository = "https://github.com/ztoori/sealed-recipes"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -12,12 +13,10 @@ crate-type = ["cdylib", "rlib"]
 # fields to configure build with WASM reproducibility, according to specs
 # in https://github.com/near/NEPs/blob/master/neps/nep-0330.md
 [package.metadata.near.reproducible_build]
-# docker image, descriptor of build environment
-# NOTE: before a `cargo near build reproducible-wasm` release, copy `image` and
-# `image_digest` from a fresh `cargo near new` template (they pin the exact
-# sourcescan/cargo-near docker image). `non-reproducible-wasm` builds ignore them.
-image = "sourcescan/cargo-near:<pin-from-cargo-near-new>"
-image_digest = "sha256:<pin-from-cargo-near-new>"
+# docker image, descriptor of build environment (pinned from the current `cargo near new` template)
+image = "sourcescan/cargo-near:0.22.0-rust-1.99.1"
+# tag after colon above serves only descriptive purpose; image is identified by digest
+image_digest = "sha256:c9655eaf7436b90c87ea8b25739f91063032c5c30ba24cfeafe72c142943b5bb"
 # list of environment variables names, whose values, if set, will be used as external build parameters
 # in a reproducible manner
 passed_env = []

@@ -5,7 +5,9 @@
  * the shared vectors in contracts/test-vectors against both implementations.
  *
  * Event names and fields follow docs/CONTRACT_EVENTS.md. Known differences from the contract:
- * withdraw() completes synchronously (no ft_transfer promise) and there is no storage accounting.
+ * withdraw() completes synchronously (no ft_transfer promise) and there is no storage accounting
+ * (the contract charges `register_part` / `publish_recipe` callers for the bytes they store; the
+ * mirror enforces the same limits on versions and hashes but takes no NEAR).
  */
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
@@ -13,6 +15,9 @@ import { utf8ToBytes } from '@noble/hashes/utils.js';
 import { sha256Hex } from './canonical.js';
 import { base64 } from './seal.js';
 import { rollPrice, MAX_PRICE, MAX_TARGET_RUNS } from './pricing.js';
+
+/** Byte length as the contract measures it (`String::len` is UTF-8 bytes). */
+const utf8Len = (s: string) => utf8ToBytes(s).length;
 import { settlementSplit, minimumPrice, bondLock, bondRelease, bondSettle, bondWithdraw, bondDeposit, type Bond } from './settlement.js';
 
 export const RUN_TIMEOUT_NS = 15n * 60n * 1_000_000_000n;
@@ -144,6 +149,8 @@ export class LocalLedger {
     const author = this.caller();
     assert(/^[a-z0-9._@-]{1,64}$/.test(a.id), 'part id must match ^[a-z0-9._@-]{1,64}$');
     assert(!this.parts.has(a.id), 'part id taken');
+    assert(utf8Len(a.version) >= 1 && utf8Len(a.version) <= 32, 'version must be 1..=32 bytes');
+    assert(utf8Len(a.manifest_hash) >= 1 && utf8Len(a.manifest_hash) <= 128, 'manifest_hash must be 1..=128 bytes');
     const b = { id: a.id, version: a.version, author, fee_per_call: BigInt(a.fee_per_call), manifest_hash: a.manifest_hash, active: true };
     this.parts.set(a.id, b);
     this.emit('part_registered', { ...b });
@@ -153,6 +160,7 @@ export class LocalLedger {
     const creator = this.caller();
     assert(/^[A-Z0-9]{3,6}$/.test(a.id), 'invalid ticker');
     assert(!this.recipes.has(a.id), 'ticker taken');
+    assert(utf8Len(a.sealed_hash) <= 128, 'sealed_hash must be at most 128 bytes');
     const reserveBps = a.reserve_bps ?? 0;
     assert(Number.isInteger(reserveBps) && reserveBps >= 0 && reserveBps <= 10000, 'reserve_bps must be <= 10000');
     const runner = this.runners.get(a.runner_id); assert(runner?.active, 'runner not active');

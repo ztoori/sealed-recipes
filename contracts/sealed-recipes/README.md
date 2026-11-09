@@ -48,7 +48,7 @@ protocol + runner_fee + sum(part_fees) + reserve + creator == price   (exact)
 ## Test
 
 ```bash
-cargo test          # 105 unit tests, including the shared vectors ../test-vectors/settlement.json and bonds.json and the settlement, bond and pricing conformance cases from verification/
+cargo test          # 112 unit tests, including the shared vectors ../test-vectors/settlement.json and bonds.json and the settlement, bond and pricing conformance cases from verification/
 cargo clippy --all-targets
 ```
 
@@ -65,8 +65,8 @@ cargo near build non-reproducible-wasm
 # -> target/near/sealed_recipes.wasm
 ```
 
-Before a reproducible build (`cargo near build reproducible-wasm`), pin `image` / `image_digest` in
-`Cargo.toml` from a fresh `cargo near new` template.
+`Cargo.toml` pins the `sourcescan/cargo-near` image (tag and digest) from the current `cargo near new`
+template, so `cargo near build reproducible-wasm` works as is (it needs Docker).
 
 ## Deploy to testnet (near-cli-rs)
 
@@ -93,10 +93,20 @@ near contract call-function as-transaction $CONTRACT add_runner json-args \
 # register the token's storage for the contract so it can receive ft_transfer_call
 near contract call-function as-transaction $TOKEN storage_deposit json-args "{\"account_id\":\"$CONTRACT\"}" \
   prepaid-gas '30.0 Tgas' attached-deposit '0.0125 NEAR' sign-as $OWNER network-config testnet sign-with-keychain send
+
+# part authors and creators pay for the storage they add: attach a little NEAR, the rest is refunded
+near contract call-function as-transaction $CONTRACT register_part json-args \
+  '{"id":"filter.dust@1.0.0","version":"1.0.0","fee_per_call":"10000","manifest_hash":"<sha256 hex of the manifest>"}' \
+  prepaid-gas '30.0 Tgas' attached-deposit '0.01 NEAR' sign-as $OWNER network-config testnet sign-with-keychain send
 ```
 
-The contract pays for its own storage in v1, so there are no per-user storage deposits. In production,
-`register_part` and `publish_recipe` should require a storage deposit (sybil resistance).
+**Storage.** `register_part` and `publish_recipe` are payable. The caller attaches NEAR for the bytes the call
+stores at the protocol's storage price (a part is about 280 bytes, 0.003 NEAR; a five-part recipe about 580 bytes, 0.006 NEAR), and
+the rest is refunded in the same call. Too little and the call fails with the exact amount needed. Field sizes
+with a fixed format are capped: `version` ≤ 32 bytes, `manifest_hash` and `sealed_hash` ≤ 128. A recipe's `name`
+and `parts` have no cap (SRS-1 §12: nothing caps the nodes in a recipe); a bigger recipe pays for more storage.
+Run records and used quotes are created by `ft_on_transfer`, which can't carry NEAR, so the contract pays for
+them from its own balance: keep it funded.
 
 ## Methods
 
@@ -105,8 +115,8 @@ The contract pays for its own storage in v1, so there are no per-user storage de
 | `new` | init | `owner: AccountId, payment_token: AccountId, protocol_account: AccountId, protocol_fee_bps: u16` (≤1000), `update_delay_ns: U64` (notice before a new recipe version takes effect), `price_period_ns: U64` (pricing period, >0) |
 | `add_runner` | owner | `id: AccountId, signing_pk: String ("ed25519:…"), enc_pk_hex: String (64 hex), codehash: String, fee_per_run: U128` |
 | `set_runner_active` | owner | `id: AccountId, active: bool` |
-| `register_part` | call | `id: String, version: String, fee_per_call: U128, manifest_hash: String` |
-| `publish_recipe` | call | `id: String (^[A-Z0-9]{3,6}$), name: String, sealed_hash: String, runner_id: AccountId, parts: Vec<String>, price_per_run: U128, reserve_bps: u16 (≤10000), settle_mode: Option<String>` (`"final"` default, or `"checkpoint"`), `pricing: Option<{price_floor: U128, price_ceiling: U128, target_runs: u32}>` (omitted: fixed price) |
+| `register_part` | call, payable (storage) | `id: String, version: String` (≤32 bytes), `fee_per_call: U128, manifest_hash: String` (≤128 bytes) |
+| `publish_recipe` | call, payable (storage) | `id: String (^[A-Z0-9]{3,6}$), name: String, sealed_hash: String` (≤128 bytes), `runner_id: AccountId, parts: Vec<String>, price_per_run: U128, reserve_bps: u16 (≤10000), settle_mode: Option<String>` (`"final"` default, or `"checkpoint"`), `pricing: Option<{price_floor: U128, price_ceiling: U128, target_runs: u32}>` (omitted: fixed price) |
 | `set_pricing` | creator | `id: String, pricing: {price_floor, price_ceiling, target_runs}` (floor must cover the fees) |
 | `update_price` | anyone | `id: String` → `U128` (applies ended pricing periods; also done lazily by the next payment) |
 | `update_sealed` | creator | `id: String, sealed_hash: String` (64 hex): announces the next version, active after `update_delay_ns` |

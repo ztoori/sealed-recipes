@@ -62,7 +62,7 @@ The runner **never holds user funds**. Parts that move funds (`wallet:approve`) 
 
 ## Known gaps (v1)
 
-- No storage deposits on `register_part`, `publish_recipe` or orders. This is a spam vector on mainnet.
+- `register_part` and `publish_recipe` charge the caller for every byte they store and cap the fixed-format fields (versions, hashes), so spam costs the spammer. Names and part lists are uncapped, as SRS-1 §12 requires; a bigger recipe just pays for more storage. Run records and used quotes, created by `ft_on_transfer`, are still paid from the contract's balance (an `ft_transfer_call` can't attach NEAR); each run costs at least the recipe's floor price, so this is bounded but not yet priced in.
 - Part admission relies on owner-appointed reviewers for parts that send data somewhere new or ask buyers to sign (SRS-1 §11). The open tier is permissionless; the rest is permissioned and auditable, not decentralized yet.
 - The contract owner approves runners after verifying attestation off-chain. On-chain DCAP verification (as Shade Agent contracts do) is the next step.
 - 1Click (the service) sees swap requests, including the fresh recipient. Confidential intents protect against chain observers, not against the 1Click operator.
