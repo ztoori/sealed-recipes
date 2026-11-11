@@ -47,7 +47,7 @@ const RUNNER_PUBLIC_URL = env.RUNNER_PUBLIC_URL ?? '/runner';
 const PUBLIC = env.SRS_PUBLIC === '1';
 const ALLOW_DEV = env.SRS_ALLOW_CRASH === '1' && !PUBLIC;
 /** the execution backend (server/src/backends.ts); the marketplace never calls the runner any other way */
-const backend = new TeeRunnerBackend(RUNNER, RUNNER_ID, RUNNER_TOKEN);
+const backend = new TeeRunnerBackend(RUNNER, RUNNER_ID, RUNNER_TOKEN, env.SRS_TENANT_URL);
 
 const catalog = loadCatalog(ROOT);
 const tokens = JSON.parse(readFileSync(resolve(ROOT, 'fixtures/oneclick-tokens.json'), 'utf8')).tokens as Token[];

@@ -420,11 +420,16 @@ docs/                         SRS-1, architecture, threat model, contract spec a
 
 `npm run demo` is for one person on their own machine. A shared server needs `npm run gateway` (`scripts/gateway.mjs`) instead:
 
-- **A private sandbox per visitor.** Demo accounts sign with keys anyone can derive (it is a demo wallet), and anyone can read a creator copy in the demo. On one shared market, a visitor could act as any account or open another visitor's recipe. The gateway gives each visitor their own copy of the demo (contract mirror, runner, market, part reviews, sealed-recipe store), keyed by an HttpOnly cookie, so nothing one visitor does reaches anyone else. Sandboxes are deleted after 20 idle minutes; one is kept warm so a new visitor doesn't wait.
-- **No dev endpoints.** Sandboxes run with `--public`, which turns off the endpoints the test suites use to crash the runner or make the solver fail.
+- **A private sandbox per visitor.** Demo accounts sign with keys anyone can derive (it is a demo wallet), and anyone can read a creator copy in the demo. On one shared market, a visitor could act as any account or open another visitor's recipe. The gateway gives each visitor their own marketplace (contract mirror, market, part reviews, sealed-recipe store), keyed by an HttpOnly cookie, so nothing one visitor does reaches anyone else. Sandboxes are deleted after 10 idle minutes; warm spares mean a new visitor doesn't wait.
+- **One shared runner.** All sandboxes use one runner process. Each request names its marketplace; the runner accepts only local marketplaces on the gateway's ports and keeps their runs apart.
+- **No dev endpoints.** Sandboxes run with `SRS_PUBLIC=1`, which turns off the endpoints the test suites use to crash the runner or make the solver fail.
 - **Local only.** The gateway and every sandbox listen on 127.0.0.1; put Cloudflare Tunnel (or another reverse proxy) in front. Attestation reaches browsers through `/runner/attestation` on the same origin.
 
-`deploy/srs-demo.service` runs it under systemd from a read-only checkout; `deploy/cloudflared-config.example.yml` shows the tunnel side. Each sandbox uses about 270 MB, so set `SANDBOX_MAX` to fit the server's memory.
+**Capacity.** Measured on a 2-CPU, 4 GB machine: 20 browsing visitors at once used about 830 MB in total (API p99 under 30 ms, no errors); 10 visitors running the full story at the same moment all passed. A sandbox's processes show about 100 MB RSS, but much of it is shared code, so each extra visitor costs about 40–60 MB of real memory, plus one shared runner (~140 MB). Start-up is CPU-bound: when many visitors arrive in the same second, raise `SANDBOX_SPARE`.
+
+**Traffic and performance.** `curl -s http://127.0.0.1:8080/gateway/metrics` (on the server only; it answers 404 through the tunnel) shows requests, latency percentiles, visitors, boot times and the memory and swap of every process; the gateway logs a one-line summary every minute (`journalctl -u srs-demo`). `npm run loadtest -- --visitors 20 --mode browse` (or `--mode story`) simulates visitors and prints what they experienced next to the server's peak memory.
+
+`deploy/srs-demo.service` runs it under systemd from a read-only checkout; `deploy/cloudflared-config.example.yml` shows the tunnel side.
 
 None of this makes the demo wallet a real wallet: the live mode (real NEAR testnet wallets, signatures checked on every write) is separate work.
 
@@ -442,6 +447,7 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 | `RUNNER_KEYS_PATH` | runner | local-dev key file (default `.data/runner-dev-keys.json`) |
 | `SRS_PUBLIC` | server, runner | `1` when hosted for the public: dev endpoints off (set by `demo.mjs --public`) |
 | `GATEWAY_PORT`, `SANDBOX_MAX`, `SANDBOX_SPARE`, `SANDBOX_IDLE_MIN`, `SANDBOX_PER_IP` | gateway | see `scripts/gateway.mjs` |
+| `SRS_TENANT_PORTS`, `SRS_TENANT_URL` | runner, server | shared runner: the marketplace ports it serves / a marketplace's own address (set by the gateway) |
 
 ## Limitations and next steps
 

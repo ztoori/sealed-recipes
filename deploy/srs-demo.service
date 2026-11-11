@@ -13,10 +13,10 @@ WorkingDirectory=/opt/srs-demo
 Environment=NODE_ENV=production
 Environment=GATEWAY_HOST=127.0.0.1
 Environment=GATEWAY_PORT=8080
-# each sandbox uses about 270 MB; keep SANDBOX_MAX x 270 MB well under the VPS memory
-Environment=SANDBOX_MAX=4
-Environment=SANDBOX_SPARE=1
-Environment=SANDBOX_IDLE_MIN=20
+# each visitor sandbox uses about 100 MB, plus one shared runner; see `npm run loadtest` and /gateway/metrics
+Environment=SANDBOX_MAX=25
+Environment=SANDBOX_SPARE=2
+Environment=SANDBOX_IDLE_MIN=10
 Environment=SANDBOX_PER_IP=3
 Environment=RUNNER_KEYS_PATH=/var/lib/srs-demo/runner-dev-keys.json
 Environment=GATEWAY_BUILD=0

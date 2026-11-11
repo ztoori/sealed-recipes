@@ -8,6 +8,19 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { seal, publicListing, validateRecipe, verifyRunnerAttestation, creatorKeyFromSignature, creatorKeyMessage, demoWalletSign, type Catalog, type Recipe, type RunnerAttestation } from '../../core/src/index.js';
 
 export const BASE = process.env.SRS_URL ?? 'http://127.0.0.1:8080';
+/** SRS_COOKIE: a demo-gateway session cookie (e.g. `srs_sb=…`), so the CLI story can run inside one visitor's
+ *  sandbox behind scripts/gateway.mjs (used by scripts/loadtest.mjs). Sent only to BASE. */
+if (process.env.SRS_COOKIE) {
+  const cookie = process.env.SRS_COOKIE, plain = globalThis.fetch;
+  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (!url.startsWith(BASE)) return plain(input, init);
+    const headers = new Headers(init?.headers);
+    headers.set('cookie', cookie);
+    if (process.env.SRS_CLIENT_IP) headers.set('cf-connecting-ip', process.env.SRS_CLIENT_IP);
+    return plain(input, { ...init, headers });
+  }) as typeof fetch;
+}
 
 export async function api<T = any>(path: string, body?: unknown): Promise<T> {
   const r = await fetch(BASE + path, body === undefined ? undefined : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

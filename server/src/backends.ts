@@ -35,7 +35,10 @@ export interface ExecutionBackend {
 export class TeeRunnerBackend implements ExecutionBackend {
   readonly kind = 'tee-runner' as const;
   private headers: Record<string, string>;
-  constructor(readonly url: string, readonly runnerId: string, token: string) { this.headers = { 'content-type': 'application/json', 'x-runner-token': token }; }
+  /** `tenant`: this marketplace's own address, sent when the runner is shared by several marketplaces (scripts/gateway.mjs) */
+  constructor(readonly url: string, readonly runnerId: string, token: string, tenant?: string) {
+    this.headers = { 'content-type': 'application/json', 'x-runner-token': token, ...(tenant ? { 'x-srs-tenant': tenant } : {}) };
+  }
   private post(path: string, body: unknown) { return fetch(`${this.url}${path}`, { method: 'POST', headers: this.headers, body: JSON.stringify(body) }); }
   async attestation(nonce: string) { return (await fetch(`${this.url}/attestation?nonce=${encodeURIComponent(nonce)}`)).json(); }
   async quote(job: QuoteJob) {
