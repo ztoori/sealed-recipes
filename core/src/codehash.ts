@@ -13,7 +13,8 @@ export const CODEHASH_ROOTS = ['runner/src', 'core/src', 'standard/parts.json', 
 function walk(p: string, out: string[]) {
   const st = statSync(p);
   if (st.isFile()) { out.push(p); return; }
-  for (const e of readdirSync(p).sort()) walk(join(p, e), out);
+  // *.bundle.mjs are generated from these sources by scripts/build-node.mjs (gitignored): the hash covers the sources
+  for (const e of readdirSync(p).sort()) if (!e.endsWith('.bundle.mjs')) walk(join(p, e), out);
 }
 
 export function computeCodehash(repoRoot: string): { codehash: string; files: { path: string; sha256: string }[] } {

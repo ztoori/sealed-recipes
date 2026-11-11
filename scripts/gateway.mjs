@@ -18,7 +18,7 @@
  *
  * Env: GATEWAY_PORT (8080)  GATEWAY_HOST (127.0.0.1)  SANDBOX_MAX (4)  SANDBOX_SPARE (1)  SANDBOX_IDLE_MIN (10)
  *      SANDBOX_PER_IP (3)  SANDBOX_BASE_PORT (9100; the shared runner uses the port below it)
- *      GATEWAY_BUILD=0: never build web/dist here (read-only checkout; build it in the deploy step)
+ *      GATEWAY_BUILD=0: never build web/dist or the bundles here (read-only checkout; `npm run build` in the deploy step)
  */
 import http from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
@@ -44,7 +44,8 @@ const tsx = ['--import', 'tsx'];
 const log = (...a) => console.log(new Date().toISOString(), '[gateway]', ...a);
 
 // ---- build the web app once, so sandboxes never race to build it ----
-const newest = (dir) => { let t = 0; for (const e of readdirSync(dir, { withFileTypes: true })) { const p = resolve(dir, e.name); t = Math.max(t, e.isDirectory() ? newest(p) : statSync(p).mtimeMs); } return t; };
+/** newest source file under dir (generated bundles excluded) */
+const newest = (dir) => { let t = 0; for (const e of readdirSync(dir, { withFileTypes: true })) { if (e.name.endsWith('.bundle.mjs')) continue; const p = resolve(dir, e.name); t = Math.max(t, e.isDirectory() ? newest(p) : statSync(p).mtimeMs); } return t; };
 const index = resolve(root, 'web/dist/index.html');
 const built = existsSync(index) ? statSync(index).mtimeMs : 0;
 const sources = Math.max(...['web/src', 'core/src', 'standard', 'seed'].map((d) => newest(resolve(root, d))), statSync(resolve(root, 'web/index.html')).mtimeMs);
@@ -57,6 +58,20 @@ if (sources > built && env.GATEWAY_BUILD === '0') {
   const b = spawnSync(node, [resolve(root, 'node_modules/vite/bin/vite.js'), 'build', '--config', 'web/vite.config.ts', '--logLevel', 'warn'], { cwd: root, stdio: 'inherit' });
   if (b.status) process.exit(b.status);
 }
+
+// ---- pre-compiled processes (npm run build:node): no tsx loader and no start-up transpiling per visitor ----
+const codeNewest = Math.max(...['server/src', 'runner/src', 'core/src', 'scripts/lib'].map((d) => newest(resolve(root, d))), statSync(resolve(root, 'scripts/seed.ts')).mtimeMs);
+const bundlesFresh = () => ['server/src/main.bundle.mjs', 'runner/src/main.bundle.mjs', 'scripts/seed.bundle.mjs']
+  .every((b) => existsSync(resolve(root, b)) && statSync(resolve(root, b)).mtimeMs >= codeNewest);
+if (!bundlesFresh() && env.GATEWAY_BUILD !== '0') {
+  log('pre-compiling the marketplace and runner…');
+  const b = spawnSync(node, ['scripts/build-node.mjs'], { cwd: root, stdio: 'inherit' });
+  if (b.status) process.exit(b.status);
+}
+const COMPILED = bundlesFresh();
+if (!COMPILED) log('WARNING pre-compiled bundles are missing or older than the sources (run `npm run build`); running TypeScript through tsx, which uses more memory per visitor');
+/** argv for a process: the pre-compiled bundle next to the entry file, or the TypeScript entry through tsx */
+const entry = (ts) => COMPILED ? [ts.replace(/\.ts$/, '.bundle.mjs')] : [...tsx, ts];
 
 const childEnv = (extra) => {
   const e = { ...env, ...extra, SRS_PUBLIC: '1' };
@@ -79,7 +94,7 @@ const REWRITE = ['api.fastnear.com=/mock/fastnear', 'rpc.mainnet.fastnear.com=/m
 const runner = { proc: undefined, restarts: 0, ready: false };
 function startRunner() {
   runner.ready = false;
-  const proc = spawn(node, [...tsx, 'runner/src/main.ts'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv({
+  const proc = spawn(node, entry('runner/src/main.ts'), { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv({
     RUNNER_PORT: String(RUNNER_PORT), RUNNER_HOST: '127.0.0.1', RUNNER_TOKEN, TEE_MODE: env.TEE_MODE ?? 'local-dev',
     SRS_TENANT_PORTS: `${BASE}-${BASE + MAX - 1}`, SRS_REWRITE: REWRITE, SRS_SANDBOX_DIR: runnerDir }) });
   proc.stdout.on('data', (d) => { if (env.SANDBOX_VERBOSE) process.stdout.write(`[runner] ${d}`); });
@@ -111,7 +126,7 @@ function startSandbox() {
   const port = BASE + slot;
   const base = `http://127.0.0.1:${port}`;
   const dir = mkdtempSync(join(tmpdir(), 'srs-sb-'));
-  const proc = spawn(node, [...tsx, 'server/src/main.ts'], { cwd: root, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv({
+  const proc = spawn(node, entry('server/src/main.ts'), { cwd: root, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv({
     PORT: String(port), RUNNER_URL: `http://127.0.0.1:${RUNNER_PORT}`, RUNNER_TOKEN, SRS_TENANT_URL: base,
     SRS_STORE_DIR: join(dir, 'store'), SRS_REVIEW_DIR: join(dir, 'reviews') }) });
   const tag = `[sb${slot}]`;
@@ -125,7 +140,7 @@ function startSandbox() {
     const up = await waitFor(`${base}/api/mode`, BOOT_MS);
     // seed the nine sample recipes exactly as a creator's client would (scripts/seed.ts); a short-lived process
     const seeded = up && !sb.stopping && await new Promise((ok) => {
-      const s = spawn(node, [...tsx, 'scripts/seed.ts'], { cwd: root, stdio: ['ignore', 'ignore', 'pipe'], env: childEnv({ SRS_URL: base }) });
+      const s = spawn(node, entry('scripts/seed.ts'), { cwd: root, stdio: ['ignore', 'ignore', 'pipe'], env: childEnv({ SRS_URL: base }) });
       s.stderr.on('data', (d) => process.stderr.write(`${tag} [seed] ${d}`));
       s.on('exit', (c) => ok(c === 0));
     });
@@ -334,4 +349,4 @@ process.on('SIGTERM', shutdown);
 
 startRunner();
 topUpSpares();
-server.listen(PORT, HOST, () => log(`listening on http://${HOST}:${PORT} (max ${MAX} sandboxes, ${SPARE} spare, idle ${IDLE_MS / 60_000} min, shared runner :${RUNNER_PORT})`));
+server.listen(PORT, HOST, () => log(`listening on http://${HOST}:${PORT} (max ${MAX} sandboxes, ${SPARE} spare, idle ${IDLE_MS / 60_000} min, shared runner :${RUNNER_PORT}, ${COMPILED ? 'pre-compiled' : 'TypeScript via tsx'})`));

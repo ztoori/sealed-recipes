@@ -13,3 +13,4 @@ tools/
 node_modules.windows-backup/
 _to_delete/
 .shots/
+*.bundle.mjs
