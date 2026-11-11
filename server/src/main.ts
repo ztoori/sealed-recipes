@@ -436,7 +436,7 @@ app.post('/api/quotes', guard(async (req, res) => {
   const q = over ? { ok: false, error: `list price $${(Number(r.price_per_run) / USDC).toFixed(4)} is above your max price`, sealed_quote: undefined }
     : await backend.quote({ recipe_id: l.ticker, sealed_recipe: currentSealed(l.ticker), sealed_job, job_hash, buyer });
   // relay only ciphertext: the quote's values describe the buyer's wallet and are sealed to the buyer's reply key
-  j(res, { quote: { recipe_id: l.ticker, ok: !!q.ok, error: q.error, sealed_quote: q.sealed_quote, listing: { ticker: l.ticker, name: l.name, creator: l.creator, price_per_run: r.price_per_run.toString(), price_floor: r.price_floor.toString(), price_ceiling: r.price_ceiling.toString(), privacy: l.privacy, risk: l.risk, disclosures: l.disclosures, parts: l.parts, output_type: l.output_type },
+  j(res, { quote: { recipe_id: l.ticker, ok: !!q.ok, error: q.error, sealed_quote: q.sealed_quote, sealed_error: (q as { sealed_error?: unknown }).sealed_error, listing: { ticker: l.ticker, name: l.name, creator: l.creator, price_per_run: r.price_per_run.toString(), price_floor: r.price_floor.toString(), price_ceiling: r.price_ceiling.toString(), privacy: l.privacy, risk: l.risk, disclosures: l.disclosures, parts: l.parts, output_type: l.output_type },
     track: { runs: r.runs, failed: r.failed, promised_total: r.promised_total, delivered_total: r.delivered_total, compensated_total: r.compensated_total, aborted: r.aborted, bond_available: r.bond_available } } });
 }));
 

@@ -54,6 +54,7 @@ export function timeline(events: Ev[]): Row[] {
       case 'signed': rows.push({ title: 'Runner signed the report', sub: d.message.length > 100 ? d.message.slice(0, 100) + '…' : d.message, source: 'runner', logs: [] }); break;
       case 'srs_settlement': rows.push({ title: 'report_run verified the ed25519 signature and settled', sub: `${txRef(d.tx, 8, 6)} · ${d.payouts.length} payees + guarantee deposit`, source: 'contract', logs: [] }); break;
       case 'run_refunded': rows.push({ title: 'Run refunded to the buyer', sub: d.reason, source: 'contract', logs: [] }); break;
+      case 'failure_detail': rows.push({ title: 'Why the run failed (sealed to you)', sub: d.error, source: 'runner', logs: [], state: 'fail', sealed: true }); break;
       case 'failed': rows.push({ title: 'Run failed', sub: d.error, source: 'runner', logs: [], state: 'fail' }); break;
       case 'completed': if (!d.ok) rows.push({ title: d.outcome === 'abort' ? 'Run aborted and refunded' : 'Run failed and was refunded', sub: d.reason ?? d.error, source: 'runner', logs: [], state: 'fail' }); break;
     }

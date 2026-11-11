@@ -79,6 +79,8 @@ export function Quote({ ticker }: { ticker: string }) {
       const { contract_id } = await api('/api/chain/config');
       const mp = maxUnits();
       const { quote: q } = await api('/api/quotes', { recipe_id: ticker, sealed_job: sealed, job_hash, buyer: acting, ...(mp ? { max_price: mp } : {}) });
+      // a failed dry run's detail may contain these inputs, so the runner sealed it to this browser's reply key
+      if (!q.ok && q.sealed_error) { try { q.error = open<{ error: string }>(q.sealed_error, reply.current.secretKey).error; } catch { /* keep the generic text */ } }
       if (q.ok && q.sealed_quote) {
         // opened with this browser's one-time key; the runner signature is checked against the exact message the contract will verify
         try { const o = openQuote(q.sealed_quote, reply.current.secretKey, { contractId: contract_id, signingPk: onchain.signing_pk, buyer: acting, inputsHash: sealedHash(sealed), jobHash: job_hash, recipeId: ticker }); Object.assign(q, o, { ok: o.verified, error: o.problem }); }
@@ -215,6 +217,12 @@ export function Quote({ ticker }: { ticker: string }) {
                         {freshKey && <button className="btn ghost sm icon-only" aria-label="Save key" title="Save the key file" onClick={downloadKey}><Icon name="download" size={14} /></button>}</div>
                     ) : (
                       <input id={'f-' + f.id} value={values[f.id] ?? ''} placeholder={f.placeholder} inputMode={f.type === 'usd' || f.type === 'percent' ? 'decimal' : undefined} onChange={(e) => edit(f.id, e.target.value)} />
+                    )}
+                    {/^(near\.account|address\.near)$/.test(f.type) && f.generator !== 'fresh-implicit' && (
+                      <div className="small muted" id={'f-' + f.id + '-privacy'}>
+                        <Icon name="lock" size={11} /> Encrypted in your browser: only the sealed runner can read it. We don't log or store it, and it never goes on-chain.
+                        Like any block explorer, the runner looks up this account's public data from NEAR data providers (FastNEAR, NEAR RPC), which see that lookup.
+                      </div>
                     )}
                   </div>
                 ))}

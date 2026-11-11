@@ -22,7 +22,7 @@ export interface ExecutionBackend {
   /** fresh attestation binding the backend's keys and code hash to a client nonce */
   attestation(nonce: string): Promise<unknown>;
   /** dry run for a quote on the buyer's sealed request; returns a quote sealed to the buyer (or ok:false + error) */
-  quote(job: QuoteJob): Promise<{ recipe_id: string; ok: boolean; error?: string; sealed_quote?: SealedEnvelope }>;
+  quote(job: QuoteJob): Promise<{ recipe_id: string; ok: boolean; error?: string; sealed_quote?: SealedEnvelope; sealed_error?: SealedEnvelope }>;
   start(job: RunJob): Promise<{ ok: boolean; error?: string }>;
   /** server-sent event stream of a run (public progress + payloads sealed to the buyer) */
   events(runId: string): Promise<Response>;

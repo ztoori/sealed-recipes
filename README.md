@@ -435,6 +435,22 @@ docs/                         SRS-1, architecture, threat model, contract spec a
 
 None of this makes the demo wallet a real wallet: the live mode (real NEAR testnet wallets, signatures checked on every write) is separate work.
 
+## Calls to outside services
+
+Every call our processes make to a service outside the machine (FastNEAR, NEAR RPC, 1Click, NEAR AI Cloud, NVIDIA attestation) goes through one guard, `core/src/outbound.ts`, so a busy demo or a bug can't get us rate-limited or blocked:
+
+- per service, a rate limit and a cap on calls in flight;
+- "too many requests" (429) pauses that service for its `Retry-After` and the call is retried (a rejected request was never executed);
+- network errors and 502/503/504 are retried, with backoff, only for requests that are safe to repeat: reads, NEAR RPC queries (never a transaction broadcast) and 1Click quotes (no funds move);
+- repeated lookups (FastNEAR account data, the 1Click token list) are cached briefly, and identical lookups in flight share one request;
+- a call that would wait too long fails fast instead of piling up.
+
+Limits are per process and tunable without a code change: `SRS_OUTBOUND='{"api.fastnear.com":{"rps":20}}'`. The runner's `/health` shows the counts per service. Calls to this machine (the demo's mocks) are not limited.
+
+## What happens to the accounts you enter
+
+Inputs are sealed in the buyer's browser to the runner, and anything the runner says about them (quote details, part logs, the result, and the reason a quote or run failed) is sealed back to the buyer's one-time key. Nothing logs inputs. On-chain there are only hashes. The marketplace and the tunnel see ciphertext. To read an account, the runner asks NEAR data providers (FastNEAR, NEAR RPC) about it, as any block explorer does, so those providers see that lookup. `npm run test:privacy` checks this end to end: it uses made-up canary accounts as inputs and fails if one shows up in process output, responses in the clear, run events, chain events, public endpoints or stored files.
+
 ## Configuration
 
 Copy `.env.example` to `.env` only if you want the live paths. Never commit keys.
@@ -442,6 +458,7 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 | Variable | Used by | Purpose |
 |---|---|---|
 | `NEAR_AI_API_KEY` | runner, live-check | NEAR AI Cloud private inference |
+| `SRS_OUTBOUND` | runner, server | per-service limits for outside calls, JSON merged over the defaults in `core/src/outbound.ts` |
 | `ONECLICK_JWT` | runner, live-check | authenticated 1Click fee tier |
 | `TEE_MODE` | runner | `local-dev` (default) or `dstack` |
 | `PORT`, `RUNNER_PORT` | launcher | default 8080 / 8787 |

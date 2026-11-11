@@ -30,6 +30,7 @@ import { execute, parseRewrites, setAdmission, type ResumePoint } from './execut
 import { admitParts } from './admission.js';
 import { loadKeys } from './keys.js';
 import type { ApprovalRequest, ApprovalResult } from './types.js';
+import { outboundFetch, outbound } from '../../core/src/outbound.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const env = process.env;
@@ -71,6 +72,8 @@ function ctxOf(req: { get(name: string): string | undefined }): Ctx {
 }
 class TenantError extends Error {}
 const jobKey = (ctx: Ctx, runId: string) => `${ctx.key}|${runId}`;
+/** what the marketplace sees when a failure's detail may contain the buyer's inputs: the detail itself is sealed to the buyer */
+const SEALED_FAILURE = 'failed; the details are sealed to the buyer';
 
 /** A signed, sealed checkpoint record as stored by the marketplace. */
 interface CheckpointRecord { run_id: string; local_seq: number; state_hash: string; envelope: SealedEnvelope; signature: string }
@@ -103,7 +106,7 @@ async function chainView<T>(ctx: Ctx, path: string): Promise<T> {
     const [kind, id] = path.split('/');
     const method = kind === 'runs' ? 'get_run' : 'get_recipe';
     const args = kind === 'runs' ? { run_id: id } : { recipe_id: id };
-    const r = (await fetch(NEAR_RPC, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 'srs', method: 'query', params: { request_type: 'call_function', finality: 'final', account_id: CONTRACT_ID, method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString('base64') } }) }).then((x) => x.json())) as { result?: { result: number[] }; error?: unknown };
+    const r = (await outboundFetch(NEAR_RPC, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 'srs', method: 'query', params: { request_type: 'call_function', finality: 'final', account_id: CONTRACT_ID, method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString('base64') } }) }).then((x) => x.json())) as { result?: { result: number[] }; error?: unknown };
     if (!r.result) throw new Error(`rpc ${method}: ${JSON.stringify(r.error)}`);
     const v = JSON.parse(Buffer.from(r.result.result).toString('utf8')) as T | null;
     if (v == null) throw new Error(`${method}(${id}) returned null`);
@@ -263,7 +266,10 @@ async function runJob(job: Job, ctx: Ctx, sealedRecipe: SealedEnvelope, sealedIn
     priv('result', { ok: res.ok, error: res.error, output, salt: res.salt, skipped: res.skipped });
     emit(job, 'completed', { ok: res.ok, outcome: res.ok ? 'ok' : 'fail', output_hash: res.outputHash, settlement });
   } catch (e) {
-    emit(job, 'failed', { error: (e as Error).message });
+    // once the buyer's inputs are open, an error message may contain them (e.g. an account they entered): the detail
+    // goes to the buyer sealed, and the marketplace only sees that the run failed
+    if (replyTo) { priv('failure_detail', { error: (e as Error).message }); emit(job, 'failed', { error: SEALED_FAILURE }); }
+    else emit(job, 'failed', { error: (e as Error).message });
     // a verified run that cannot complete is refunded now (signed fail), not after the reclaim timeout
     if (reportable && !reported) {
       try { const settlement = await report('fail', ZERO, 0n, []); emit(job, 'refunded', { settlement }); }
@@ -280,7 +286,7 @@ app.use((_, res, next) => { res.setHeader('access-control-allow-origin', '*'); r
 /** job endpoints are for the marketplace only (attestation and health stay public) */
 const auth: express.RequestHandler = (req, res, next) => { if (TOKEN && req.get('x-runner-token') !== TOKEN) { res.status(401).json({ error: 'runner token required' }); return; } next(); };
 
-app.get('/health', (_, res) => { res.json({ ok: true, runner_id: RUNNER_ID, tee: keys.tee }); });
+app.get('/health', (_, res) => { res.json({ ok: true, runner_id: RUNNER_ID, tee: keys.tee, outbound: outbound.stats() }); });
 app.get('/attestation', async (req, res) => {
   const nonce = String(req.query.nonce ?? '');
   if (!/^[0-9a-f]{16,128}$/.test(nonce)) { res.status(400).json({ error: 'nonce must be 16-128 hex chars' }); return; }
@@ -321,6 +327,9 @@ app.post('/runs/:id/resume', auth, (req, res) => {
 app.post('/quotes', auth, async (req, res) => {
   const { recipe_id, sealed_recipe, sealed_job, job_hash, buyer } = req.body ?? {};
   const fail = (error: string) => res.json({ recipe_id, ok: false, error });
+  let reply = ''; // the buyer's one-time key, once the sealed job is open
+  /** a failure whose message may contain the buyer's inputs: generic text in the clear, the detail sealed to the buyer */
+  const failSealed = (detail: string) => res.json({ recipe_id, ok: false, error: `dry run ${SEALED_FAILURE}`, ...(reply ? { sealed_error: seal({ error: detail }, reply, 'output') } : {}) });
   try {
     const ctx = ctxOf(req);
     if (typeof buyer !== 'string' || !buyer) return fail('buyer required: quotes are bound to the account that will pay');
@@ -333,9 +342,10 @@ app.post('/quotes', auth, async (req, res) => {
     const p = open<JobPayload>(sealed_job, keys.box.secretKey);
     if (!/^[0-9a-f]{64}$/.test(p?.reply_to ?? '')) return fail('sealed job must include a reply_to key');
     if (jobHash(p.inputs, p.salt) !== job_hash) return fail('job_hash does not match the sealed job');
+    reply = p.reply_to;
     const dry = await execute(`quote-${recipe_id}`, recipe, p.inputs, { catalog, rewrites: ctx.rewrites, mode: 'quote', emit: () => {}, secrets: { nearAiKey: env.NEAR_AI_API_KEY, oneClickJwt: env.ONECLICK_JWT }, requestApproval: async () => ({ approved: false, txHashes: [] }) });
     recipe = undefined;
-    if (!dry.ok) return fail(dry.error ?? 'dry run failed');
+    if (!dry.ok) return failSealed(dry.error ?? 'dry run failed');
     const m = measure(measuresValue(catalog.types, v.outputType), dry.output, await fetchPrices(ctx.oneclick));
     // the bond backs the promise up to what is free right now; the contract re-checks bond >= cover at payment
     const free = BigInt(onChain.bond_available ?? '0');
@@ -349,7 +359,7 @@ app.post('/quotes', auth, async (req, res) => {
     const signature = base64.enc(nacl.sign.detached(utf8ToBytes(quoteMessage(CONTRACT_ID, recipe_id, inputs_hash, buyer, fields)), keys.sign.secretKey));
     // values describe the buyer's wallet, so the whole quote is sealed to the buyer; the marketplace relays ciphertext
     res.json({ recipe_id, ok: true, sealed_quote: seal({ ...fields, signature, recipe_id, buyer, inputs_hash, details: { output: dry.output } }, p.reply_to, 'output') });
-  } catch (e) { fail((e as Error).message); }
+  } catch (e) { if (reply) failSealed((e as Error).message); else fail((e as Error).message); }
 });
 
 app.get('/runs/:id/events', auth, (req, res) => {

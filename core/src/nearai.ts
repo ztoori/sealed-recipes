@@ -14,6 +14,7 @@ import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 import { sha256Hex } from './canonical.js';
+import { outboundFetch } from './outbound.js';
 
 export const NEAR_AI_BASE = 'https://cloud-api.near.ai';
 
@@ -118,7 +119,7 @@ export class NearAiCloud {
 
   async chat(model: string, messages: { role: string; content: string }[]) {
     const requestBody = JSON.stringify({ model, messages, temperature: 0, stream: false });
-    const res = await fetch(`${this.base}/v1/chat/completions`, { method: 'POST', headers: this.h(), body: requestBody });
+    const res = await outboundFetch(`${this.base}/v1/chat/completions`, { method: 'POST', headers: this.h(), body: requestBody });
     const responseBody = await res.text();
     if (!res.ok) throw new Error(`NEAR AI Cloud ${res.status}: ${responseBody.slice(0, 200)}`);
     const json = JSON.parse(responseBody) as { id: string; choices: { message: { content: string } }[] };
@@ -126,14 +127,14 @@ export class NearAiCloud {
   }
 
   async attestation(model: string, nonce: string) {
-    const res = await fetch(`${this.base}/v1/attestation/report?model=${encodeURIComponent(model)}&signing_algo=ecdsa&nonce=${nonce}`, { headers: this.h() });
+    const res = await outboundFetch(`${this.base}/v1/attestation/report?model=${encodeURIComponent(model)}&signing_algo=ecdsa&nonce=${nonce}`, { headers: this.h() });
     if (!res.ok) throw new Error(`attestation ${res.status}`);
     return (await res.json()) as { model_attestations: { signing_address: string; nvidia_payload: string; intel_quote: string; [k: string]: unknown }[] };
   }
 
   async signature(chatId: string, model: string, tries = 5): Promise<ChatSignature> {
     for (let i = 0; i < tries; i++) {
-      const res = await fetch(`${this.base}/v1/signature/${chatId}?model=${encodeURIComponent(model)}&signing_algo=ecdsa`, { headers: this.h() });
+      const res = await outboundFetch(`${this.base}/v1/signature/${chatId}?model=${encodeURIComponent(model)}&signing_algo=ecdsa`, { headers: this.h() });
       if (res.ok) return (await res.json()) as ChatSignature;
       await new Promise((r) => setTimeout(r, 400 * (i + 1))); // signature may live on another node: retry
     }

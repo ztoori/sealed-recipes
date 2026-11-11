@@ -6,6 +6,7 @@ import { enforceLimits } from './limits.js';
 import { HANDLERS, SANDBOXED } from './parts/registry.js';
 export { HANDLERS, SANDBOXED };
 import type { Admission } from './admission.js';
+import { outboundFetch } from '../../core/src/outbound.js';
 
 /** Set once at start by the runner (runner/src/admission.ts). Unset only in unit tests that exercise parts directly. */
 let ADMISSION: Admission | null = null;
@@ -34,7 +35,8 @@ export function guardedFetch(partId: string, capabilities: string[], rewrites: M
     const base = rewrites.get(u.host);
     const target = base ? base.replace(/\/$/, '') + u.pathname + u.search : url;
     const timeout = AbortSignal.timeout(20_000);
-    return fetch(target, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
+    // third-party services are rate-limited, cached and retried safely (core/src/outbound.ts); local mocks are not
+    return outboundFetch(target, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
   };
 }
 

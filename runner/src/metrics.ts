@@ -3,6 +3,7 @@
  * in payment-token units (USDC, 6 decimals), so a quote can promise a value and the guarantee deposit can back it.
  * Only recipes whose result is swap receipts are measured (`measuresValue` in core/src/srs.ts).
  */
+import { outboundFetch } from '../../core/src/outbound.js';
 
 const USDC = 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
 interface Receipt { status: string; assetOut?: string; amountOutUnits?: string; minAmountOutUnits?: string }
@@ -44,6 +45,6 @@ export function creditedDelivered(delivered: bigint, fresh: bigint, executed: bi
 }
 
 export async function fetchPrices(oneclickBase: string): Promise<Prices> {
-  const tokens = (await fetch(`${oneclickBase}/v0/tokens`).then((r) => r.json())) as { assetId: string; price: string; decimals: number }[];
+  const tokens = (await outboundFetch(`${oneclickBase}/v0/tokens`).then((r) => r.json())) as { assetId: string; price: string; decimals: number }[];
   return new Map(tokens.map((t) => [t.assetId, { price: Number(t.price), decimals: t.decimals }]));
 }

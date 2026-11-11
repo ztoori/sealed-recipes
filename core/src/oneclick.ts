@@ -10,6 +10,7 @@
  * NEAR Intents has no testnet, so fixture mode is the default for the hackathon demo.
  */
 import { sha256Hex } from './canonical.js';
+import { outboundFetch } from './outbound.js';
 
 export const ONECLICK_BASE = 'https://1click.chaindefuser.com';
 export const USDC_NEAR = 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
@@ -84,7 +85,7 @@ export class OneClick {
     this.log.push({ at: new Date(this.clock()).toISOString(), method, path, body, mode: this.mode });
     const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/json' };
     if (this.jwt) headers.authorization = `Bearer ${this.jwt}`;
-    const res = await fetch(this.base + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    const res = await outboundFetch(this.base + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
     const text = await res.text();
     if (!res.ok) throw new Error(`1Click ${method} ${path} → ${res.status}: ${text.slice(0, 300)}`);
     return JSON.parse(text) as T;

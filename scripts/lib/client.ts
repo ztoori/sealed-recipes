@@ -63,7 +63,7 @@ export function freshImplicitAccount() {
  * verified here, against the exact message the contract will check, before anything is paid.
  */
 export async function requestQuotes(recipes: string[], inputs: Record<string, unknown>, runner: { enc_pk_hex: string; signing_pk: string }, buyer: string, maxPrice?: bigint) {
-  const { seal, jobHash, sealedHash, openQuote } = await import('../../core/src/index.js');
+  const { seal, open, jobHash, sealedHash, openQuote } = await import('../../core/src/index.js');
   const reply = nacl.box.keyPair();
   const salt = randomBytes(16).toString('hex');
   const job_hash = jobHash(inputs, salt);
@@ -74,6 +74,8 @@ export async function requestQuotes(recipes: string[], inputs: Record<string, un
   const quotes = await Promise.all(recipes.map((recipe_id) => api<{ quote: any }>('/api/quotes', { recipe_id, sealed_job, job_hash, buyer, ...(maxPrice !== undefined ? { max_price: maxPrice.toString() } : {}) })
     .then((r) => r.quote, (e: Error) => ({ recipe_id, ok: false, error: e.message, listing: { ticker: recipe_id } }))));
   for (const q of quotes) {
+    // a failed dry run's detail may contain the inputs, so the runner seals it to this client
+    if (!q.ok && q.sealed_error) { try { q.error = open<{ error: string }>(q.sealed_error, reply.secretKey).error; } catch { /* keep the generic text */ } continue; }
     if (!q.ok || !q.sealed_quote) continue;
     const o = openQuote(q.sealed_quote, reply.secretKey, { contractId: contract_id, recipeId: q.recipe_id, signingPk: runner.signing_pk, buyer, inputsHash, jobHash: job_hash });
     Object.assign(q, o, { details: o.details, ok: o.verified, error: o.problem });
