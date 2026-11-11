@@ -10,6 +10,7 @@
   },
   "scripts": {
     "demo": "node scripts/demo.mjs",
+    "gateway": "node scripts/gateway.mjs",
     "dev:runner": "tsx runner/src/main.ts",
     "dev:server": "tsx server/src/main.ts",
     "dev:web": "vite --config web/vite.config.ts",

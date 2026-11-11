@@ -62,7 +62,7 @@ const { codehash } = computeCodehash(ROOT);
 const admission = await admitParts(ROOT, catalog);
 setAdmission(admission);
 console.log(`[runner] release ${admission.release}: ${admission.admitted.size} parts admitted (${admission.sandboxed.size} sandboxed)${admission.refused.size ? `, ${admission.refused.size} refused: ` + [...admission.refused].map(([id, why]) => `${id} (${why})`).join('; ') : ''}`);
-const keys = await loadKeys(env.TEE_MODE ?? 'local-dev', resolve(ROOT, '.data/runner-dev-keys.json'), composeHash);
+const keys = await loadKeys(env.TEE_MODE ?? 'local-dev', env.RUNNER_KEYS_PATH ?? resolve(ROOT, '.data/runner-dev-keys.json'), composeHash);
 
 type Ev = { seq: number; at: number; type: string; data: Record<string, unknown> };
 interface Job { runId: string; recipeId: string; events: Ev[]; listeners: Set<(e: Ev) => void>; approval?: { resolve: (r: ApprovalResult) => void; req: ApprovalRequest; node: string }; done: boolean }
@@ -347,7 +347,7 @@ app.post('/runs/:id/approval', auth, (req, res) => {
 });
 
 /** local demo only: simulate a hard crash (process killed mid-run) to show runs resuming from checkpoints */
-if (env.SRS_ALLOW_CRASH === '1') app.post('/__crash', auth, (_, res) => { res.json({ ok: true }); setTimeout(() => process.exit(137), 20); });
+if (env.SRS_ALLOW_CRASH === '1' && env.SRS_PUBLIC !== '1') app.post('/__crash', auth, (_, res) => { res.json({ ok: true }); setTimeout(() => process.exit(137), 20); });
 
 const HOST = env.RUNNER_HOST ?? '127.0.0.1';
 app.listen(PORT, HOST, () => {

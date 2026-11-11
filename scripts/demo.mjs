@@ -4,6 +4,7 @@
  * Starts the sealed runner (:8787) and the marketplace (:8080), seeds the market,
  * builds the web app if needed, and prints the URL.
  *   --no-open   don't open a browser       --story   also run the 4-step story in the terminal
+ *   --public    hosted for the public: dev/test endpoints (crash the runner, break the solver) are off
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -23,6 +24,10 @@ const children = [];
 // the pricing test uses short periods so the market visibly moves within a minute
 if (process.argv.includes('--pricing')) process.env.SRS_PRICE_PERIOD_S ??= '15';
 const RUNNER_TOKEN = randomBytes(24).toString('hex'); // marketplace ↔ runner job channel
+const PUBLIC = args.has('--public');
+if (PUBLIC) for (const f of ['--crash-test', '--versions', '--atomic']) if (args.has(f)) { console.error(`[demo] ${f} needs the dev endpoints, which --public turns off`); process.exit(2); }
+// dev endpoints (crash the runner, make the solver fail) exist only for the local test suites, never when hosted
+const DEV = PUBLIC ? { SRS_PUBLIC: '1' } : { SRS_ALLOW_CRASH: '1' };
 
 let stopping = false;
 /** `restart`: supervise like a container restart policy (the runner can crash mid-run; runs resume from checkpoints) */
@@ -53,7 +58,7 @@ async function waitFor(url, ms = 30000) {
 const newest = (dir) => { let t = 0; for (const e of readdirSync(dir, { withFileTypes: true })) { const p = resolve(dir, e.name); t = Math.max(t, e.isDirectory() ? newest(p) : statSync(p).mtimeMs); } return t; };
 const built = existsSync(resolve(root, 'web/dist/index.html')) ? statSync(resolve(root, 'web/dist/index.html')).mtimeMs : 0;
 const sources = Math.max(...['web/src', 'core/src', 'standard', 'seed'].map((d) => newest(resolve(root, d))), statSync(resolve(root, 'web/index.html')).mtimeMs);
-if (sources > built) {
+if (sources > built && process.env.SRS_SKIP_BUILD !== '1') {
   console.log(built ? '[demo] web app sources changed since the last build: rebuilding…' : '[demo] building web app (first run only)…');
   const b = spawnSync(node, [resolve(root, 'node_modules/vite/bin/vite.js'), 'build', '--config', 'web/vite.config.ts', '--logLevel', 'warn'], { cwd: root, stdio: 'inherit' });
   if (b.status) process.exit(b.status);
@@ -67,9 +72,9 @@ const rewrite = [
   `solver-relay-v2.chaindefuser.com=${base}/mock/solver-relay`,
 ].join(',');
 
-start('runner', 'runner/src/main.ts', { RUNNER_PORT: RPORT, CHAIN_URL: `${base}/api/chain`, SRS_REWRITE: rewrite, RUNNER_TOKEN, TEE_MODE: process.env.TEE_MODE ?? 'local-dev', SRS_ALLOW_CRASH: '1' }, true);
+start('runner', 'runner/src/main.ts', { RUNNER_PORT: RPORT, CHAIN_URL: `${base}/api/chain`, SRS_REWRITE: rewrite, RUNNER_TOKEN, TEE_MODE: process.env.TEE_MODE ?? 'local-dev', ...DEV }, true);
 await waitFor(`http://127.0.0.1:${RPORT}/health`);
-start('server', 'server/src/main.ts', { PORT, RUNNER_URL: `http://127.0.0.1:${RPORT}`, RUNNER_TOKEN, SRS_ALLOW_CRASH: '1' });
+start('server', 'server/src/main.ts', { PORT, RUNNER_URL: `http://127.0.0.1:${RPORT}`, RUNNER_TOKEN, ...DEV });
 await waitFor(`${base}/api/mode`);
 const seed = spawnSync(node, [...tsx, 'scripts/seed.ts'], { cwd: root, stdio: 'inherit', env: { ...process.env, SRS_URL: base } });
 if (seed.status) shutdown(seed.status);
@@ -85,7 +90,7 @@ if (args.has('--story')) {
   if (args.has('--exit')) shutdown(s.status ?? 0);
 }
 if (args.has('--exit')) shutdown(0);
-if (!args.has('--no-open') && !args.has('--exit') && !process.env.CI) {
+if (!args.has('--no-open') && !PUBLIC && !args.has('--exit') && !process.env.CI) {
   // WSL: open the page in the Windows browser (WSL2 forwards localhost to Windows by default)
   const wsl = process.platform === 'linux' && existsSync('/proc/version') && /microsoft/i.test(readFileSync('/proc/version', 'utf8'));
   const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', base]] : process.platform === 'darwin' ? ['open', [base]]

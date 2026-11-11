@@ -416,6 +416,18 @@ scripts/                      demo launcher, seed, story CLI, agent buyer, relea
 docs/                         SRS-1, architecture, threat model, contract spec and events, submission kit, media
 ```
 
+## Hosting the public demo
+
+`npm run demo` is for one person on their own machine. A shared server needs `npm run gateway` (`scripts/gateway.mjs`) instead:
+
+- **A private sandbox per visitor.** Demo accounts sign with keys anyone can derive (it is a demo wallet), and anyone can read a creator copy in the demo. On one shared market, a visitor could act as any account or open another visitor's recipe. The gateway gives each visitor their own copy of the demo (contract mirror, runner, market, part reviews, sealed-recipe store), keyed by an HttpOnly cookie, so nothing one visitor does reaches anyone else. Sandboxes are deleted after 20 idle minutes; one is kept warm so a new visitor doesn't wait.
+- **No dev endpoints.** Sandboxes run with `--public`, which turns off the endpoints the test suites use to crash the runner or make the solver fail.
+- **Local only.** The gateway and every sandbox listen on 127.0.0.1; put Cloudflare Tunnel (or another reverse proxy) in front. Attestation reaches browsers through `/runner/attestation` on the same origin.
+
+`deploy/srs-demo.service` runs it under systemd from a read-only checkout; `deploy/cloudflared-config.example.yml` shows the tunnel side. Each sandbox uses about 270 MB, so set `SANDBOX_MAX` to fit the server's memory.
+
+None of this makes the demo wallet a real wallet: the live mode (real NEAR testnet wallets, signatures checked on every write) is separate work.
+
 ## Configuration
 
 Copy `.env.example` to `.env` only if you want the live paths. Never commit keys.
@@ -426,6 +438,10 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 | `ONECLICK_JWT` | runner, live-check | authenticated 1Click fee tier |
 | `TEE_MODE` | runner | `local-dev` (default) or `dstack` |
 | `PORT`, `RUNNER_PORT` | launcher | default 8080 / 8787 |
+| `RUNNER_PUBLIC_URL` | server | where browsers fetch the runner attestation (default `/runner`, a pass-through on the same origin) |
+| `RUNNER_KEYS_PATH` | runner | local-dev key file (default `.data/runner-dev-keys.json`) |
+| `SRS_PUBLIC` | server, runner | `1` when hosted for the public: dev endpoints off (set by `demo.mjs --public`) |
+| `GATEWAY_PORT`, `SANDBOX_MAX`, `SANDBOX_SPARE`, `SANDBOX_IDLE_MIN`, `SANDBOX_PER_IP` | gateway | see `scripts/gateway.mjs` |
 
 ## Limitations and next steps
 

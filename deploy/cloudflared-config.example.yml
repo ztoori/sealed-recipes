@@ -1,0 +1,13 @@
+# /etc/cloudflared/config.yml (locally managed tunnel). For a dashboard-managed tunnel, set the same
+# Public Hostname -> Service in Zero Trust > Networks > Tunnels instead.
+# Always 127.0.0.1, never localhost: the apps listen on IPv4 only and localhost may resolve to ::1.
+tunnel: <TUNNEL-ID>
+credentials-file: /etc/cloudflared/<TUNNEL-ID>.json
+ingress:
+  - hostname: sealedrecipes.xyz
+    service: http://127.0.0.1:8080
+  - hostname: www.sealedrecipes.xyz
+    service: http://127.0.0.1:8080
+  - hostname: demo.sealedrecipes.xyz
+    service: http://127.0.0.1:8080
+  - service: http_status:404

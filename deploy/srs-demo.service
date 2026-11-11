@@ -1,0 +1,43 @@
+# Public demo behind Cloudflare Tunnel: every visitor gets a private sandbox (scripts/gateway.mjs).
+#   sudo cp deploy/srs-demo.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now srs-demo
+# The checkout lives in /opt/srs-demo (read-only for the service); runner keys and state go to /var/lib/srs-demo.
+[Unit]
+Description=Sealed Recipes public demo (per-visitor sandboxes)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=srs
+Group=srs
+WorkingDirectory=/opt/srs-demo
+Environment=NODE_ENV=production
+Environment=GATEWAY_HOST=127.0.0.1
+Environment=GATEWAY_PORT=8080
+# each sandbox uses about 270 MB; keep SANDBOX_MAX x 270 MB well under the VPS memory
+Environment=SANDBOX_MAX=4
+Environment=SANDBOX_SPARE=1
+Environment=SANDBOX_IDLE_MIN=20
+Environment=SANDBOX_PER_IP=3
+Environment=RUNNER_KEYS_PATH=/var/lib/srs-demo/runner-dev-keys.json
+Environment=GATEWAY_BUILD=0
+ExecStart=/usr/bin/node scripts/gateway.mjs
+Restart=always
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=15
+
+# hardening: the service can write only its state directory and its private /tmp
+StateDirectory=srs-demo
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

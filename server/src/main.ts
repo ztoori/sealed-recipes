@@ -39,7 +39,13 @@ const RUNNER_ID = env.RUNNER_ID ?? 'tee-runner-1.testnet';
 const PAYMENT_TOKEN = USDC_NEAR.replace(/^nep141:/, '');
 const SOLVER = 'solver-relay.intents.testnet';
 const RUNNER_TOKEN = env.RUNNER_TOKEN ?? '';
-const RUNNER_PUBLIC_URL = env.RUNNER_PUBLIC_URL ?? RUNNER; // browsers fetch attestation from the runner directly
+/** where browsers fetch the runner attestation. Default: `/runner`, this server's pass-through of the runner's public
+ *  `/attestation` (below), so remote visitors reach it without exposing the runner's port. The attestation is signed by
+ *  the runner key and bound to the browser's nonce, so the pass-through cannot alter it undetected. */
+const RUNNER_PUBLIC_URL = env.RUNNER_PUBLIC_URL ?? '/runner';
+/** SRS_PUBLIC=1: hosted for the public. Dev/test endpoints are refused even if SRS_ALLOW_CRASH is set. */
+const PUBLIC = env.SRS_PUBLIC === '1';
+const ALLOW_DEV = env.SRS_ALLOW_CRASH === '1' && !PUBLIC;
 /** the execution backend (server/src/backends.ts); the marketplace never calls the runner any other way */
 const backend = new TeeRunnerBackend(RUNNER, RUNNER_ID, RUNNER_TOKEN);
 
@@ -219,6 +225,8 @@ const record = (t: string) => {
 };
 
 const app = express();
+// behind cloudflared / the sandbox gateway on this machine: take the client address from X-Forwarded-For (rate limits)
+app.set('trust proxy', 'loopback');
 app.use('/mock', mocks.router);
 app.use(express.json({ limit: '2mb' }));
 const j = (res: express.Response, v: unknown) => res.json(toJson(v));
@@ -286,11 +294,11 @@ app.post('/api/recipes/:ticker/cancel-update', guard((req, res) => {
 }));
 
 /** local demo only: crash the runner process (it is restarted by the launcher) */
-if (env.SRS_ALLOW_CRASH === '1') app.post('/api/dev/crash-runner', guard(async (_, res) => { await backend.crash(); j(res, { ok: true }); }));
+if (ALLOW_DEV) app.post('/api/dev/crash-runner', guard(async (_, res) => { await backend.crash(); j(res, { ok: true }); }));
 
 /** local demo only: make the solver back out of fills for an asset, to show an atomic bundle reverting */
-if (env.SRS_ALLOW_CRASH === '1') app.post('/api/dev/solver-fail', guard((req, res) => { const a = String(req.body.asset ?? ''); req.body.on === false ? mocks.verifier.failing.delete(a) : mocks.verifier.failing.add(a); j(res, { failing: [...mocks.verifier.failing] }); }));
-if (env.SRS_ALLOW_CRASH === '1') app.post('/api/dev/verifier-withdraw', guard((req, res) => j(res, { withdrawn: mocks.verifier.withdrawAll(String(req.body.account)) })));
+if (ALLOW_DEV) app.post('/api/dev/solver-fail', guard((req, res) => { const a = String(req.body.asset ?? ''); req.body.on === false ? mocks.verifier.failing.delete(a) : mocks.verifier.failing.add(a); j(res, { failing: [...mocks.verifier.failing] }); }));
+if (ALLOW_DEV) app.post('/api/dev/verifier-withdraw', guard((req, res) => j(res, { withdrawn: mocks.verifier.withdrawAll(String(req.body.account)) })));
 app.get('/api/intents/verifier/:account', (req, res) => j(res, { account: req.params.account, balances: Object.fromEntries(mocks.verifier.balances.get(String(req.params.account)) ?? []), log: mocks.verifier.log.slice(-20) }));
 
 /** demo wallet: sign "as" an account. Local mode only: testnet mode uses a real NEAR wallet. */
@@ -309,9 +317,19 @@ app.post('/api/chain/tx', guard((req, res) => {
   j(res, { ok: true, result: out, tx: ev?.tx_hash, height: ledger.height });
 }));
 
+// ---- runner attestation pass-through (public, read-only): GET /runner/attestation?nonce=… ----
+app.get('/runner/attestation', async (req, res) => {
+  const nonce = String(req.query.nonce ?? '');
+  if (!/^[0-9a-f]{16,128}$/i.test(nonce)) { res.status(400).json({ error: 'nonce must be 16-128 hex characters' }); return; }
+  try {
+    const r = await fetch(`${RUNNER}/attestation?nonce=${nonce}`, { signal: AbortSignal.timeout(10_000) });
+    res.status(r.status).type('application/json').send(await r.text());
+  } catch (e) { res.status(502).json({ error: `runner unreachable: ${(e as Error).message}` }); }
+});
+
 // ---- marketplace ----
 app.get('/api/mode', (_, res) => j(res, {
-  mode: 'local', contract_id: CONTRACT_ID, runner_id: RUNNER_ID, runner_url: RUNNER_PUBLIC_URL,
+  mode: 'local', public: PUBLIC, contract_id: CONTRACT_ID, runner_id: RUNNER_ID, runner_url: RUNNER_PUBLIC_URL,
   services: { fastnear: 'mock', rpc: 'mock', oneclick: 'fixture (frozen token sample)', nearai: 'mock (real secp256k1 signatures, no hardware quote)', tee: 'local-dev runner (no hardware quote)' },
   ai_signing_address: mocks.aiSigningAddress,
 }));
