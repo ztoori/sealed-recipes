@@ -296,7 +296,8 @@ On Windows, build and run everything inside WSL (Ubuntu), not in PowerShell. The
 
 1. **Put the project in the WSL filesystem**, not on `C:`. Under `/mnt/c` npm and cargo are many times slower, and `node_modules` installed on Windows contain Windows binaries that fail in Linux.
    ```bash
-   git clone /mnt/c/CMR/CC/sealed-recipes ~/sealed-recipes     # keeps the full history and archive tags
+   git clone https://github.com/ztoori/sealed-recipes.git ~/sealed-recipes
+   # add --depth 1 for just the latest version; the full history (and the tags) stays on GitHub
    cd ~/sealed-recipes
    ```
 2. **Install the toolchain** with one script. It is safe to re-run, uses `sudo` only for apt packages, and installs Node with nvm and Z3 in a project virtualenv (`.venv`).
@@ -313,10 +314,10 @@ On Windows, build and run everything inside WSL (Ubuntu), not in PowerShell. The
    npm run demo            # opens http://127.0.0.1:8080 in your Windows browser
    ```
 
-**Getting a new version.** Your WSL copy does not update by itself when the folder on `C:` changes. Pull it, then reinstall in case dependencies changed:
+**Getting a new version.** Pull it, then reinstall in case dependencies changed:
 ```bash
 cd ~/sealed-recipes
-git pull                # from /mnt/c/CMR/CC/sealed-recipes, where the clone came from
+git pull
 npm install
 npm run demo            # rebuilds the web app automatically when its sources changed
 ```
