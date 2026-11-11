@@ -3,7 +3,7 @@
  * Spends nothing: 1Click quotes are dry:true, FastNEAR/RPC are reads.
  *   npm run live-check                      (1Click + FastNEAR + NEAR RPC)
  *   NEAR_AI_API_KEY=... npm run live-check  (+ NEAR AI Cloud attestation, chat and signature verification)
- * Optional: ONECLICK_JWT for the authenticated fee tier.
+ * Optional: ONECLICK_JWT (1Click partner JWT): lower fees, and required by 1Click for confidential quotes.
  */
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -25,8 +25,14 @@ try {
   if (!usdc || !wnear) throw new Error('USDC or wNEAR not listed');
   ok(`/v0/tokens: ${tokens.length} tokens, wNEAR $${wnear.price}`);
   const fresh = randomBytes(32).toString('hex');
-  const swap = await oc.quote({ dry: true, swapType: 'EXACT_INPUT', slippageTolerance: 100, originAsset: wnear.assetId, depositType: 'ORIGIN_CHAIN', destinationAsset: USDC_NEAR, amount: (10n ** 24n).toString(), refundTo: 'srs-live-check.near', refundType: 'ORIGIN_CHAIN', recipient: fresh, recipientType: 'DESTINATION_CHAIN', confidentiality: 'basic', deadline: new Date(Date.now() + 600_000).toISOString(), referral: 'sealed-recipes' });
-  ok(`confidential dry quote 1 wNEAR → ${swap.quote.amountOutFormatted} USDC to a fresh implicit account`);
+  const swapReq = (confidentiality: 'public' | 'basic') => ({ dry: true, swapType: 'EXACT_INPUT' as const, slippageTolerance: 100, originAsset: wnear.assetId, depositType: 'ORIGIN_CHAIN' as const, destinationAsset: USDC_NEAR, amount: (10n ** 24n).toString(), refundTo: 'srs-live-check.near', refundType: 'ORIGIN_CHAIN' as const, recipient: fresh, recipientType: 'DESTINATION_CHAIN' as const, confidentiality, deadline: new Date(Date.now() + 600_000).toISOString(), referral: 'sealed-recipes' });
+  const pub = await oc.quote(swapReq('public'));
+  ok(`public dry quote 1 wNEAR → ${pub.quote.amountOutFormatted} USDC to a fresh implicit account`);
+  // since Nov 2026 1Click requires partner authentication for confidential quotes
+  if (process.env.ONECLICK_JWT) {
+    try { const conf = await oc.quote(swapReq('basic')); ok(`confidential dry quote 1 wNEAR → ${conf.quote.amountOutFormatted} USDC`); }
+    catch (e) { bad('confidential dry quote (with ONECLICK_JWT)', e); }
+  } else skip('confidential dry quote: 1Click requires a partner JWT for confidential quotes; set ONECLICK_JWT (partners.near-intents.org)');
   const arbUsdc = tokens.find((t) => t.assetId === 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near');
   if (arbUsdc) {
     const msg = JSON.stringify({ action: 'run', recipe_id: 'CLNP', run_id: 'r-live-check', inputs_hash: '0'.repeat(64), on_behalf_of: 'bob.near' });
