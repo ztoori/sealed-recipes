@@ -74,6 +74,18 @@ class TenantError extends Error {}
 const jobKey = (ctx: Ctx, runId: string) => `${ctx.key}|${runId}`;
 /** what the marketplace sees when a failure's detail may contain the buyer's inputs: the detail itself is sealed to the buyer */
 const SEALED_FAILURE = 'failed; the details are sealed to the buyer';
+/**
+ * SRS_READ_ONLY=1 (the live testnet runner, whose parts read real mainnet data): "mainnet is read-only". Recipes
+ * with a part that asks the buyer to sign (capability wallet:approve) are refused, so no run of this runner can
+ * produce a mainnet transaction.
+ */
+const READ_ONLY = env.SRS_READ_ONLY === '1';
+let SIGNING_PARTS: Set<string> | undefined; // filled on first use (the catalog loads below)
+const READ_ONLY_REFUSAL = 'this runner is read-only: recipes that ask the buyer to sign transactions are not accepted';
+const signsAnything = (partsUsed: string[]) => {
+  SIGNING_PARTS ??= new Set(catalog.parts.filter((p) => p.capabilities.includes('wallet:approve')).map((p) => p.id));
+  return partsUsed.some((id) => SIGNING_PARTS!.has(id));
+};
 
 /** A signed, sealed checkpoint record as stored by the marketplace. */
 interface CheckpointRecord { run_id: string; local_seq: number; state_hash: string; envelope: SealedEnvelope; signature: string }
@@ -171,6 +183,7 @@ async function runJob(job: Job, ctx: Ctx, sealedRecipe: SealedEnvelope, sealedIn
     checks.push({ label: 'decrypted recipe uses exactly the parts listed on-chain', ok: v.ok && sameParts });
     emit(job, 'verified', { checks });
     if (!v.ok || !sameParts) throw new Error('sealed recipe parts differ from the on-chain parts list');
+    if (READ_ONLY && signsAnything(v.partsUsed)) throw new Error(READ_ONLY_REFUSAL);
     const opened = open<JobPayload>(sealedInputs, keys.box.secretKey);
     if (!/^[0-9a-f]{64}$/.test(opened?.reply_to ?? '')) throw new Error('sealed inputs must include a reply_to key');
     // a quoted run must execute exactly the job that was quoted (and that the bond backs)
@@ -339,6 +352,7 @@ app.post('/quotes', auth, async (req, res) => {
     let recipe: Recipe | undefined = open<Recipe>(sealed_recipe, keys.box.secretKey);
     const v = validateRecipe(recipe, catalog);
     if (!v.ok || [...new Set(v.partsUsed)].sort().join(',') !== [...new Set(onChain.parts)].sort().join(',')) return fail('sealed recipe parts differ from the on-chain parts list');
+    if (READ_ONLY && signsAnything(v.partsUsed)) return fail(READ_ONLY_REFUSAL);
     const p = open<JobPayload>(sealed_job, keys.box.secretKey);
     if (!/^[0-9a-f]{64}$/.test(p?.reply_to ?? '')) return fail('sealed job must include a reply_to key');
     if (jobHash(p.inputs, p.salt) !== job_hash) return fail('job_hash does not match the sealed job');

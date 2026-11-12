@@ -1,0 +1,41 @@
+# Live runner for the testnet marketplace (local-dev keys, no TEE yet). Read-only on mainnet data:
+# SRS_READ_ONLY=1 refuses recipes that ask the buyer to sign. Parts call the real services (FastNEAR, NEAR RPC,
+# 1Click dry quotes, NEAR AI Cloud) through the outbound guard; no mocks.
+#   sudo cp deploy/srs-live-runner.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now srs-live-runner
+[Unit]
+Description=Sealed Recipes live runner (testnet, local-dev keys)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=srs
+Group=srs
+WorkingDirectory=/opt/srs-live
+EnvironmentFile=/etc/srs/live.env
+EnvironmentFile=/etc/srs/secrets.env
+Environment=NODE_ENV=production
+Environment=RUNNER_HOST=127.0.0.1
+Environment=RUNNER_PORT=8788
+Environment=TEE_MODE=local-dev
+Environment=SRS_READ_ONLY=1
+Environment=RUNNER_KEYS_PATH=/var/lib/srs-live/runner-keys.json
+Environment=CHAIN_URL=http://127.0.0.1:8081/api/chain
+Environment=MARKET_URL=http://127.0.0.1:8081
+ExecStart=/usr/bin/node runner/src/main.bundle.mjs
+Restart=always
+RestartSec=3
+StateDirectory=srs-live
+StateDirectoryMode=0700
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

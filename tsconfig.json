@@ -13,5 +13,5 @@
     "types": ["node"],
     "esModuleInterop": true
   },
-  "include": ["core/src", "runner/src", "server/src", "web/src", "scripts/*.ts", "tests"]
+  "include": ["core/src", "runner/src", "server/src", "web/src", "scripts/*.ts", "scripts/testnet/*.ts", "tests"]
 }

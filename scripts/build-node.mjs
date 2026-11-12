@@ -19,6 +19,7 @@ export const BUNDLES = [
   ['server/src/main.ts', 'server/src/main.bundle.mjs'],
   ['runner/src/main.ts', 'runner/src/main.bundle.mjs'],
   ['scripts/seed.ts', 'scripts/seed.bundle.mjs'],
+  ['server/src/live.ts', 'server/src/live.bundle.mjs'],
 ];
 const t = Date.now();
 await Promise.all(BUNDLES.map(([entry, out]) => build({

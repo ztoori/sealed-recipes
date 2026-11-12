@@ -1,0 +1,276 @@
+/**
+ * Live marketplace on NEAR testnet (SRS_MODE=testnet):  node --import tsx server/src/live.ts
+ *
+ * The contract is the deployed one: state is read over RPC and every write is a real transaction.
+ *  - Creators publish with their own key (publish_recipe); this server stores the sealed recipe only after checking
+ *    the on-chain sealed_hash and creator, and never sees plaintext.
+ *  - Buyers ask for quotes (sealed to the runner, as in the demo), then pay with their own key:
+ *    ft_transfer_call(tUSDC → contract, price, msg). This server watches for the run to be Pending on-chain, then
+ *    starts the runner and relays its event stream (public progress + payloads sealed to the buyer).
+ *  - The runner's signed report_run / checkpoint_run are sent by the relayer (server/src/near.ts), one at a time.
+ *  - No mocks, no fixtures, no demo wallet, no dev endpoints. Runner calls are authenticated with RUNNER_TOKEN.
+ *
+ * Env: PORT (8081)  CONTRACT_ID  RUNNER_ID  RUNNER_URL  RUNNER_TOKEN (required)  NEAR_RPC_URL  NEAR_RELAYER_KEY_FILE
+ *      PAYMENT_TOKEN  SRS_STORE_DIR (persistent)  NEAR_NETWORK (testnet)
+ */
+import express from 'express';
+import { randomBytes } from 'node:crypto';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { sealedHash, type SealedEnvelope } from '../../core/src/seal.js';
+import { labelsFromParts, type PublicListing } from '../../core/src/srs.js';
+import { loadCatalog } from '../../core/src/codehash.js';
+import { FileBlobStore } from './store.js';
+import { TeeRunnerBackend } from './backends.js';
+import { NearChain } from './near.js';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const env = process.env;
+const need = (k: string) => { const v = env[k]; if (!v) { console.error(`[live] ${k} is required`); process.exit(2); } return v; };
+const PORT = Number(env.PORT ?? 8081);
+const NETWORK = env.NEAR_NETWORK ?? 'testnet';
+const CONTRACT_ID = need('CONTRACT_ID');
+const RUNNER_ID = need('RUNNER_ID');
+const RUNNER = env.RUNNER_URL ?? 'http://127.0.0.1:8788';
+const RUNNER_TOKEN = need('RUNNER_TOKEN');
+const RPC = env.NEAR_RPC_URL ?? 'https://rpc.testnet.fastnear.com';
+const PAY_TIMEOUT_MS = 5 * 60_000;
+const explorer = (tx: string) => `https://testnet.nearblocks.io/txns/${tx}`;
+
+const chain = new NearChain(RPC, CONTRACT_ID, env.NEAR_RELAYER_KEY_FILE);
+const backend = new TeeRunnerBackend(RUNNER, RUNNER_ID, RUNNER_TOKEN);
+const catalog = loadCatalog(ROOT);
+const store = new FileBlobStore(need('SRS_STORE_DIR'));
+
+// ---- types of the contract views we use ----
+interface Recipe { id: string; name: string; creator: string; sealed_hash: string; runner_id: string; parts: string[]; price_per_run: string; price_floor: string; price_ceiling: string; reserve_bps: number; bond_available: string; runs: string; failed: string; aborted: string; revenue: string; settle_mode?: string }
+interface Run { status: string; recipe_id: string; buyer: string; inputs_hash: string; sealed_hash?: string; job_hash?: string }
+interface Config { payment_token: string; owner: string; protocol_account: string; protocol_fee_bps: number }
+
+// ---- durable marketplace state (ciphertext and public listings only) ----
+interface VaultIndex { recipes: Record<string, { versions: string[]; creator_copies: Record<string, string> }> }
+const vault = store.readMeta<VaultIndex>('vault', { recipes: {} });
+const listings = store.readMeta<Record<string, PublicListing & { published_at: string; publish_tx?: string }>>('listings', {});
+const saveVault = () => store.writeMeta('vault', vault);
+const saveListings = () => store.writeMeta('listings', listings);
+
+type Ev = { seq: number; at: number; source: 'market' | 'chain' | 'runner'; type: string; data: Record<string, unknown> };
+interface CheckpointRecord { run_id: string; local_seq: number; state_hash: string; envelope: SealedEnvelope; signature: string }
+interface RunCtx { run_id: string; token: string; recipe_id: string; buyer: string; sealed_inputs: SealedEnvelope; msg: string; price: string; checkpoint?: CheckpointRecord; started: boolean; done: boolean; events: Ev[]; created: number }
+const runs = new Map<string, RunCtx>();
+const listeners = new Map<string, Set<(e: Ev) => void>>();
+const saveRun = (r: RunCtx) => store.writeMeta(`run-${r.run_id}`, { ...r, events: r.events.slice(-200) });
+const pushEv = (r: RunCtx, source: Ev['source'], type: string, data: Record<string, unknown>) => {
+  const e: Ev = { seq: r.events.length, at: Date.now(), source, type, data };
+  r.events.push(e); for (const l of listeners.get(r.run_id) ?? []) l(e);
+};
+
+const sealedFor = async (r: RunCtx) => {
+  const run = await chain.view<Run | null>('get_run', { run_id: r.run_id });
+  const recipe = await chain.view<Recipe | null>('get_recipe', { recipe_id: r.recipe_id });
+  const h = run?.sealed_hash ?? recipe?.sealed_hash ?? '';
+  const env = vault.recipes[r.recipe_id]?.versions.includes(h) ? store.get(h) : undefined;
+  if (!env) throw new Error(`no sealed version ${h.slice(0, 12)}… of ${r.recipe_id} here`);
+  return env;
+};
+
+async function followRunner(r: RunCtx) {
+  for (;;) {
+    try {
+      const sse = await backend.events(r.run_id);
+      if (!sse.ok) throw new Error(`events ${sse.status}`);
+      const reader = sse.body!.getReader(); const dec = new TextDecoder(); let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true });
+        for (let i; (i = buf.indexOf('\n\n')) >= 0;) {
+          const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+          if (!chunk.startsWith('data: ')) continue;
+          const e = JSON.parse(chunk.slice(6)) as { type: string; data: Record<string, unknown> };
+          pushEv(r, 'runner', e.type, e.data);
+          if (e.type === 'completed' || e.type === 'failed') { r.done = true; saveRun(r); await reader.cancel(); return; }
+        }
+      }
+    } catch { /* stream broke: resume below */ }
+    const st = await chain.view<Run | null>('get_run', { run_id: r.run_id }).catch(() => null);
+    if (r.done || st?.status !== 'Pending') return;
+    pushEv(r, 'market', 'runner_lost', { checkpoint: r.checkpoint?.local_seq ?? null });
+    for (let attempt = 0; ; attempt++) {
+      await new Promise((ok) => setTimeout(ok, Math.min(10_000, 1000 + attempt * 1000)));
+      const s = await chain.view<Run | null>('get_run', { run_id: r.run_id }).catch(() => null);
+      if (s?.status !== 'Pending') return;
+      try {
+        const res = await backend.resume(r.run_id, { recipe_id: r.recipe_id, sealed_recipe: await sealedFor(r), sealed_inputs: r.sealed_inputs, checkpoint: r.checkpoint ?? null, approvals: {} });
+        if (res.ok || res.status === 409) { pushEv(r, 'market', 'resume_requested', { attempt: attempt + 1 }); break; }
+      } catch { /* runner still down */ }
+    }
+  }
+}
+
+/** wait until the contract has the run as Pending (the buyer's ft_transfer_call landed), then start the runner */
+async function watchPayment(r: RunCtx, txHash?: string) {
+  const t = Date.now();
+  if (txHash) {
+    try {
+      const tx = await chain.txEvents(txHash, r.buyer);
+      pushEv(r, 'chain', tx.ok ? 'payment_tx' : 'payment_failed', { tx: txHash, url: explorer(txHash), events: tx.events, error: tx.error });
+    } catch (e) { pushEv(r, 'chain', 'payment_tx_unknown', { tx: txHash, error: (e as Error).message }); }
+  }
+  while (Date.now() - t < PAY_TIMEOUT_MS) {
+    const run = await chain.view<Run | null>('get_run', { run_id: r.run_id }).catch(() => null);
+    if (run?.status === 'Pending') {
+      pushEv(r, 'chain', 'run_requested', { status: run.status, buyer: run.buyer });
+      r.started = true; saveRun(r);
+      const res = await backend.start({ run_id: r.run_id, recipe_id: r.recipe_id, sealed_recipe: await sealedFor(r), sealed_inputs: r.sealed_inputs });
+      if (!res.ok) { pushEv(r, 'runner', 'failed', { error: res.error ?? 'runner refused the run' }); return; }
+      void followRunner(r);
+      return;
+    }
+    if (run && run.status !== 'Pending') { pushEv(r, 'chain', 'run_not_pending', { status: run.status }); return; }
+    await new Promise((ok) => setTimeout(ok, 2000));
+  }
+  pushEv(r, 'market', 'payment_timeout', { waited_s: PAY_TIMEOUT_MS / 1000 });
+}
+
+// ---- HTTP ----
+const app = express();
+app.set('trust proxy', 'loopback');
+app.use(express.json({ limit: '2mb' }));
+class BadRequest extends Error {}
+const guard = (fn: (req: express.Request, res: express.Response) => unknown) => async (req: express.Request, res: express.Response) => {
+  try { await fn(req, res); } catch (e) { res.status(e instanceof BadRequest ? 400 : 502).json({ error: (e as Error).message }); }
+};
+const runnerOnly: express.RequestHandler = (req, res, next) => { if (req.get('x-runner-token') !== RUNNER_TOKEN) { res.status(401).json({ error: 'runner token required' }); return; } next(); };
+
+app.get('/api/mode', guard(async (_, res) => {
+  const cfg = await chain.view<Config>('get_config');
+  res.json({ mode: NETWORK, contract_id: CONTRACT_ID, payment_token: cfg.payment_token, runner_id: RUNNER_ID, runner_url: '/runner', relayer: chain.relayerId,
+    services: { contract: `${CONTRACT_ID} on ${NETWORK}`, data: 'FastNEAR / NEAR RPC (mainnet, read-only)', ai: 'NEAR AI Cloud', tee: 'local-dev runner (no hardware quote)' } });
+}));
+app.get('/api/chain/config', guard(async (_, res) => { res.json({ ...(await chain.view<Config>('get_config')), contract_id: CONTRACT_ID, network: NETWORK }); }));
+app.get('/api/chain/recipes/:id', guard(async (req, res) => { const r = await chain.view<Recipe | null>('get_recipe', { recipe_id: String(req.params.id) }); r ? res.json(r) : res.status(404).json({ error: 'no recipe' }); }));
+app.get('/api/chain/runs/:id', guard(async (req, res) => { const r = await chain.view<Run | null>('get_run', { run_id: String(req.params.id) }); r ? res.json(r) : res.status(404).json({ error: 'no run' }); }));
+app.get('/api/chain/runners/:id', guard(async (req, res) => { const r = await chain.view<unknown>('get_runner', { runner_id: String(req.params.id) }); r ? res.json(r) : res.status(404).json({ error: 'no runner' }); }));
+
+// runner → relayer: signed reports (the contract verifies the runner's signature)
+app.post('/api/chain/report_run', runnerOnly, guard(async (req, res) => {
+  const tx = await chain.relay('report_run', req.body, 150);
+  const r = runs.get(String(req.body.run_id));
+  if (r) pushEv(r, 'chain', tx.ok ? 'settled' : 'report_rejected', { tx: tx.tx_hash, url: explorer(tx.tx_hash), events: tx.events, error: tx.error });
+  if (!tx.ok) { res.status(400).json({ error: tx.error, tx: tx.tx_hash }); return; }
+  res.json({ tx: tx.tx_hash, url: explorer(tx.tx_hash), payouts: tx.value, events: tx.events });
+}));
+app.post('/api/chain/checkpoint_run', runnerOnly, guard(async (req, res) => {
+  const tx = await chain.relay('checkpoint_run', req.body, 150);
+  if (!tx.ok) { res.status(400).json({ error: tx.error, tx: tx.tx_hash }); return; }
+  res.json({ tx: tx.tx_hash, url: explorer(tx.tx_hash), payouts: tx.value });
+}));
+app.post('/api/internal/checkpoints', runnerOnly, guard(async (req, res) => {
+  const c = req.body as CheckpointRecord;
+  const r = runs.get(c.run_id); if (!r) throw new BadRequest('unknown run');
+  if (c.envelope?.purpose !== 'state' || sealedHash(c.envelope) !== c.state_hash) throw new BadRequest('bad checkpoint');
+  if (!r.checkpoint || c.local_seq > r.checkpoint.local_seq) { store.put(c.envelope); r.checkpoint = c; saveRun(r); }
+  res.json({ ok: true, stored: r.checkpoint.local_seq });
+}));
+
+// attestation: straight from the runner (signed by its key, bound to the caller's nonce) + the registered keys
+app.get('/runner/attestation', guard(async (req, res) => {
+  const nonce = String(req.query.nonce ?? '');
+  if (!/^[0-9a-f]{16,128}$/i.test(nonce)) throw new BadRequest('nonce must be 16-128 hex characters');
+  const r = await fetch(`${RUNNER}/attestation?nonce=${nonce}`, { signal: AbortSignal.timeout(10_000) });
+  res.status(r.status).type('application/json').send(await r.text());
+}));
+app.get('/api/runner/attestation', guard(async (req, res) => {
+  res.json({ attestation: await backend.attestation(String(req.query.nonce ?? '')), onchain: await chain.view('get_runner', { runner_id: RUNNER_ID }) });
+}));
+
+/** after the creator's publish_recipe landed: store the sealed recipe if it is exactly what the chain committed to */
+app.post('/api/publish', guard(async (req, res) => {
+  const { listing, sealed, creator_copy, tx } = req.body as { listing: PublicListing; sealed: SealedEnvelope; creator_copy?: SealedEnvelope; tx?: string };
+  if (sealed?.v !== 'srs-seal-v1' || sealed.purpose !== 'recipe') throw new BadRequest('expected a sealed recipe envelope');
+  if ((listing as unknown as Record<string, unknown>).nodes) throw new BadRequest('refusing plaintext recipe: only the public listing may be sent');
+  const onchain = await chain.view<Recipe | null>('get_recipe', { recipe_id: listing.ticker });
+  if (!onchain) throw new BadRequest(`${listing.ticker} is not published on ${CONTRACT_ID}; send publish_recipe first`);
+  const h = sealedHash(sealed);
+  if (onchain.sealed_hash !== h) throw new BadRequest('sealed recipe does not match the on-chain sealed_hash');
+  if (onchain.creator !== listing.creator) throw new BadRequest('listing creator does not match the on-chain creator');
+  if (onchain.runner_id !== RUNNER_ID) throw new BadRequest('recipe is assigned to a different runner');
+  const runner = await chain.view<{ enc_pk_hex: string }>('get_runner', { runner_id: RUNNER_ID });
+  if (sealed.to !== runner.enc_pk_hex) throw new BadRequest('envelope is not sealed to the registered runner key');
+  const labels = labelsFromParts(onchain.parts, catalog);
+  const e = (vault.recipes[listing.ticker] ??= { versions: [], creator_copies: {} });
+  store.put(sealed);
+  if (!e.versions.includes(h)) e.versions.push(h);
+  if (creator_copy?.purpose === 'creator-copy') e.creator_copies[h] = store.put(creator_copy);
+  saveVault();
+  listings[listing.ticker] = { ...listing, parts: onchain.parts, risk: labels.risk, disclosures: labels.disclosures, privacy: labels.privacy, capabilities: labels.capabilities, published_at: new Date().toISOString(), publish_tx: tx };
+  saveListings();
+  res.json({ ok: true, sealed_hash: h });
+}));
+
+app.get('/api/listings', guard(async (_, res) => {
+  const out = await Promise.all(Object.values(listings).map(async (l) => ({ ...l, onchain: await chain.view<Recipe | null>('get_recipe', { recipe_id: l.ticker }).catch(() => null) })));
+  res.json(out);
+}));
+
+const QUOTES_PER_MINUTE = 12;
+const quoteLog = new Map<string, number[]>();
+app.post('/api/quotes', guard(async (req, res) => {
+  const ip = req.ip ?? 'local', now = Date.now();
+  const recent = (quoteLog.get(ip) ?? []).filter((t) => now - t < 60_000);
+  if (recent.length >= QUOTES_PER_MINUTE) throw new BadRequest('too many quote requests in the last minute');
+  quoteLog.set(ip, [...recent, now]);
+  const { recipe_id, sealed_job, job_hash, buyer } = req.body as { recipe_id: string; sealed_job: SealedEnvelope; job_hash: string; buyer: string };
+  if (typeof buyer !== 'string' || !/^[a-z0-9._-]{2,64}$/.test(buyer)) throw new BadRequest('buyer account required');
+  if (!/^[0-9a-f]{64}$/.test(job_hash ?? '') || sealed_job?.purpose !== 'inputs') throw new BadRequest('expected sealed inputs and their job_hash');
+  const l = listings[String(recipe_id)];
+  const r = l && await chain.view<Recipe | null>('get_recipe', { recipe_id: l.ticker });
+  if (!l || !r) throw new BadRequest('unknown recipe');
+  if (!vault.recipes[l.ticker]?.versions.includes(r.sealed_hash)) throw new BadRequest('this marketplace does not hold the current sealed version');
+  const q = await backend.quote({ recipe_id: l.ticker, sealed_recipe: store.get(r.sealed_hash), sealed_job, job_hash, buyer });
+  res.json({ quote: { recipe_id: l.ticker, ok: !!q.ok, error: q.error, sealed_quote: q.sealed_quote, sealed_error: (q as { sealed_error?: unknown }).sealed_error,
+    listing: { ticker: l.ticker, name: l.name, creator: l.creator, price_per_run: r.price_per_run, price_floor: r.price_floor, price_ceiling: r.price_ceiling, privacy: l.privacy, risk: l.risk, disclosures: l.disclosures, parts: l.parts, output_type: l.output_type },
+    track: { runs: r.runs, failed: r.failed, aborted: r.aborted, bond_available: r.bond_available } } });
+}));
+
+/** a run ticket: the msg the buyer attaches to ft_transfer_call(tUSDC → contract, price) */
+app.post('/api/runs/prepare', guard(async (req, res) => {
+  const { recipe_id, buyer, sealed_inputs, signed_quote: sq, max_price } = req.body as { recipe_id: string; buyer: string; sealed_inputs: SealedEnvelope; signed_quote?: { sealed_hash: string; job_hash: string; price: string; expected: string; promised: string; cover: string; expires_ns: string; signature: string }; max_price?: string };
+  if (typeof buyer !== 'string' || !/^[a-z0-9._-]{2,64}$/.test(buyer)) throw new BadRequest('buyer account required');
+  const r = await chain.view<Recipe | null>('get_recipe', { recipe_id }); if (!r) throw new BadRequest('unknown recipe');
+  const runner = await chain.view<{ enc_pk_hex: string }>('get_runner', { runner_id: r.runner_id });
+  if (sealed_inputs?.purpose !== 'inputs' || sealed_inputs.to !== runner.enc_pk_hex) throw new BadRequest('inputs must be sealed to the recipe runner');
+  const price = sq ? sq.price : r.price_per_run;
+  if (max_price !== undefined && BigInt(price) > BigInt(max_price)) throw new BadRequest('price is above your max price');
+  const run_id = 'r-' + randomBytes(6).toString('hex');
+  const msg = JSON.stringify({ action: 'run', recipe_id, run_id, inputs_hash: sealedHash(sealed_inputs), on_behalf_of: buyer, ...(max_price !== undefined ? { max_price: String(max_price) } : {}), ...(sq ? { quote: sq } : {}) });
+  const ctx: RunCtx = { run_id, token: randomBytes(24).toString('hex'), recipe_id, buyer, sealed_inputs, msg, price, started: false, done: false, events: [], created: Date.now() };
+  runs.set(run_id, ctx); saveRun(ctx);
+  const cfg = await chain.view<Config>('get_config');
+  res.json({ run_id, run_token: ctx.token, pay: { contract: cfg.payment_token, method: 'ft_transfer_call', args: { receiver_id: CONTRACT_ID, amount: price, msg }, deposit_yocto: '1', gas_tgas: 150 } });
+}));
+const runFor = (req: express.Request) => {
+  const r = runs.get(String(req.params.id));
+  if (!r || String(req.query.token ?? req.get('x-run-token') ?? '') !== r.token) throw new BadRequest('unknown run or missing run token');
+  return r;
+};
+/** the buyer says it paid (optionally with the tx hash): watch the chain and start the run */
+app.post('/api/runs/:id/paid', guard(async (req, res) => {
+  const r = runFor(req);
+  if (r.started) { res.json({ ok: true, already: true }); return; }
+  const tx = typeof req.body?.tx_hash === 'string' && /^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(req.body.tx_hash) ? req.body.tx_hash : undefined;
+  void watchPayment(r, tx);
+  res.json({ ok: true, watching: true });
+}));
+app.get('/api/runs/:id/events', (req, res) => {
+  let r: RunCtx; try { r = runFor(req); } catch { res.status(404).end(); return; }
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+  const send = (e: Ev) => res.write(`data: ${JSON.stringify(e)}\n\n`);
+  r.events.forEach(send);
+  const set = listeners.get(r.run_id) ?? new Set(); set.add(send); listeners.set(r.run_id, set);
+  req.on('close', () => set.delete(send));
+});
+
+app.get('/healthz', (_, res) => res.json({ ok: true, mode: NETWORK, runs: runs.size, listings: Object.keys(listings).length }));
+
+app.listen(PORT, '127.0.0.1', () => console.log(`[live] marketplace for ${CONTRACT_ID} on ${NETWORK}: http://127.0.0.1:${PORT} (runner ${RUNNER}, relayer ${chain.relayerId ?? 'none'})`));
