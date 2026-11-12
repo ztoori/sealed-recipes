@@ -11,17 +11,19 @@ import { Icon } from '../icons';
 import { BrandMark } from '../ui';
 import { Ctx, DEMO, accUrl, liveHash, parseLive, type Listing, type LiveRoute, type Mode } from './ctx';
 import { loadGuest, newGuest, type Guest } from './guest';
-import { Home } from './Home';
+import { Landing } from '../pages/Landing';
+import { Docs } from '../pages/Docs';
+import { Compose } from '../pages/Compose';
+import { DemoPages, PracticeBanner } from './DemoPages';
 import { Recipes } from './Recipes';
 import { Quote } from './Quote';
 import { Wallet } from './Wallet';
 
-type Item = { key: string; label: string; icon: string; route?: LiveRoute; href?: string };
-const MENU: Item[] = [
+const MENU: { key: string; label: string; icon: string; route: LiveRoute }[] = [
   { key: 'recipes', label: 'Recipes', icon: 'market', route: { page: 'recipes' } },
-  { key: 'compose', label: 'Compose', icon: 'compose', href: `${DEMO}#/compose/recipe` },
+  { key: 'compose', label: 'Compose', icon: 'compose', route: { page: 'compose', sub: 'recipe' } },
   { key: 'wallet', label: 'Wallet', icon: 'wallet', route: { page: 'wallet' } },
-  { key: 'docs', label: 'Docs', icon: 'docs', href: `${DEMO}#/docs/spec` },
+  { key: 'docs', label: 'Docs', icon: 'docs', route: { page: 'docs', sub: 'spec' } },
 ];
 
 export function Live() {
@@ -63,9 +65,7 @@ export function Live() {
         </a>
         {!home && <>
         <nav className="nav" aria-label="Sections">
-          {MENU.map((m) => m.href
-            ? <a key={m.key} href={m.href} aria-label={m.label} title={`${m.label}: in the guided demo, with simulated services`}><Icon name={m.icon} size={17} /><span>{m.label}</span></a>
-            : <button key={m.key} aria-label={m.label} aria-current={current === m.key ? 'page' : undefined} onClick={() => go(m.route!)}><Icon name={m.icon} size={17} /><span>{m.label}</span></button>)}
+          {MENU.map((m) => <button key={m.key} aria-label={m.label} aria-current={current === m.key ? 'page' : undefined} onClick={() => go(m.route)}><Icon name={m.icon} size={17} /><span>{m.label}</span></button>)}
         </nav>
         <div className="spacer" />
         <a className="mode on-chain" href={accUrl(mode?.contract_id ?? '')} target="_blank" rel="noreferrer" title={mode ? `${mode.contract_id} on NEAR ${mode.mode}\nrunner ${mode.runner_id}` + (mode.services ? '\n' + Object.entries(mode.services).map(([k, v]) => `${k}: ${v}`).join('\n') : '') : ''}><i className="dot" />Live · {mode?.mode ?? 'testnet'}</a>
@@ -78,7 +78,9 @@ export function Live() {
         </>}
       </div>
       <main className={home ? 'home' : undefined}>
-        {route.page === 'home' && <Home />}
+        {route.page === 'home' && <DemoPages backend=""><Landing /></DemoPages>}
+        {route.page === 'docs' && <DemoPages backend=""><Docs sub={route.sub} /></DemoPages>}
+        {route.page === 'compose' && <DemoPages backend="/demo" banner={(a, s) => <PracticeBanner acting={a} setActing={s} />}><Compose sub={route.sub} part={route.part} /></DemoPages>}
         {route.page === 'recipes' && <Recipes ticker={route.ticker} />}
         {route.page === 'quote' && <Quote key={route.ticker + (route.run ?? '')} ticker={route.ticker} runId={route.run} />}
         {route.page === 'wallet' && <Wallet />}

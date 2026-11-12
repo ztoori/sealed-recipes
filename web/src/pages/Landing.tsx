@@ -32,13 +32,9 @@ export function Landing() {
           <p className="lp-lede">A market for crypto workflows that are proven, private and paid for one run at a time, by people and AI agents alike.</p>
           <dl className="lp-stats" aria-label="Live from this market">
             <div><dt>recipes</dt><dd>{listings?.length ?? '–'}</dd></div>
-            <div><dt>creators</dt><dd>{creators || '–'}</dd></div>
-            <div><dt>parts by {builders || '–'} builders</dt><dd>{parts.length || '–'}</dd></div>
+            <div><dt>creator{creators === 1 ? '' : 's'}</dt><dd>{creators || '–'}</dd></div>
+            <div><dt>parts by {builders || '–'} builder{builders === 1 ? '' : 's'}</dt><dd>{parts.length || '–'}</dd></div>
           </dl>
-          <div className="lp-cta lp-hero-cta">
-            <button className="btn primary lg" onClick={() => go({ page: 'recipes' })}>Proceed to recipes<Icon name="arrow" size={16} /></button>
-            <button className="btn ghost lg" onClick={() => story.start()}><Icon name="play" size={14} fill />Watch the demo</button>
-          </div>
         </div>
         <Loop />
       </section>

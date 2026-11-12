@@ -24,7 +24,9 @@ interface Ctx {
   toast: (msg: string, err?: boolean) => void;
   mode: any;
 }
-const AppCtx = createContext<Ctx>(null as unknown as Ctx);
+/** exported so the live site can show the demo's Docs, Compose and Landing pages inside its own shell (web/src/live/DemoPages.tsx) */
+export type AppCtxValue = Ctx;
+export const AppCtx = createContext<Ctx>(null as unknown as Ctx);
 export const useApp = () => useContext(AppCtx);
 
 /** true exactly once per story run for a given key: lets a page run its part of the story once, and again on replay */
@@ -143,6 +145,7 @@ export function App() {
           <div className="cap-actions">
             <button onClick={() => { dispatch({ type: 'stop' }); go({ page: 'recipes', ticker: 'CLNP' }); }}>Run a recipe</button>
             <button className="ghost" onClick={() => { dispatch({ type: 'stop' }); go({ page: 'docs', sub: 'compose-recipe' }); }}>Compose one</button>
+            {BASE === '/demo' && <a className="btn ghost" href="/">Back to the live site</a>}
           </div>
         </div>
       )}

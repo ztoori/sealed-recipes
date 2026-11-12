@@ -1231,13 +1231,13 @@ pre.code.diff .del { background: rgba(242, 104, 124, 0.12); color: #ffb3c0; }
 .caption.done button.ghost { background: none; color: var(--ink-2); border-color: var(--line-2); }
 .caption.done .cap-actions { flex-wrap: wrap; }
 
-/* live page (app.sealedrecipes.xyz): menu items that open the guided demo, and links styled as the demo's buttons */
+/* live page (app.sealedrecipes.xyz): the practice composer's banner, and links styled as the demo's buttons */
+.purpose-line.practice { border-color: rgba(240, 180, 76, .4); background: linear-gradient(90deg, rgba(240, 180, 76, .08), transparent 70%); margin-bottom: 14px; }
+.purpose-line.practice > .ic { color: var(--wax); }
 .nav a { display: flex; align-items: center; gap: 7px; color: var(--muted); padding: 7px 13px; border-radius: 9px; font-weight: 550; text-decoration: none; transition: color .15s, background .15s; }
 .nav a:hover { color: var(--ink); }
 .nav a .ext { transform: rotate(-45deg); opacity: .6; }
 a.story-btn, a.mode, a.btn { text-decoration: none; white-space: nowrap; }
 .mode.on-chain .dot { background: var(--gain); box-shadow: 0 0 0 3px rgba(63, 178, 127, 0.2); }
 button.acting { color: inherit; font: inherit; text-align: left; }
-/* landing: the two ways in, right under the hero, so nobody has to scroll to the end to start */
-.lp-cta.lp-hero-cta { justify-content: flex-start; margin-top: 22px; }
 @media (max-width: 820px) { .nav a span, .nav a .ext { display: none; } }

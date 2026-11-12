@@ -16,6 +16,7 @@ import { seal, open, sealedHash, base64, type SealedEnvelope } from '../../core/
 import { reportData } from '../../core/src/attestation.js';
 import { quoteMessage } from '../../core/src/ledger.js';
 import { mountDemoProxy } from '../../server/src/demo-proxy.js';
+import { loadCatalog } from '../../core/src/codehash.js';
 
 const PORT = Number(process.argv[2] ?? 8099);
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -27,7 +28,17 @@ const listing = { ticker: 'CHEK', name: 'Contract check', description: 'Is this 
 
 const app = express(); mountDemoProxy(app); app.use(express.json({ limit: '2mb' })); // /demo → the demo on :8080 if one runs
 app.get('/api/mode', (_, res) => res.json({ mode: 'testnet', contract_id: CONTRACT, payment_token: TOKEN, runner_id: RUNNER, runner_url: '/runner', rpc_url: `http://127.0.0.1:${PORT}/rpc`, faucet: true }));
-app.get('/api/listings', (_, res) => res.json([{ ...listing, onchain: { runs: '3', failed: '0', price_per_run: '50000' } }]));
+const record = { pricePerRun: 0.05, runs: 3, failed: 0, aborted: 0, revenue: 0.15, keptPromise: null, deposit: { available: 0, locked: 0, paidToBuyers: 0 }, perRun: { price: 0.05, protocol: 0.001, runner: 0.01, parts: [{ part: 'near.contract-info@1.0.0', amount: 0.01 }], creator: 0.029, reserve: 0, reserveBps: 0 } };
+app.get('/api/listings', (_, res) => res.json([{ ...listing, onchain: { runs: '3', failed: '0', price_per_run: '50000', sealed_hash: 'cd'.repeat(32) }, record }]));
+// the read-only feeds the docs and landing pages use (server/src/live.ts)
+const catalog = loadCatalog(ROOT);
+app.get('/api/catalog', (_, res) => res.json({ ...catalog, parts: catalog.parts.map((p) => ({ ...p, author: 'sealedrecipes.testnet' })), onchain: {} }));
+app.get('/api/vault/:t', (_, res) => res.json({ envelope: seal({ recipe: 'sealed' }, encPkHex, 'recipe'), sealed_hash: 'cd'.repeat(32) }));
+app.get('/api/chain/recipes/:t', (_, res) => res.json({ id: 'CHEK', sealed_hash: 'cd'.repeat(32), runner_id: RUNNER, parts: listing.parts, creator: listing.creator, price_per_run: '50000' }));
+app.get('/api/chain/runners/:id', (_, res) => res.json({ signing_pk: signingPk, enc_pk_hex: encPkHex, codehash }));
+app.get('/runner/attestation', (req, res) => { const nonce = String(req.query.nonce); const base = { codehash, enc_pk_hex: encPkHex, nonce, signing_pk: signingPk }; const rd = reportData(base); res.json({ v: 'srs-attest-v1', tee: 'local-dev', runner_id: RUNNER, ...base, compose_hash: null, report_data: rd, quote: null, issued_at: new Date().toISOString(), self_sig: base64.enc(nacl.sign.detached(utf8ToBytes(rd), sign.secretKey)) }); });
+app.get('/api/chain/events', (_, res) => res.json({ height: 0, events: [] }));
+app.get('/api/intents/log', (_, res) => res.json([]));
 app.get('/api/runner/attestation', (req, res) => {
   const nonce = String(req.query.nonce); const base = { codehash, enc_pk_hex: encPkHex, nonce, signing_pk: signingPk }; const rd = reportData(base);
   res.json({ attestation: { v: 'srs-attest-v1', tee: 'local-dev', runner_id: RUNNER, ...base, compose_hash: null, report_data: rd, quote: null, issued_at: new Date().toISOString(), self_sig: base64.enc(nacl.sign.detached(utf8ToBytes(rd), sign.secretKey)) }, onchain: { signing_pk: signingPk, enc_pk_hex: encPkHex, codehash } });

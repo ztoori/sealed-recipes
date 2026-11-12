@@ -234,10 +234,51 @@ app.post('/api/publish', guard(async (req, res) => {
   res.json({ ok: true, sealed_hash: h });
 }));
 
+/** what one run pays each party (the contract's own split), in the shape the web app's record uses (USDC units → numbers) */
+interface SplitView { price: string; protocol: string; runner: string; parts: string[]; remainder: string; reserve: string; creator: string }
+const U = 1e6;
+function recordOf(r: Recipe, q: SplitView | null) {
+  const x = r as Recipe & { promised_total?: string; delivered_total?: string; compensated_total?: string; bond_locked?: string };
+  return {
+    pricePerRun: Number(r.price_per_run) / U, runs: Number(r.runs), failed: Number(r.failed), aborted: Number(r.aborted), revenue: Number(r.revenue) / U,
+    keptPromise: Number(x.promised_total ?? 0) > 0 ? Number(x.delivered_total) / Number(x.promised_total) : null,
+    deposit: { available: Number(r.bond_available) / U, locked: Number(x.bond_locked ?? 0) / U, paidToBuyers: Number(x.compensated_total ?? 0) / U },
+    perRun: q && { price: Number(q.price) / U, protocol: Number(q.protocol) / U, runner: Number(q.runner) / U, parts: q.parts.map((a, i) => ({ part: r.parts[i], amount: Number(a) / U })), creator: Number(q.creator) / U, reserve: Number(q.reserve) / U, reserveBps: r.reserve_bps },
+  };
+}
 app.get('/api/listings', guard(async (_, res) => {
-  const out = await Promise.all(Object.values(listings).filter((l) => !RETIRED.has(l.ticker)).map(async (l) => ({ ...l, onchain: await chain.view<Recipe | null>('get_recipe', { recipe_id: l.ticker }).catch(() => null) })));
+  const out = await Promise.all(Object.values(listings).filter((l) => !RETIRED.has(l.ticker)).map(async (l) => {
+    const onchain = await chain.view<Recipe | null>('get_recipe', { recipe_id: l.ticker }).catch(() => null);
+    const split = onchain ? await chain.view<SplitView>('quote_settlement', { recipe_id: l.ticker }).catch(() => null) : null;
+    return { ...l, onchain, record: onchain ? recordOf(onchain, split) : null };
+  }));
   res.json(out);
 }));
+
+// ---- read-only feeds for the docs pages (Spec, Trust & privacy) and the landing page ----
+/** the part catalog, limited to the parts registered on this contract, with their on-chain author and fee */
+let partsCache: { at: number; parts: { id: string; author: string; manifest_hash: string; fee_per_call: string; active: boolean }[] } | null = null;
+async function registeredParts() {
+  if (partsCache && Date.now() - partsCache.at < 5 * 60_000) return partsCache.parts;
+  const parts: { id: string; author: string; manifest_hash: string; fee_per_call: string; active: boolean }[] = [];
+  for (let from = 0; ; from += 100) { const page = await chain.view<typeof parts>('list_parts', { from_index: from, limit: 100 }); parts.push(...page); if (page.length < 100) break; }
+  partsCache = { at: Date.now(), parts };
+  return parts;
+}
+app.get('/api/catalog', guard(async (_, res) => {
+  const reg = new Map((await registeredParts()).map((p) => [p.id, p]));
+  const parts = catalog.parts.filter((p) => reg.has(p.id)).map((p) => ({ ...p, author: reg.get(p.id)!.author, fee_per_call: reg.get(p.id)!.fee_per_call }));
+  res.json({ ...catalog, parts, onchain: Object.fromEntries([...reg].map(([k, b]) => [k, { author: b.author, manifest_hash: b.manifest_hash, fee_per_call: b.fee_per_call, active: b.active }])) });
+}));
+/** the sealed recipe this marketplace holds for a listing: ciphertext only (what the Trust page shows next to the on-chain hash) */
+app.get('/api/vault/:ticker', guard(async (req, res) => {
+  const r = await chain.view<Recipe | null>('get_recipe', { recipe_id: String(req.params.ticker) });
+  const env = r && vault.recipes[r.id]?.versions.includes(r.sealed_hash) ? store.get(r.sealed_hash) : null;
+  env ? res.json({ envelope: env, sealed_hash: r!.sealed_hash }) : res.status(404).json({ error: 'not found' });
+}));
+// the demo's contract-event and 1Click logs have no live counterpart here: events are on the explorer, and live runs do not use 1Click
+app.get('/api/chain/events', (_, res) => { res.json({ height: 0, events: [] }); });
+app.get('/api/intents/log', (_, res) => { res.json([]); });
 
 const QUOTES_PER_MINUTE = 12;
 const quoteLog = new Map<string, number[]>();

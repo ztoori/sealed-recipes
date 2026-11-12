@@ -1,14 +1,21 @@
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 /**
  * Where this app is mounted: '' at the site root, '/demo' when the live site serves the guided demo under /demo.
  * Every request to the server goes through withBase, so the same build works in both places.
+ *
+ * The live site also shows the demo's practice composer inside its own pages, talking to the demo backend under /demo
+ * while the rest of the page talks to the live one. Polls take their backend from ApiBase (the nearest provider);
+ * direct calls made by the composer's components use the scoped base set while that page is open (setScopedBase).
  */
 export const BASE = new URL('.', location.href).pathname.replace(/\/$/, '');
-export const withBase = (p: string) => (p.startsWith('/') ? BASE + p : p);
+let scoped: string | null = null;
+export const setScopedBase = (b: string | null) => { scoped = b; };
+export const ApiBase = createContext<string | null>(null);
+export const withBase = (p: string, base?: string | null) => (p.startsWith('/') ? (base ?? scoped ?? BASE) + p : p);
 
-export async function api<T = any>(path: string, body?: unknown): Promise<T> {
-  const r = await fetch(withBase(path), body === undefined ? undefined : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+export async function api<T = any>(path: string, body?: unknown, base?: string | null): Promise<T> {
+  const r = await fetch(withBase(path, base), body === undefined ? undefined : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const t = await r.text();
   let j: any; try { j = JSON.parse(t); } catch { j = { error: t }; }
   if (!r.ok) throw new Error(j.error ?? `${r.status}`);
@@ -16,17 +23,18 @@ export async function api<T = any>(path: string, body?: unknown): Promise<T> {
 }
 
 export function usePoll<T>(path: string | null, ms = 1500, deps: unknown[] = []): [T | undefined, () => void] {
+  const base = useContext(ApiBase);
   const [v, setV] = useState<T>();
   const tick = useRef(0);
   const [n, setN] = useState(0);
   useEffect(() => {
     if (!path) return;
     let alive = true;
-    const go = () => api<T>(path).then((x) => alive && setV(x)).catch(() => {});
+    const go = () => api<T>(path, undefined, base).then((x) => alive && setV(x)).catch(() => {});
     go();
     const id = setInterval(go, ms);
     return () => { alive = false; clearInterval(id); };
-  }, [path, ms, n, ...deps]);
+  }, [path, ms, n, base, ...deps]);
   return [v, () => { tick.current++; setN((x) => x + 1); }];
 }
 
