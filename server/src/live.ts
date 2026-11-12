@@ -12,9 +12,11 @@
  *
  * Env: PORT (8081)  CONTRACT_ID  RUNNER_ID  RUNNER_URL  RUNNER_TOKEN (required)  NEAR_RPC_URL  NEAR_RELAYER_KEY_FILE
  *      NEAR_RELAYER_ACCOUNT  SRS_STORE_DIR (persistent)  NEAR_NETWORK (testnet)
+ *      NEAR_FAUCET_KEY_FILE  NEAR_FAUCET_ACCOUNT (optional: enables POST /api/faucet for guest accounts)
+ *      FAUCET_NEAR (0.05)  FAUCET_TUSDC (5)  FAUCET_PER_IP_DAY (3)  FAUCET_PER_DAY (50)
  */
 import express from 'express';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolve, dirname } from 'node:path';
@@ -40,6 +42,13 @@ const PAY_TIMEOUT_MS = 5 * 60_000;
 const explorer = (tx: string) => `https://testnet.nearblocks.io/txns/${tx}`;
 
 const chain = new NearChain(RPC, CONTRACT_ID, env.NEAR_RELAYER_KEY_FILE, env.NEAR_RELAYER_ACCOUNT);
+const faucet = env.NEAR_FAUCET_KEY_FILE && existsSync(env.NEAR_FAUCET_KEY_FILE) ? new NearChain(RPC, CONTRACT_ID, env.NEAR_FAUCET_KEY_FILE, env.NEAR_FAUCET_ACCOUNT) : undefined;
+const yoctoOf = (near: string) => { const [i, f = ''] = near.split('.'); return BigInt(i || '0') * 10n ** 24n + BigInt((f + '0'.repeat(24)).slice(0, 24)); };
+const FAUCET_NEAR = yoctoOf(env.FAUCET_NEAR ?? '0.05');               // gas money for a few payments
+const FAUCET_TUSDC = BigInt(Math.round(Number(env.FAUCET_TUSDC ?? '5') * 1e6)); // tUSDC has 6 decimals
+const FAUCET_PER_IP_DAY = Number(env.FAUCET_PER_IP_DAY ?? 3);
+const FAUCET_PER_DAY = Number(env.FAUCET_PER_DAY ?? 50);
+const TUSDC_STORAGE = 12_500_000_000_000_000_000n;                    // 0.0125 NEAR registers a new tUSDC holder
 const backend = new TeeRunnerBackend(RUNNER, RUNNER_ID, RUNNER_TOKEN);
 const catalog = loadCatalog(ROOT);
 const store = new FileBlobStore(need('SRS_STORE_DIR'));
@@ -154,7 +163,7 @@ const runnerOnly: express.RequestHandler = (req, res, next) => { if (req.get('x-
 
 app.get('/api/mode', guard(async (_, res) => {
   const cfg = await chain.view<Config>('get_config');
-  res.json({ mode: NETWORK, contract_id: CONTRACT_ID, payment_token: cfg.payment_token, runner_id: RUNNER_ID, runner_url: '/runner', relayer: chain.relayerId,
+  res.json({ mode: NETWORK, contract_id: CONTRACT_ID, payment_token: cfg.payment_token, runner_id: RUNNER_ID, runner_url: '/runner', relayer: chain.relayerId, rpc_url: RPC, faucet: !!faucet,
     services: { contract: `${CONTRACT_ID} on ${NETWORK}`, data: 'FastNEAR / NEAR RPC (mainnet, read-only)', ai: 'NEAR AI Cloud', tee: 'local-dev runner (no hardware quote)' } });
 }));
 app.get('/api/chain/config', guard(async (_, res) => { res.json({ ...(await chain.view<Config>('get_config')), contract_id: CONTRACT_ID, network: NETWORK }); }));
@@ -297,6 +306,64 @@ app.get('/api/runs/:id/events', (req, res) => {
   req.on('close', () => set.delete(send));
 });
 
+/** the result view asks for token decimals (for swap receipts); the read-only testnet recipes have none */
+app.get('/api/tokens', (_, res) => { res.json([]); });
+
+// ---- guest accounts: a key made in the browser, funded once by the testnet faucet ----
+/** a guest is a NEAR implicit account (64 hex chars, the public key itself): it exists once it receives NEAR */
+const isImplicit = (a: unknown): a is string => typeof a === 'string' && /^[0-9a-f]{64}$/.test(a);
+const isAccount = (a: unknown): a is string => typeof a === 'string' && a.length >= 2 && a.length <= 64 && /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/.test(a);
+/** who was funded (account → day) and how often per IP and per day; only counts and hashes of IPs are kept */
+interface FaucetLog { funded: Record<string, string>; ip: Record<string, number>; day: string; total: number }
+const faucetLog = store.readMeta<FaucetLog>('faucet', { funded: {}, ip: {}, day: '', total: 0 });
+const ipKey = (ip: string) => createHash('sha256').update('srs-faucet:' + ip).digest('hex').slice(0, 16);
+let faucetBusy = Promise.resolve();
+
+app.get('/api/account/:id/balance', guard(async (req, res) => {
+  const id = String(req.params.id);
+  if (!isAccount(id) || !id.endsWith('.testnet') && !isImplicit(id)) throw new BadRequest('a testnet account id is required');
+  const cfg = await chain.view<Config>('get_config');
+  const near = await chain.nearBalance(id);
+  const tusdc = near === null ? '0' : await chain.view<string>('ft_balance_of', { account_id: id }, cfg.payment_token, 'optimistic');
+  res.json({ account_id: id, exists: near !== null, near_yocto: (near ?? 0n).toString(), tusdc: String(tusdc), token: cfg.payment_token, faucet: !!faucet });
+}));
+
+/** fund a new guest account once: a little NEAR for gas (this creates the account) and some tUSDC to pay for runs */
+app.post('/api/faucet', guard(async (req, res) => {
+  if (!faucet) { res.status(503).json({ error: 'the faucet is not configured on this server' }); return; }
+  const account_id = req.body?.account_id;
+  if (!isImplicit(account_id)) throw new BadRequest('the faucet funds guest accounts only (64 hex characters)');
+  // one request at a time, so the checks below and the counters cannot race
+  const job = faucetBusy.then(async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (faucetLog.day !== today) { faucetLog.day = today; faucetLog.ip = {}; faucetLog.total = 0; }
+    if (faucetLog.funded[account_id]) return { status: 409, body: { error: 'this guest account was already funded', funded_on: faucetLog.funded[account_id] } };
+    // this server listens on 127.0.0.1 only, so every request comes through the Cloudflare tunnel, which sets the visitor's address
+    const ip = ipKey(req.get('cf-connecting-ip') ?? req.ip ?? 'unknown');
+    if ((faucetLog.ip[ip] ?? 0) >= FAUCET_PER_IP_DAY) return { status: 429, body: { error: `at most ${FAUCET_PER_IP_DAY} guest accounts per day from one address; try again tomorrow` } };
+    if (faucetLog.total >= FAUCET_PER_DAY) return { status: 429, body: { error: 'the faucet has given out its daily allowance; try again tomorrow' } };
+    if ((await chain.nearBalance(account_id)) !== null) return { status: 409, body: { error: 'this account already exists; the faucet funds new guest accounts only' } };
+    const cfg = await chain.view<Config>('get_config');
+    const sent = await faucet.transferNear(account_id, FAUCET_NEAR);
+    if (!sent.ok) throw new Error(`could not create the guest account: ${sent.error}`);
+    faucetLog.funded[account_id] = today; faucetLog.ip[ip] = (faucetLog.ip[ip] ?? 0) + 1; faucetLog.total++;
+    store.writeMeta('faucet', faucetLog);
+    const minted = await faucet.relay('mint', { account_id, amount: FAUCET_TUSDC.toString() }, 30, TUSDC_STORAGE, cfg.payment_token);
+    if (!minted.ok) throw new Error(`created the account but could not mint tUSDC: ${minted.error}`);
+    return { status: 200, body: { ok: true, account_id, near_yocto: FAUCET_NEAR.toString(), tusdc: FAUCET_TUSDC.toString(), txs: [explorer(sent.tx_hash), explorer(minted.tx_hash)] } };
+  });
+  faucetBusy = job.then(() => undefined, () => undefined);
+  const out = await job;
+  res.status(out.status).json(out.body);
+}));
+
+// ---- the live web page (npm run build → web/dist/live.html); everything else under / is the built assets ----
+const WEB = join(ROOT, 'web/dist');
+if (existsSync(join(WEB, 'live.html'))) {
+  app.get(['/', '/index.html'], (_, res) => { res.set('cache-control', 'no-cache'); res.sendFile(join(WEB, 'live.html')); });
+  app.use('/assets', express.static(join(WEB, 'assets'), { immutable: true, maxAge: '30d', index: false }));
+} else console.warn('[live] web/dist/live.html is missing: run npm run build to serve the page');
+
 app.get('/healthz', (_, res) => res.json({ ok: true, mode: NETWORK, runs: runs.size, listings: Object.keys(listings).length }));
 
-app.listen(PORT, '127.0.0.1', () => console.log(`[live] marketplace for ${CONTRACT_ID} on ${NETWORK}: http://127.0.0.1:${PORT} (runner ${RUNNER}, relayer ${chain.relayerId ?? 'none'})`));
+app.listen(PORT, '127.0.0.1', () => console.log(`[live] marketplace for ${CONTRACT_ID} on ${NETWORK}: http://127.0.0.1:${PORT} (runner ${RUNNER}, relayer ${chain.relayerId ?? 'none'}, faucet ${faucet?.relayerId ?? 'off'})`));

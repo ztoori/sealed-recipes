@@ -64,22 +64,45 @@ export class NearChain {
     return JSON.parse(Buffer.from(j.result.result).toString('utf8')) as T;
   }
 
-  /** sign and send a call to the marketplace with the relayer key; strictly one at a time */
-  relay(method: string, args: Record<string, unknown>, gasTgas = 100, depositYocto = 0n): Promise<TxResult> {
+  /** native NEAR balance in yocto, or null when the account does not exist (yet) */
+  async nearBalance(accountId: string): Promise<bigint | null> {
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 'srs', method: 'query', params: { request_type: 'view_account', finality: 'optimistic', account_id: accountId } });
+    const r = await outboundFetch(this.rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(20_000) });
+    const j = (await r.json()) as { result?: { amount: string }; error?: { cause?: { name?: string } } };
+    if (j.result) return BigInt(j.result.amount);
+    if (j.error?.cause?.name === 'UNKNOWN_ACCOUNT') return null;
+    throw new Error(`view_account ${accountId}: ${JSON.stringify(j.error)}`);
+  }
+
+  /** sign and send a call with this key (to the marketplace unless `contractId` is given); strictly one at a time */
+  relay(method: string, args: Record<string, unknown>, gasTgas = 100, depositYocto = 0n, contractId = this.contractId): Promise<TxResult> {
     const relayer = this.relayer;
-    if (!relayer) return Promise.reject(new Error('no relayer key configured (NEAR_RELAYER_KEY_FILE)'));
-    const run = async (): Promise<TxResult> => {
-      const res = await relayer.callFunctionRaw({ contractId: this.contractId, methodName: method, args, gas: BigInt(gasTgas) * 10n ** 12n, deposit: depositYocto, waitUntil: 'EXECUTED_OPTIMISTIC' });
+    if (!relayer) return Promise.reject(new Error('no signing key configured'));
+    return this.enqueue(async () => this.result(await relayer.callFunctionRaw({ contractId, methodName: method, args, gas: BigInt(gasTgas) * 10n ** 12n, deposit: depositYocto, waitUntil: 'EXECUTED_OPTIMISTIC' })));
+  }
+
+  /** send native NEAR with this key (creates an implicit account on first transfer); in the same queue */
+  transferNear(receiverId: string, yocto: bigint): Promise<TxResult> {
+    const relayer = this.relayer;
+    if (!relayer) return Promise.reject(new Error('no signing key configured'));
+    return this.enqueue(async () => this.result(await relayer.transfer({ receiverId, amount: yocto })));
+  }
+
+  private enqueue<T>(run: () => Promise<T>): Promise<T> {
+    const p = this.queue.then(run, run);
+    this.queue = p.catch(() => undefined);
+    return p;
+  }
+
+  private result(res: unknown): TxResult {
+    {
       const r = res as unknown as { transaction: { hash: string }; status?: { SuccessValue?: string }; receipts_outcome?: { outcome: { logs: string[]; status: unknown } }[] };
       const error = failureOf(r);
       const raw = r.status?.SuccessValue;
       let value: unknown;
       try { value = raw ? JSON.parse(Buffer.from(raw, 'base64').toString('utf8')) : undefined; } catch { value = undefined; }
       return { tx_hash: r.transaction.hash, ok: !error, error, events: eventsOf(r), value };
-    };
-    const p = this.queue.then(run, run);
-    this.queue = p.catch(() => undefined);
-    return p;
+    }
   }
 
   /** a transaction's events and status, e.g. one a buyer's wallet sent */

@@ -8,6 +8,7 @@ import { Wallet } from './pages/Wallet';
 import { Docs } from './pages/Docs';
 import { Landing } from './pages/Landing';
 import { Icon, ROLE_ICON } from './icons';
+import { BrandMark } from './ui';
 
 import { SpeedControl } from './components/SpeedControl';
 import { demoMs } from './pace';
@@ -149,15 +150,4 @@ export function App() {
   );
 }
 
-/** A recipe card closed with a wax seal: the product in one picture. */
-export function BrandMark({ size = 30 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden className="brandmark">
-      <defs><radialGradient id="bm-wax" cx="35%" cy="30%" r="80%"><stop offset="0" stopColor="#FFE3A3" /><stop offset=".5" stopColor="#F0B44C" /><stop offset="1" stopColor="#8A5A0E" /></radialGradient></defs>
-      <rect x="3" y="2.5" width="18" height="24" rx="3" fill="#E9EDF6" opacity=".14" stroke="#E9EDF6" strokeOpacity=".5" />
-      <path d="M7 8h10M7 12h10M7 16h6" stroke="#E9EDF6" strokeOpacity=".7" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M23 14.6l1.8 1.3 2.2-.3.7 2.1 2 1-.5 2.2 1 2-1.8 1.3-.1 2.2-2.2.3-1.2 1.9-2.1-.7-2.1.7-1.2-1.9-2.2-.3-.1-2.2-1.8-1.3 1-2-.5-2.2 2-1 .7-2.1 2.2.3z" fill="url(#bm-wax)" />
-      <path d="M21.2 22.4l1.3 1.3 2.6-2.8" stroke="#4A3000" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
+export { BrandMark };

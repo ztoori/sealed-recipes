@@ -10,4 +10,7 @@ ingress:
     service: http://127.0.0.1:8080
   - hostname: demo.sealedrecipes.xyz
     service: http://127.0.0.1:8080
+  # the live marketplace on NEAR testnet (server/src/live.ts): real contract, guest accounts, test tokens
+  - hostname: app.sealedrecipes.xyz
+    service: http://127.0.0.1:8081
   - service: http_status:404

@@ -452,6 +452,16 @@ Limits are per process and tunable without a code change: `SRS_OUTBOUND='{"api.f
 
 Inputs are sealed in the buyer's browser to the runner, and anything the runner says about them (quote details, part logs, the result, and the reason a quote or run failed) is sealed back to the buyer's one-time key. Nothing logs inputs. On-chain there are only hashes. The marketplace and the tunnel see ciphertext. To read an account, the runner asks NEAR data providers (FastNEAR, NEAR RPC) about it, as any block explorer does, so those providers see that lookup. `npm run test:privacy` checks this end to end: it uses made-up canary accounts as inputs and fails if one shows up in process output, responses in the clear, run events, chain events, public endpoints or stored files.
 
+## The live page (NEAR testnet)
+
+`server/src/live.ts` also serves `web/dist/live.html` (built by `npm run build`), meant for `app.sealedrecipes.xyz` next to the guided demo. Nobody has to log in:
+
+- **Accounts to look at** (CHEK, SAFE, AUDT and other read-only recipes) are typed in like on a block explorer: any public NEAR mainnet account. They are sealed in the browser, as above.
+- **Paying for a run** uses a *guest account*: an ed25519 key made in the browser, whose NEAR implicit account id is the public key. `POST /api/faucet` funds it once with a little testnet NEAR for gas and some tUSDC (test token, no value), limited per guest, per visitor per day and per day in total. The key stays in the browser (it can be downloaded as a near-cli key file) and signs the buyer's own `ft_transfer_call`.
+- **Publishing a recipe** is the only step that needs a named testnet account: the creator signs `publish_recipe` with their own key (`scripts/testnet/50-run.ts` shows how).
+
+The faucet keeps which guest accounts it funded and per-day counts of a hash of the visitor's address, nothing else. `node --import tsx scripts/e2e/mock-live.ts` serves the page against an offline stand-in of the server and NEAR RPC, so the whole flow (guest, faucet, sealed quote, payment signed in the browser, sealed result) can be driven in a headless browser without touching the chain.
+
 ## Configuration
 
 Copy `.env.example` to `.env` only if you want the live paths. Never commit keys.
