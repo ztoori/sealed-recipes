@@ -48,7 +48,7 @@ protocol + runner_fee + sum(part_fees) + reserve + creator == price   (exact)
 ## Test
 
 ```bash
-cargo test          # 112 unit tests, including the shared vectors ../test-vectors/settlement.json and bonds.json and the settlement, bond and pricing conformance cases from verification/
+cargo test          # 114 unit tests, including the shared vectors ../test-vectors/settlement.json and bonds.json and the settlement, bond and pricing conformance cases from verification/
 cargo clippy --all-targets
 ```
 

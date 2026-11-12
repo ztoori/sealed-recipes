@@ -137,7 +137,7 @@ Among the offerings above, as far as their public documentation shows:
 
 - **CRE**: decentralized execution with DON consensus (this project uses one attested runner), multiple trigger types,
   a secrets vault, institutional adoption, and far greater maturity.
-- **NEAR AI Agent Market**: a live network of agents and jobs; this project is not deployed.
+- **NEAR AI Agent Market**: a live network of agents and jobs on mainnet; this project runs on testnet with three recipes and no outside users yet.
 - **IronClaw**: routines (cron, events, webhooks) and a WASM sandbox for untrusted tools; this project has no triggers
   and runs parts as reviewed in-process code.
 - **OutLayer**: production attested execution with secrets, confidential key derivation and a WASM sandbox, callable

@@ -8,6 +8,11 @@
 
 The eleven recipes in this repo are samples that show what the platform can run; anyone can compose new ones from the same parts or add parts of their own.
 
+**Try it:**
+- **Live on NEAR testnet: https://app.sealedrecipes.xyz.** Real contract ([`market.sealedrecipes.testnet`](https://testnet.nearblocks.io/address/market.sealedrecipes.testnet)), real NEAR AI Cloud, real mainnet data read-only. No login: get a sealed quote, continue as a guest (a key made in your browser, funded with test tokens by a faucet), pay, and read the sealed result. Every step links to the explorer. Details in [The live page](#the-live-page-near-testnet).
+- **Guided demo: https://sealedrecipes.xyz.** The whole loop in ninety seconds (compose, seal, quote, pay through NEAR Intents, run, settle), with simulated services. Press **Play demo**.
+- **On your machine:** the quick start below.
+
 ![A signed quote from one sealed recipe](docs/media/03-quote.png)
 
 **Quick start** (Node.js 20.6+ on Linux, macOS or WSL; no keys, no network). The step-by-step walkthrough is in [Try it in two minutes](#try-it-in-two-minutes-no-keys-no-network-needed).
@@ -19,9 +24,10 @@ npm run test:e2e    # the same story in the terminal; exits non-zero if any step
 ```
 
 **Status.** Details in [What is real, and what is local](#what-is-real-and-what-is-local).
-- **Runs end to end locally.** The contract is an in-process mirror of the Rust contract, and 1Click, NEAR AI Cloud, FastNEAR and NEAR RPC are local mocks with the real request and response shapes. Transaction hashes in the demo are simulated, and the app and terminal label them that way.
-- **The Rust NEAR contract** passes 112 unit tests on the same vector files as the mirror, and its money, pricing, durable-run and version logic is proved with Z3 and TLA+. It is **not deployed yet**.
-- **Real services:** `npm run live-check` gets real 1Click dry quotes (confidential ones need a 1Click partner key) and, with a key, verifies a real TEE-signed NEAR AI Cloud completion.
+- **Deployed on NEAR testnet.** The Rust contract runs at [`market.sealedrecipes.testnet`](https://testnet.nearblocks.io/address/market.sealedrecipes.testnet), paid in tUSDC (a test token with no value, [`tusdc.sealedrecipes.testnet`](https://testnet.nearblocks.io/address/tusdc.sealedrecipes.testnet)). Three recipes are live (CHEK, SAFE, AUDIT) and have settled real paid runs: payment by `ft_transfer_call`, escrow, sealed execution on real mainnet data with NEAR AI Cloud, runner-signed report checked by the contract, per-part payouts.
+- **What is not real yet.** The live runner is the `local-dev` build: real keys, sealing and signatures, but no hardware TEE quote (the browser shows "hardware quote skipped"). NEAR Intents has no testnet, so live payments are direct tUSDC transfers; 1Click is used for real dry quotes only. Wallet connect is not built: buyers pay with a guest key made in the browser.
+- **The guided demo runs end to end locally** with the same code: an in-process mirror of the contract, and 1Click, NEAR AI Cloud, FastNEAR and NEAR RPC as local mocks with the real request and response shapes. Its transaction hashes are simulated, and the app and terminal label them that way.
+- **Tested and proved.** 87 TypeScript tests; the contract's 114 Rust tests run on the same vector files as the mirror; its money, pricing, durable-run and version logic is proved with Z3 and TLA+. `npm run live-check` gets real 1Click dry quotes and, with a key, verifies a real TEE-signed NEAR AI Cloud completion.
 
 Built for the [NEAR Hackathon](https://nearhackathon.com) (Nov 1–14, 2026). Tracks: **Privacy & Private AI**, **Agent Economy**.
 
@@ -107,7 +113,7 @@ Then follow these steps. Each one says what you should see.
 
 The app opens on a landing page. Past it, the top menu has four sections: **Recipes** (find one and get a quote), **Compose** (build a recipe from parts with no code, or build a part), **Wallet**, and **Docs** (the SRS-1 spec, Trust & privacy, Landscape, and guides). Every page has its own link (`#/recipes/CLNP`, `#/quote/STAK`, `#/compose/part/…`), so the back button works.
 
-1. **Open http://127.0.0.1:8080.** The landing page explains the idea. **Proceed to recipes** opens **Recipes**: ten listed recipes with a search box and favorites (★).
+1. **Open http://127.0.0.1:8080.** The landing page explains the idea. **Proceed to recipes** opens **Recipes**: ten listed recipes with a search box and favorites (★). The eleventh, CLNP, is composed and published during the story.
 2. **Click "Play demo"** (top right; on the landing page, **Watch the demo**). Seven chapters play automatically, each with a caption and a speed control. Chapters 1–4 are the loop itself:
    1. **Compose.** As `chef.testnet`, the creator starts a new recipe and adds five parts one by one. Each wires itself to the previous step's matching output, and the buyer's form (wallet, dust threshold, target asset, fresh address) comes with them. The seal dialog verifies the runner attestation: 6 checks pass, and "Hardware TDX quote" shows as skipped in local mode. The plaintext turns into ciphertext and gets a wax seal. `publish_recipe` returns a transaction hash (simulated in local mode), and a $25 guarantee deposit backs CLNP's quotes.
    2. **Find it and get a quote.**
@@ -281,10 +287,10 @@ npm run verify:tla      # also the TLC model check (~10 min; Java + tla2tools.ja
 ## Tests
 
 ```bash
-npm test                # 72 TypeScript tests: SRS-1 conformance of every part, part admission (tiers, security scan, sandbox, signed release records), all 10 seed recipes rebuilt in the composer, a recipe built from a blank canvas, the web app's state machines; settlement, bond and pricing vectors; quote signatures and expiry;
+npm test                # 87 TypeScript tests: SRS-1 conformance of every part, part admission (tiers, security scan, sandbox, signed release records), all 11 seed recipes rebuilt in the composer, a recipe built from a blank canvas, the web app's state machines; settlement, bond and pricing vectors; quote signatures and expiry;
                         # event parity with the contract; SRS-1 typing, swaps, value delivered and withdrawal risk; conditions, alternatives, schemas, type variables, billing privacy;
                         # sealing; per-part resource limits; EIP-191; 1Click shapes; attestation; capability guard; code hash
-npm run test:rust       # 112 Rust tests for the NEAR contract (same vectors, conformance with the proved models,
+npm run test:rust       # 114 Rust tests for the NEAR contract (same vectors, conformance with the proved models,
                         # market pricing, versions with notice, checkpoints and partial settlement)
 npm run typecheck
 npm run live-check      # optional, needs internet: real 1Click dry quotes (confidential with ONECLICK_API_KEY), FastNEAR, NEAR RPC,
@@ -348,16 +354,16 @@ Sealed Recipes protects a workflow **by default, without filing anything**. The 
 
 ## What is real, and what is local
 
-These are kept separate so nothing here needs to be taken on faith.
+These are kept separate so nothing here needs to be taken on faith. The table is about `npm run demo` (and the guided demo at sealedrecipes.xyz). The live page at app.sealedrecipes.xyz uses the production path for the contract (NEAR testnet), NEAR AI Cloud, FastNEAR and NEAR RPC (mainnet, read-only), and the `local-dev` runner; see [The live page](#the-live-page-near-testnet).
 
 | Component | In `npm run demo` | Production path (in this repo) |
 |---|---|---|
-| Contract logic | `core/src/ledger.ts`, an in-process mirror with the same methods, math and event fields. A test checks every event against `docs/CONTRACT_EVENTS.md` | `contracts/sealed-recipes` (Rust, near-sdk 5.30). Both pass the **same vector files** in `contracts/test-vectors/` |
+| Contract logic | `core/src/ledger.ts`, an in-process mirror with the same methods, math and event fields. A test checks every event against `docs/CONTRACT_EVENTS.md` | `contracts/sealed-recipes` (Rust, near-sdk 5.30), **deployed** at `market.sealedrecipes.testnet`. Both pass the **same vector files** in `contracts/test-vectors/` |
 | TEE runner | `runner/` as a separate process with `TEE_MODE=local-dev`: real keys, sealing, signed quotes and reports, enforced limits, **no hardware quote** (shown as skipped). Quote and run endpoints require a token shared only with the marketplace | Same code with `TEE_MODE=dstack` in a TDX CVM (`runner/Dockerfile`, `runner/docker-compose.yml`). `scripts/verify-quote.ts` runs Intel DCAP verification with `@phala/dcap-qvl` |
 | NEAR Intents 1Click | `/mock/1click`: same request and response shapes, a frozen token-price sample, the real status names | `core/src/oneclick.ts` live mode; `npm run live-check` gets real dry quotes. **NEAR Intents has no testnet**, so the demo cannot move real funds |
 | NEAR AI Cloud | `/mock/nearai` signs responses with a real secp256k1 key in the provider-TEE format. The "model" is a transparent heuristic, and there is no hardware quote (reported as skipped) | The same part code calls `cloud-api.near.ai`, and `live-check` verifies a real completion end to end |
 | FastNEAR / NEAR RPC | `/mock/fastnear`, `/mock/rpc`, backed by fictional wallets in `fixtures/wallets.json` and fictional keys, staking pools and contracts in `fixtures/chain-state.json` | Same URLs unmocked |
-| Wallet signing | A local demo wallet "signs as" the selected account. Demo accounts have unlimited demo USDC, so deposit sizes are illustrative | **Not built yet.** The approval dialog shows the exact `signAndSendTransactions` payload a NEAR wallet would sign |
+| Wallet signing | A local demo wallet "signs as" the selected account. Demo accounts have unlimited demo USDC, so deposit sizes are illustrative | Live page: a guest key made in the browser signs the buyer's own `ft_transfer_call` on testnet. **Wallet connect is not built yet**; the demo's approval dialog shows the exact `signAndSendTransactions` payload a NEAR wallet would sign |
 | Chain view for attestation checks | The browser gets the attestation **directly from the runner**, but the registered keys come from the server's contract mirror, so the marketplace is trusted for that comparison | Clients read `get_runner` from NEAR RPC; the runner reads `get_run` / `get_recipe` over NEAR RPC when `NEAR_RPC_URL` is set |
 
 Every transaction hash in local mode comes from the mirror or the mocks, so none of them is on a NEAR network; the app shows them as *simulated tx* and the terminal story says so at the top. The runner never sees mock-specific code. It always builds URLs for the real hosts, and `SRS_REWRITE` (set by `scripts/demo.mjs`) maps them to the local mocks.
@@ -401,7 +407,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · threat model: [docs/THR
 ## Repository map
 
 ```
-contracts/sealed-recipes/   Rust NEAR contract + 112 unit tests
+contracts/sealed-recipes/   Rust NEAR contract + 114 unit tests
 contracts/test-vectors/       settlement and bond vectors shared by Rust and TS; conformance vectors from the proofs
 verification/                 Z3 proofs (settlement, billing, guarantee deposits), TLA+ models (bonds, durable runs, versions), results
 core/src/                     SRS-1 (parts, disclosure, value delivered), sealing, settlement, ledger mirror, quote hashing, clients, attestation
@@ -434,7 +440,7 @@ docs/                         SRS-1, architecture, threat model, contract spec a
 
 `deploy/srs-demo.service` runs it under systemd from a read-only checkout; `deploy/cloudflared-config.example.yml` shows the tunnel side.
 
-None of this makes the demo wallet a real wallet: the live mode (real NEAR testnet wallets, signatures checked on every write) is separate work.
+None of this makes the demo wallet a real wallet. Real signatures and a real chain are on the live page, below.
 
 ## Calls to outside services
 
@@ -454,11 +460,12 @@ Inputs are sealed in the buyer's browser to the runner, and anything the runner 
 
 ## The live page (NEAR testnet)
 
-`server/src/live.ts` also serves `web/dist/live.html` (built by `npm run build`), meant for `app.sealedrecipes.xyz` next to the guided demo. Nobody has to log in:
+Running at **https://app.sealedrecipes.xyz**, against [`market.sealedrecipes.testnet`](https://testnet.nearblocks.io/address/market.sealedrecipes.testnet). `server/src/live.ts` serves `web/dist/live.html` (built by `npm run build`; same look and layout as the guided demo, with Compose and Docs linking to it). The deployment steps are in [scripts/testnet/README.md](scripts/testnet/README.md). Nobody has to log in:
 
-- **Accounts to look at** (CHEK, SAFE, AUDT and other read-only recipes) are typed in like on a block explorer: any public NEAR mainnet account. They are sealed in the browser, as above.
+- **Accounts to look at** (CHEK, SAFE, AUDIT and other read-only recipes) are typed in like on a block explorer: any public NEAR mainnet account. They are sealed in the browser, as above.
 - **Paying for a run** uses a *guest account*: an ed25519 key made in the browser, whose NEAR implicit account id is the public key. `POST /api/faucet` funds it once with a little testnet NEAR for gas and some tUSDC (test token, no value), limited per guest, per visitor per day and per day in total. The key stays in the browser (it can be downloaded as a near-cli key file) and signs the buyer's own `ft_transfer_call`.
 - **Publishing a recipe** is the only step that needs a named testnet account: the creator signs `publish_recipe` with their own key (`scripts/testnet/50-run.ts` shows how).
+- **Read-only on mainnet.** The live runner runs with `SRS_READ_ONLY=1`: it refuses recipes that ask the buyer to sign anything on mainnet. AUDIT is report.audit 1.1.0 published under a new ticker; the earlier AUDT listing stays on-chain (the contract has no delisting) and the marketplace hides it (`SRS_RETIRED_LISTINGS`).
 
 The faucet keeps which guest accounts it funded and per-day counts of a hash of the visitor's address, nothing else. `node --import tsx scripts/e2e/mock-live.ts` serves the page against an offline stand-in of the server and NEAR RPC, so the whole flow (guest, faucet, sealed quote, payment signed in the browser, sealed result) can be driven in a headless browser without touching the chain.
 
@@ -484,8 +491,10 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 - **Durable storage is in-memory in the demo.** The vault and checkpoint store would be a database or IPFS in production, keyed by `sealed_hash` and run id. The runner and the contract already behave as if it were durable.
 - **One runner.** Runners are approved by the contract owner. A permissionless set of staked runners, and recipes sealed to several of them, are next.
 - **No triggers or schedules yet.** A run starts when a buyer pays. A workflow can wait inside a run (`time.wait`), but nothing starts a run on a timer or an on-chain event.
-- **Not deployed yet.** The contract has 112 unit tests and the same vectors as the mirror, but it was not built to wasm or deployed from our build machine (no wasm target, no NEAR RPC access). `npm run build:wasm` builds it on WSL or Linux. Deploy commands are in [contracts/sealed-recipes/README.md](contracts/sealed-recipes/README.md).
-- **No live chain adapter or wallet.** The server talks to the in-process mirror. A NEAR RPC adapter and near-connect are the main pieces missing for testnet.
+- **Testnet only, no hardware TEE yet.** The contract is live on NEAR testnet; mainnet is not deployed (no real funds are used anywhere). The live runner is the `local-dev` build, so its attestation has no hardware quote; the dstack TDX build (`runner/Dockerfile`, `TEE_MODE=dstack`) is the next step.
+- **No NEAR Intents in live runs.** NEAR Intents has no testnet, so live runs are paid in tUSDC directly; the Intents payment path runs in the guided demo against the 1Click mock, and `live-check` gets real dry quotes.
+- **No wallet connect.** Live buyers pay with a guest key made in the browser; recipes are published with the creator's own key from the command line. The relayer and faucet use full-access keys; function-call keys are next.
+- **Part payouts on testnet** go to the account that registered the parts (the team), since the catalog's parts were all registered by it.
 - **The runner is trusted to measure delivery.** Guarantee deposits pay out on the runner's signed `delivered` value. That is sound only as far as the runner is attested; on-chain DCAP verification of the runner is the next step.
 - **Quotes cost compute.** Quote requests are capped at 12 per minute per client. A small quote fee would be the on-chain version.
 - **Part admission is partly permissioned.** Open-tier parts are admitted on automated checks and sandboxed; parts that send data somewhere new or ask buyers to sign need owner-appointed reviewers (SRS-1 §11). The release log makes every decision auditable. Next: a multisig or DAO as owner, reviewer stakes, several runners with their own releases, reproducible builds. The sandbox is a Node process with the permission model, not yet WASM with fuel metering.
@@ -498,7 +507,7 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 
 ## Disclosures
 
-- **Built during:** the initial build was written on 2026-10-31, after the hackathon announcement. Tag `baseline-2026-10-31` marks that state; everything after it was built during the hackathon window (`git diff baseline-2026-10-31..main`).
+- **Built during:** the initial build was written on 2026-10-31, after the hackathon announcement. Tag `baseline-2026-10-31` marks that state; everything after it was built during the hackathon window (`git diff baseline-2026-10-31..main`). The `live-N` tags mark each deployment of the live page.
 - **AI-generated code:** most of this code was written with an AI coding assistant (Claude) working from the team's written brief, and was reviewed and tested by the team.
 - **Libraries:** near-sdk (Rust), tweetnacl, @noble/hashes, @noble/curves, bs58, express, React, @xyflow/react, lightweight-charts (TradingView, attribution shown in the chart), Vite, tsx, @phala/dcap-qvl, @phala/dstack-sdk (runner container only), and the Archivo and Newsreader fonts (OFL). No templates or boilerplate were used beyond the cargo-near contract layout.
 - No existing product on another chain. No other hackathon submission by the same team.

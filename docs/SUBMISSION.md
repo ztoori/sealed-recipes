@@ -14,8 +14,9 @@ Projects are screened first by Claude Code and Codex, which check that the repo 
   git push -u origin main --tags
   ```
   The tag `baseline-2026-10-31` marks the first build, written after the hackathon was announced; the rules count code written since the announcement. `git diff baseline-2026-10-31..main` shows everything built during the window.
-- [ ] On a clean machine: `npm install && npm run test:e2e` ends with `✔ story complete`; `npm test` (72 tests), `npm run test:rust` (112 tests), `npm run verify` and `npm run test:recipes` pass.
-- [ ] Strongly recommended: deploy the contract (mainnet with small amounts, because NEAR Intents has no testnet; commands in `contracts/sealed-recipes/README.md`) and run `NEAR_AI_API_KEY=… npm run live-check`. Put the explorer links and the live-check output at the top of the README, and update the **Status** paragraph of the project description below.
+- [ ] On a clean machine: `npm install && npm run test:e2e` ends with `✔ story complete`; `npm test` (87 tests), `npm run test:rust` (114 tests), `npm run verify` and `npm run test:recipes` pass.
+- [x] Deploy the contract: live on NEAR testnet at `market.sealedrecipes.testnet`, with the live page at https://app.sealedrecipes.xyz (steps in `scripts/testnet/README.md`). Mainnet stays undeployed by decision (no real funds), so NEAR Intents is used for real dry quotes only. The README's top and **Status** link the contract and both sites.
+- [ ] `main` is the default branch and must hold the testnet work: fast-forward it to `live` and push (`git push origin live:main`) before submitting, and again after any later `live-N` tag.
 - [ ] Optional: record a voice-over for `docs/media/demo.mp4` with the script in §5. The video has on-screen captions, so it also works silent.
 - [ ] Post the demo on X (§3).
 - [ ] Create a **mainnet** NEAR account for the prize payout.
@@ -35,8 +36,8 @@ Projects are screened first by Claude Code and Codex, which check that the repo 
 | NEAR wallet address | *your mainnet account* |
 | Repository link | https://github.com/ztoori/sealed-recipes |
 | Demo post link | *your X post URL* |
-| What did you build? (1836 / 2000 characters) | see below |
-| Website | leave empty, or a hosted demo if you deploy one |
+| What did you build? (1976 / 2000 characters) | see below |
+| Website | https://app.sealedrecipes.xyz (live on NEAR testnet); the guided demo is https://sealedrecipes.xyz |
 
 Why these tracks:
 
@@ -56,12 +57,12 @@ Sealed Recipes is a platform to compose and run sealed workflows on NEAR, paid p
 - Run privately: parts run under resource limits, with durable checkpoints; swaps use confidential intents; results are sealed to the buyer.
 - Settle once: the contract verifies the runner's signed report and pays the protocol, the runner, every part author and the creator in one receipt, plus any shortfall to the buyer from the deposit.
 - Prices follow demand inside a creator-set band (EIP-1559 rule, proved with Z3). No shares, tokens or trading.
-10 sample recipes (wallet cleanup, exits, app keys, staking, contract checks, position caps) show what it runs.
+11 sample recipes (wallet cleanup, exits, app keys, staking, contract checks, account audits, position caps) show what it runs.
 
-Status: one command runs the whole loop locally (contract mirror, mocked Intents and NEAR AI). Rust contract with 112 tests and Z3/TLA+ proofs; agent buyer; TEE runner for dstack TDX.
+Status: live on NEAR testnet (market.sealedrecipes.testnet, app.sealedrecipes.xyz): no login, sealed quotes, guest payments signed in the browser, real NEAR AI Cloud on real mainnet data, settled on-chain. Runner without a hardware quote yet; Intents in the guided demo only. 114 Rust tests, Z3/TLA+ proofs.
 ```
 
-If you deploy before submitting, replace the **Status** paragraph with what is live (contract account, a settled run's tx hash) and recount the characters.
+The text above is within the form's 2000-character limit; recount if you edit it.
 
 ## 3. X demo post
 
