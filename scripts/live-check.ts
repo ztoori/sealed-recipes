@@ -44,7 +44,7 @@ try {
   const arbUsdc = tokens.find((t) => t.assetId === 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near');
   if (arbUsdc) {
     const msg = JSON.stringify({ action: 'run', recipe_id: 'CLNP', run_id: 'r-live-check', inputs_hash: '0'.repeat(64), on_behalf_of: 'bob.near' });
-    const pay = await oc.quote({ ...runPaymentQuoteRequest({ originAsset: arbUsdc.assetId, refundTo: '0x000000000000000000000000000000000000dEaD', contractId: 'sealed-recipes.near', price: '750000', msg }), dry: true, deadline: new Date(Date.now() + 600_000).toISOString() });
+    const pay = await oc.quote({ ...runPaymentQuoteRequest({ originAsset: arbUsdc.assetId, refundTo: '0x' + randomBytes(20).toString('hex') /* a fresh, never-used address: 1Click rejects burn addresses */, contractId: 'sealed-recipes.near', price: '750000', msg }), dry: true, deadline: new Date(Date.now() + 600_000).toISOString() });
     ok(`run-payment dry quote: ${pay.quote.amountInFormatted} USDC(Arbitrum) → exactly 0.75 USDC to the contract with customRecipientMsg`);
   } else skip('Arbitrum USDC not listed; run-payment quote skipped');
 } catch (e) { bad('1Click', e); }
