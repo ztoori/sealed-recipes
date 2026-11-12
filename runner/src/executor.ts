@@ -57,7 +57,7 @@ export interface ExecDeps {
   catalog: Catalog;
   emit: Emit;
   rewrites: Map<string, string>;
-  secrets: { nearAiKey?: string; oneClickJwt?: string };
+  secrets: { nearAiKey?: string; oneClickJwt?: string; oneClickApiKey?: string };
   requestApproval: (nodeId: string, req: ApprovalRequest) => Promise<ApprovalResult>;
   mode?: 'run' | 'quote';
   /** durable runs: where to continue from (decrypted checkpoint) */

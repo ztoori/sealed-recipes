@@ -21,7 +21,7 @@ npm run test:e2e    # the same story in the terminal; exits non-zero if any step
 **Status.** Details in [What is real, and what is local](#what-is-real-and-what-is-local).
 - **Runs end to end locally.** The contract is an in-process mirror of the Rust contract, and 1Click, NEAR AI Cloud, FastNEAR and NEAR RPC are local mocks with the real request and response shapes. Transaction hashes in the demo are simulated, and the app and terminal label them that way.
 - **The Rust NEAR contract** passes 112 unit tests on the same vector files as the mirror, and its money, pricing, durable-run and version logic is proved with Z3 and TLA+. It is **not deployed yet**.
-- **Real services:** `npm run live-check` gets real 1Click dry quotes (confidential ones need a 1Click partner JWT) and, with a key, verifies a real TEE-signed NEAR AI Cloud completion.
+- **Real services:** `npm run live-check` gets real 1Click dry quotes (confidential ones need a 1Click partner key) and, with a key, verifies a real TEE-signed NEAR AI Cloud completion.
 
 Built for the [NEAR Hackathon](https://nearhackathon.com) (Nov 1–14, 2026). Tracks: **Privacy & Private AI**, **Agent Economy**.
 
@@ -286,7 +286,7 @@ npm test                # 72 TypeScript tests: SRS-1 conformance of every part, 
 npm run test:rust       # 112 Rust tests for the NEAR contract (same vectors, conformance with the proved models,
                         # market pricing, versions with notice, checkpoints and partial settlement)
 npm run typecheck
-npm run live-check      # optional, needs internet: real 1Click dry quotes (confidential with ONECLICK_JWT), FastNEAR, NEAR RPC,
+npm run live-check      # optional, needs internet: real 1Click dry quotes (confidential with ONECLICK_API_KEY), FastNEAR, NEAR RPC,
                         # and with NEAR_AI_API_KEY a real TEE-signed NEAR AI Cloud completion, verified
 ```
 
@@ -459,7 +459,7 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 |---|---|---|
 | `NEAR_AI_API_KEY` | runner, live-check | NEAR AI Cloud private inference |
 | `SRS_OUTBOUND` | runner, server | per-service limits for outside calls, JSON merged over the defaults in `core/src/outbound.ts` |
-| `ONECLICK_JWT` | runner, live-check | 1Click partner JWT: lower fees; required by 1Click for confidential quotes |
+| `ONECLICK_API_KEY` | runner, live-check | 1Click partner key (X-API-Key): lower fees; required by 1Click for confidential quotes. `ONECLICK_JWT` still works (legacy Bearer) |
 | `TEE_MODE` | runner | `local-dev` (default) or `dstack` |
 | `PORT`, `RUNNER_PORT` | launcher | default 8080 / 8787 |
 | `RUNNER_PUBLIC_URL` | server | where browsers fetch the runner attestation (default `/runner`, a pass-through on the same origin) |

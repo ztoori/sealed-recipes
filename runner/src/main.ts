@@ -179,7 +179,7 @@ async function runJob(job: Job, ctx: Ctx, sealedRecipe: SealedEnvelope, sealedIn
     replyTo = opened.reply_to;
     emit(job, 'decrypted', { nodes: recipe.nodes.length, note: 'recipe + inputs decrypted inside the runner; plaintext never leaves this process' });
     const valued = measuresValue(catalog.types, v.outputType); // swap receipts: value delivered is measured (SRS-1 §7)
-    const secrets = { nearAiKey: env.NEAR_AI_API_KEY, oneClickJwt: env.ONECLICK_JWT };
+    const secrets = { nearAiKey: env.NEAR_AI_API_KEY, oneClickJwt: env.ONECLICK_JWT, oneClickApiKey: env.ONECLICK_API_KEY };
 
     // ---- durable runs: open the last checkpoint (if resuming) and set up checkpointing ----
     let localSeq = 0, onchainSeq = Number(run.checkpoint_seq ?? 0), lastOnchain = Date.now();
@@ -343,7 +343,7 @@ app.post('/quotes', auth, async (req, res) => {
     if (!/^[0-9a-f]{64}$/.test(p?.reply_to ?? '')) return fail('sealed job must include a reply_to key');
     if (jobHash(p.inputs, p.salt) !== job_hash) return fail('job_hash does not match the sealed job');
     reply = p.reply_to;
-    const dry = await execute(`quote-${recipe_id}`, recipe, p.inputs, { catalog, rewrites: ctx.rewrites, mode: 'quote', emit: () => {}, secrets: { nearAiKey: env.NEAR_AI_API_KEY, oneClickJwt: env.ONECLICK_JWT }, requestApproval: async () => ({ approved: false, txHashes: [] }) });
+    const dry = await execute(`quote-${recipe_id}`, recipe, p.inputs, { catalog, rewrites: ctx.rewrites, mode: 'quote', emit: () => {}, secrets: { nearAiKey: env.NEAR_AI_API_KEY, oneClickJwt: env.ONECLICK_JWT, oneClickApiKey: env.ONECLICK_API_KEY }, requestApproval: async () => ({ approved: false, txHashes: [] }) });
     recipe = undefined;
     if (!dry.ok) return failSealed(dry.error ?? 'dry run failed');
     const m = measure(measuresValue(catalog.types, v.outputType), dry.output, await fetchPrices(ctx.oneclick));

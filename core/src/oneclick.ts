@@ -1,7 +1,7 @@
 /**
  * NEAR Intents 1Click API client (https://docs.near-intents.org/integration/distribution-channels/1click-api).
  *
- *  live    — real HTTP calls to https://1click.chaindefuser.com (set ONECLICK_LIVE=1, optional ONECLICK_JWT).
+ *  live    — real HTTP calls to https://1click.chaindefuser.com (optional ONECLICK_API_KEY, or the legacy ONECLICK_JWT).
  *            Quotes are requested with dry:true unless the caller explicitly commits.
  *  fixture — offline: same request/response shapes, token prices from a frozen sample
  *            (fixtures/oneclick-tokens.json), deterministic deposit addresses, simulated
@@ -66,25 +66,26 @@ export function fromUnits(units: string, decimals: number): number {
   return Number(s.slice(0, s.length - decimals) + '.' + s.slice(s.length - decimals));
 }
 
-export interface OneClickOptions { mode: 'live' | 'fixture'; base?: string; jwt?: string; fixtureTokens?: Token[]; clock?: () => number }
+export interface OneClickOptions { mode: 'live' | 'fixture'; base?: string; jwt?: string; /** partner API key, sent as X-API-Key (preferred over jwt) */ apiKey?: string; fixtureTokens?: Token[]; clock?: () => number }
 
 export class OneClick {
   readonly mode: 'live' | 'fixture';
   private base: string;
   private jwt?: string;
+  private apiKey?: string;
   private fixtureTokens: Token[];
   private clock: () => number;
   private deposits = new Map<string, { quote: QuoteResponse; depositedAt?: number; txHash?: string }>();
   readonly log: { at: string; method: string; path: string; body?: unknown; mode: string }[] = [];
 
   constructor(o: OneClickOptions) {
-    this.mode = o.mode; this.base = o.base ?? ONECLICK_BASE; this.jwt = o.jwt; this.fixtureTokens = o.fixtureTokens ?? []; this.clock = o.clock ?? Date.now;
+    this.mode = o.mode; this.base = o.base ?? ONECLICK_BASE; this.jwt = o.jwt; this.apiKey = o.apiKey; this.fixtureTokens = o.fixtureTokens ?? []; this.clock = o.clock ?? Date.now;
   }
 
   private async http<T>(method: string, path: string, body?: unknown): Promise<T> {
     this.log.push({ at: new Date(this.clock()).toISOString(), method, path, body, mode: this.mode });
     const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/json' };
-    if (this.jwt) headers.authorization = `Bearer ${this.jwt}`;
+    if (this.apiKey) headers['x-api-key'] = this.apiKey; else if (this.jwt) headers.authorization = `Bearer ${this.jwt}`;
     const res = await outboundFetch(this.base + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
     const text = await res.text();
     if (!res.ok) throw new Error(`1Click ${method} ${path} → ${res.status}: ${text.slice(0, 300)}`);
