@@ -38,8 +38,16 @@ export function usePoll<T>(path: string | null, ms = 1500, deps: unknown[] = [])
   return [v, () => { tick.current++; setN((x) => x + 1); }];
 }
 
-export const usd = (units: string | number | bigint, dp = 4) => '$' + (Number(units) / 1e6).toFixed(dp);
-export const money = (n: number, dp = 2) => '$' + n.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
+/**
+ * The token amounts are in. The demo (and the live site's practice composer) uses demo USDC, shown as dollars; the live
+ * site's own data is tUSDC, the testnet token with no value, shown by name. Set by live/DemoPages.tsx for the pages it hosts.
+ */
+let currency: 'USDC' | 'tUSDC' = 'USDC';
+export const setCurrency = (c: 'USDC' | 'tUSDC') => { currency = c; };
+export const currencyName = () => currency;
+const withUnit = (s: string) => (currency === 'tUSDC' ? `${s} tUSDC` : '$' + s);
+export const usd = (units: string | number | bigint, dp = 4) => withUnit((Number(units) / 1e6).toFixed(dp));
+export const money = (n: number, dp = 2) => withUnit(n.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp }));
 export const px = (n: number | null | undefined) => (n == null ? 'n/a' : n < 0.1 ? n.toFixed(5) : n.toFixed(4));
 export const short = (s: string, a = 8, b = 6) => (s && s.length > a + b + 1 ? `${s.slice(0, a)}…${s.slice(-b)}` : s);
 /**

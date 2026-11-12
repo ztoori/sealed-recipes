@@ -1,3 +1,4 @@
+import { money, currencyName } from '../api';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { demoMs } from '../pace';
 import { nextPrice } from '../../../core/src/pricing';
@@ -16,7 +17,7 @@ const PATTERNS: Record<string, { label: string; icon: string; runs: number[] }> 
   idle: { label: 'Nobody comes', icon: 'clock', runs: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
 };
 const FLOOR = 300_000n, CEIL = 1_500_000n, START = 700_000n;
-const $ = (u: bigint | number) => '$' + (Number(u) / 1e6).toFixed(2);
+const $ = (u: bigint | number) => money(Number(u) / 1e6, 2);
 
 function Playground() {
   const [pattern, setPattern] = useState<keyof typeof PATTERNS>('rush');
@@ -132,7 +133,7 @@ export function PricingGuide() {
       </GuideSection>
 
       <ForAgents rows={[
-        ['Listing fields', <><code>price_per_run</code>, <code>pricing.price_floor</code>, <code>pricing.price_ceiling</code>, <code>pricing.target_runs</code> (USDC, 6 decimals)</>],
+        ['Listing fields', <><code>price_per_run</code>, <code>pricing.price_floor</code>, <code>pricing.price_ceiling</code>, <code>pricing.target_runs</code> ({currencyName()}, 6 decimals)</>],
         ['Live price', <><code>GET /api/listings</code> → <code>record.pricePerRun</code>, with this period’s runs and history</>],
         ['Cap the price', <><code>max_price</code> on a quote request; recipes above it don’t quote</>],
         ['Lock the price', <>the signed quote carries <code>price</code>; the contract checks it against the band and your cap</>],

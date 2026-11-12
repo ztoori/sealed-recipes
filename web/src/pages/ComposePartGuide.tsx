@@ -1,3 +1,4 @@
+import { money } from '../api';
 import { useState } from 'react';
 import { useApp } from '../App';
 import { Icon } from '../icons';
@@ -21,7 +22,7 @@ function Anatomy() {
           <span className="ga-id">ai.spam-shield@1.1.0</span>
           <div className="ga-secret"><Icon name="lock" size={12} />policy <em>secret: the creator’s prompt</em></div>
         </div>
-        <div className="ga-foot"><span><Icon name="dollar" size={12} />$0.05 a call</span><span><Icon name="clock" size={12} />20 s · 12 calls · 2 model calls</span><span><Icon name="sparkles" size={12} />open-weights model</span></div>
+        <div className="ga-foot"><span><Icon name="dollar" size={12} />{money(0.05)} a call</span><span><Icon name="clock" size={12} />20 s · 12 calls · 2 model calls</span><span><Icon name="sparkles" size={12} />open-weights model</span></div>
       </div>
       <div className="ga-col ga-out">
         <span className="ga-label">outputs, typed</span>
@@ -38,9 +39,9 @@ function Earnings() {
   const month = fee * runs * 30;
   return (
     <div className="g-earn">
-      <label>Your fee per call <input type="range" min={0.005} max={0.2} step={0.005} value={fee} onChange={(e) => setFee(Number(e.target.value))} /><b>${fee.toFixed(3)}</b></label>
+      <label>Your fee per call <input type="range" min={0.005} max={0.2} step={0.005} value={fee} onChange={(e) => setFee(Number(e.target.value))} /><b>{money(fee, 3)}</b></label>
       <label>Runs a day, across every recipe that uses it <input type="range" min={10} max={5000} step={10} value={runs} onChange={(e) => setRuns(Number(e.target.value))} /><b>{runs.toLocaleString()}</b></label>
-      <div className="g-earn-out"><span>about</span><b>${month.toLocaleString(undefined, { maximumFractionDigits: 0 })}</b><span>a month, paid run by run, in the same receipt as everyone else</span></div>
+      <div className="g-earn-out"><span>about</span><b>{money(month, 0)}</b><span>a month, paid run by run, in the same receipt as everyone else</span></div>
     </div>
   );
 }

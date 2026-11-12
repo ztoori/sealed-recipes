@@ -8,7 +8,7 @@
  * Links inside these pages are mapped to the live site's routes; the guided story opens /demo/?story=1.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { ACCOUNTS, ApiBase, api, setLedgerMode, setScopedBase } from '../api';
+import { ACCOUNTS, ApiBase, api, setCurrency, setLedgerMode, setScopedBase } from '../api';
 import { AppCtx, type AppCtxValue } from '../App';
 import { routeHash, type Route } from '../route';
 import { Icon, ROLE_ICON } from '../icons';
@@ -24,7 +24,8 @@ export function DemoPages({ backend, children, banner }: { backend: '' | '/demo'
   // direct calls made by these pages' components go to their backend (set during render, before their effects run)
   setScopedBase(backend || null);
   setLedgerMode(backend ? 'local' : 'near');
-  useEffect(() => () => { setScopedBase(null); }, []);
+  setCurrency(backend ? 'USDC' : 'tUSDC'); // live data is in tUSDC; the practice composer uses demo USDC
+  useEffect(() => () => { setScopedBase(null); setCurrency('USDC'); }, []);
 
   // the practice composer needs this visitor's demo sandbox: the demo gateway makes one on a page view, then it boots
   useEffect(() => {

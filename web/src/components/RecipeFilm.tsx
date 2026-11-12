@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { Catalog, PartManifest } from '../../../core/src/srs';
-import { ASSET_LABEL } from '../api';
+import { ASSET_LABEL, money, currencyName } from '../api';
 import { Icon } from '../icons';
 import { Seal } from '../ui';
 import { FILM_SCRIPTS, exampleInput, type FilmScript } from './film-scripts';
@@ -21,7 +21,7 @@ const prog = (t: number, a: number, d = 0.6) => ease((t - a) / d);
 /** visible from a to b, fading at both ends */
 const span = (t: number, a: number, b: number, f = 0.45) => Math.min(prog(t, a, f), 1 - prog(t, b - f, f));
 const rise = (o: number, px = 14): CSSProperties => ({ opacity: o, transform: `translateY(${((1 - o) * px).toFixed(2)}px)` });
-const dollars = (n: number, dp = 2) => '$' + n.toFixed(dp);
+const dollars = (n: number, dp = 2) => money(n, dp);
 
 const CHAPTERS = [
   { id: 'story', label: 'Story', a: 0, b: 4.6 },
@@ -347,7 +347,7 @@ function QuoteScene({ t, l, s, measured }: { t: number; l: FilmListing; s: FilmS
 
 function PayScene({ t, l, measured }: { t: number; l: FilmListing; measured: boolean }) {
   const boxes = [
-    { icon: 'wallet', h: 'Your wallet', p: 'USDC from any chain', at: 15.6 },
+    { icon: 'wallet', h: 'Your wallet', p: currencyName() === 'tUSDC' ? 'tUSDC on NEAR testnet' : 'USDC from any chain', at: 15.6 },
     { icon: 'zap', h: 'NEAR Intents', p: 'delivers the exact price', at: 16.6 },
     { icon: 'vault', h: 'Contract', p: measured ? 'run escrowed · cover locked' : 'run escrowed', at: 17.8 },
   ];
