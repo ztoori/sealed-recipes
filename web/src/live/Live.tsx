@@ -75,7 +75,7 @@ export function Live() {
               <PastRuns onOpen={(r) => { setPick(r.recipe_id); setResume(r); }} />
             </section>
             <section className="grid">
-              {listing && mode ? <RunPanel key={listing.ticker + (resume?.run_id ?? '')} mode={mode} listing={listing} guest={guest} resume={resume} say={say} /> : <div className="panel"><div className="body"><Empty icon="receipt">Pick a recipe to get a sealed quote.</Empty></div></div>}
+              {listing && mode ? <RunPanel key={listing.ticker + (resume?.run_id ?? '') + (guest?.account ?? '')} mode={mode} listing={listing} guest={guest} resume={resume} say={say} /> : <div className="panel"><div className="body"><Empty icon="receipt">Pick a recipe to get a sealed quote.</Empty></div></div>}
             </section>
           </div>
         </div>
@@ -107,7 +107,7 @@ function GuestPanel({ mode, guest, setGuest, say }: { mode?: Mode; guest: Guest 
             <div className="row wrap small"><a className="hash" href={accUrl(guest.account)} target="_blank" rel="noreferrer">{short(guest.account, 10, 8)}</a>
               {bal ? (bal.exists ? <span>{fmtNear(bal.near_yocto)} NEAR (gas) · <b>{usd(bal.tusdc, 2)} tUSDC</b></span> : <span className="muted">not on-chain yet</span>) : <span className="spinner" />}
               <span className="spacer" />
-              {bal && !bal.exists && <button className="btn sm" disabled={busy} onClick={() => fund(guest)}>{busy ? <span className="spinner" /> : 'Get test tokens'}</button>}
+              {bal && (!bal.exists || bal.tusdc === '0') && <button className="btn sm" disabled={busy} onClick={() => fund(guest)}>{busy ? <span className="spinner" /> : 'Get test tokens'}</button>}
               <button className="btn ghost sm" onClick={() => downloadGuest(guest)} title="Save the key file (works with near-cli)"><Icon name="download" size={13} />Key</button>
               <button className="btn ghost sm" onClick={() => { if (confirm('Forget this guest key? Its test tokens cannot be recovered without the key file.')) { forgetGuest(); setGuest(null); } }}>Forget</button>
             </div>

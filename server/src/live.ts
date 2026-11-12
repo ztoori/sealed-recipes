@@ -315,8 +315,23 @@ app.get('/api/tokens', (_, res) => { res.json([]); });
 const isImplicit = (a: unknown): a is string => typeof a === 'string' && /^[0-9a-f]{64}$/.test(a);
 const isAccount = (a: unknown): a is string => typeof a === 'string' && a.length >= 2 && a.length <= 64 && /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/.test(a);
 /** who was funded (account → day) and how often per IP and per day; only counts and hashes of IPs are kept */
-interface FaucetLog { funded: Record<string, string>; ip: Record<string, number>; day: string; total: number }
+interface FaucetLog { funded: Record<string, string>; minted?: Record<string, string>; ip: Record<string, number>; day: string; total: number }
 const faucetLog = store.readMeta<FaucetLog>('faucet', { funded: {}, ip: {}, day: '', total: 0 });
+faucetLog.minted ??= {};
+/** the tUSDC half of funding a guest; retried, and finished on a later request if it still failed */
+async function mintFor(account_id: string, token: string) {
+  let last = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise((ok) => setTimeout(ok, 1500 * attempt));
+    try {
+      const m = await faucet!.relay('mint', { account_id, amount: FAUCET_TUSDC.toString() }, 30, TUSDC_STORAGE, token);
+      if (m.ok) { faucetLog.minted![account_id] = new Date().toISOString().slice(0, 10); store.writeMeta('faucet', faucetLog); return m; }
+      last = m.error ?? 'mint failed';
+    } catch (e) { last = (e as Error).message; }
+    console.error(`[live] faucet mint for a guest, attempt ${attempt + 1}: ${last}`);
+  }
+  throw new Error(`created the account but could not mint tUSDC: ${last}`);
+}
 const ipKey = (ip: string) => createHash('sha256').update('srs-faucet:' + ip).digest('hex').slice(0, 16);
 let faucetBusy = Promise.resolve();
 
@@ -338,7 +353,15 @@ app.post('/api/faucet', guard(async (req, res) => {
   const job = faucetBusy.then(async () => {
     const today = new Date().toISOString().slice(0, 10);
     if (faucetLog.day !== today) { faucetLog.day = today; faucetLog.ip = {}; faucetLog.total = 0; }
-    if (faucetLog.funded[account_id]) return { status: 409, body: { error: 'this guest account was already funded', funded_on: faucetLog.funded[account_id] } };
+    if (faucetLog.funded[account_id]) {
+      // funded earlier but its tUSDC never arrived: finish that part (no more NEAR)
+      if (!faucetLog.minted![account_id]) {
+        const cfg = await chain.view<Config>('get_config');
+        const done = await chain.view<string>('ft_balance_of', { account_id }, cfg.payment_token, 'optimistic').catch(() => '0');
+        if (BigInt(done) === 0n) { const m = await mintFor(account_id, cfg.payment_token); return { status: 200, body: { ok: true, account_id, tusdc: FAUCET_TUSDC.toString(), txs: [explorer(m.tx_hash)] } }; }
+      }
+      return { status: 409, body: { error: 'this guest account was already funded', funded_on: faucetLog.funded[account_id] } };
+    }
     // this server listens on 127.0.0.1 only, so every request comes through the Cloudflare tunnel, which sets the visitor's address
     const ip = ipKey(req.get('cf-connecting-ip') ?? req.ip ?? 'unknown');
     if ((faucetLog.ip[ip] ?? 0) >= FAUCET_PER_IP_DAY) return { status: 429, body: { error: `at most ${FAUCET_PER_IP_DAY} guest accounts per day from one address; try again tomorrow` } };
@@ -349,8 +372,7 @@ app.post('/api/faucet', guard(async (req, res) => {
     if (!sent.ok) throw new Error(`could not create the guest account: ${sent.error}`);
     faucetLog.funded[account_id] = today; faucetLog.ip[ip] = (faucetLog.ip[ip] ?? 0) + 1; faucetLog.total++;
     store.writeMeta('faucet', faucetLog);
-    const minted = await faucet.relay('mint', { account_id, amount: FAUCET_TUSDC.toString() }, 30, TUSDC_STORAGE, cfg.payment_token);
-    if (!minted.ok) throw new Error(`created the account but could not mint tUSDC: ${minted.error}`);
+    const minted = await mintFor(account_id, cfg.payment_token);
     return { status: 200, body: { ok: true, account_id, near_yocto: FAUCET_NEAR.toString(), tusdc: FAUCET_TUSDC.toString(), txs: [explorer(sent.tx_hash), explorer(minted.tx_hash)] } };
   });
   faucetBusy = job.then(() => undefined, () => undefined);
