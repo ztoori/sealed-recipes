@@ -13,6 +13,7 @@
  * Env: PORT (8081)  CONTRACT_ID  RUNNER_ID  RUNNER_URL  RUNNER_TOKEN (required)  NEAR_RPC_URL  NEAR_RELAYER_KEY_FILE
  *      NEAR_RELAYER_ACCOUNT  SRS_STORE_DIR (persistent)  NEAR_NETWORK (testnet)
  *      NEAR_FAUCET_KEY_FILE  NEAR_FAUCET_ACCOUNT (optional: enables POST /api/faucet for guest accounts)
+ *      SRS_RETIRED_LISTINGS (comma-separated tickers this marketplace no longer shows or quotes, e.g. AUDT)
  *      FAUCET_NEAR (0.2)  FAUCET_TUSDC (5)  FAUCET_PER_IP_DAY (3)  FAUCET_PER_DAY (30)
  */
 import express from 'express';
@@ -39,6 +40,8 @@ const RUNNER = env.RUNNER_URL ?? 'http://127.0.0.1:8788';
 const RUNNER_TOKEN = need('RUNNER_TOKEN');
 const RPC = env.NEAR_RPC_URL ?? 'https://rpc.testnet.fastnear.com';
 const PAY_TIMEOUT_MS = 5 * 60_000;
+/** superseded listings: still on-chain (the contract has no delisting), but this marketplace stops offering them */
+const RETIRED = new Set((env.SRS_RETIRED_LISTINGS ?? '').split(',').map((t) => t.trim().toUpperCase()).filter(Boolean));
 const explorer = (tx: string) => `https://testnet.nearblocks.io/txns/${tx}`;
 
 const chain = new NearChain(RPC, CONTRACT_ID, env.NEAR_RELAYER_KEY_FILE, env.NEAR_RELAYER_ACCOUNT);
@@ -230,18 +233,20 @@ app.post('/api/publish', guard(async (req, res) => {
 }));
 
 app.get('/api/listings', guard(async (_, res) => {
-  const out = await Promise.all(Object.values(listings).map(async (l) => ({ ...l, onchain: await chain.view<Recipe | null>('get_recipe', { recipe_id: l.ticker }).catch(() => null) })));
+  const out = await Promise.all(Object.values(listings).filter((l) => !RETIRED.has(l.ticker)).map(async (l) => ({ ...l, onchain: await chain.view<Recipe | null>('get_recipe', { recipe_id: l.ticker }).catch(() => null) })));
   res.json(out);
 }));
 
 const QUOTES_PER_MINUTE = 12;
 const quoteLog = new Map<string, number[]>();
 app.post('/api/quotes', guard(async (req, res) => {
-  const ip = req.ip ?? 'local', now = Date.now();
+  // per visitor: behind the tunnel every request comes from 127.0.0.1, so use the address Cloudflare reports
+  const ip = req.get('cf-connecting-ip') ?? req.ip ?? 'local', now = Date.now();
   const recent = (quoteLog.get(ip) ?? []).filter((t) => now - t < 60_000);
   if (recent.length >= QUOTES_PER_MINUTE) throw new BadRequest('too many quote requests in the last minute');
   quoteLog.set(ip, [...recent, now]);
   const { recipe_id, sealed_job, job_hash, buyer } = req.body as { recipe_id: string; sealed_job: SealedEnvelope; job_hash: string; buyer: string };
+  if (RETIRED.has(String(recipe_id).toUpperCase())) throw new BadRequest('this recipe was replaced by a newer listing');
   if (typeof buyer !== 'string' || !/^[a-z0-9._-]{2,64}$/.test(buyer)) throw new BadRequest('buyer account required');
   if (!/^[0-9a-f]{64}$/.test(job_hash ?? '') || sealed_job?.purpose !== 'inputs') throw new BadRequest('expected sealed inputs and their job_hash');
   const l = listings[String(recipe_id)];
