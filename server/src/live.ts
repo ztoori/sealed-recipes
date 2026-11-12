@@ -15,6 +15,8 @@
  */
 import express from 'express';
 import { randomBytes } from 'node:crypto';
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sealedHash, type SealedEnvelope } from '../../core/src/seal.js';
@@ -60,6 +62,14 @@ interface RunCtx { run_id: string; token: string; recipe_id: string; buyer: stri
 const runs = new Map<string, RunCtx>();
 const listeners = new Map<string, Set<(e: Ev) => void>>();
 const saveRun = (r: RunCtx) => store.writeMeta(`run-${r.run_id}`, { ...r, events: r.events.slice(-200) });
+// runs survive a restart of this server: reload the saved tickets (sealed inputs, token, last checkpoint)
+{
+  const metaDir = join(need('SRS_STORE_DIR'), 'meta');
+  if (existsSync(metaDir)) for (const f of readdirSync(metaDir)) {
+    const m = /^run-(r-[0-9a-f]+)\.json$/.exec(f);
+    if (m) { const r = store.readMeta<RunCtx | null>(`run-${m[1]}`, null); if (r) runs.set(r.run_id, r); }
+  }
+}
 const pushEv = (r: RunCtx, source: Ev['source'], type: string, data: Record<string, unknown>) => {
   const e: Ev = { seq: r.events.length, at: Date.now(), source, type, data };
   r.events.push(e); for (const l of listeners.get(r.run_id) ?? []) l(e);
@@ -262,6 +272,21 @@ app.post('/api/runs/:id/paid', guard(async (req, res) => {
   const tx = typeof req.body?.tx_hash === 'string' && /^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(req.body.tx_hash) ? req.body.tx_hash : undefined;
   void watchPayment(r, tx);
   res.json({ ok: true, watching: true });
+}));
+/**
+ * Resume a paid run that stopped before its report reached the chain (the run is still Pending): the runner re-opens
+ * the sealed recipe and inputs, continues from the last checkpoint and reports. Idempotent while the run is executing.
+ */
+app.post('/api/runs/:id/resume', guard(async (req, res) => {
+  const r = runFor(req);
+  const run = await chain.view<Run | null>('get_run', { run_id: r.run_id });
+  if (run?.status !== 'Pending') throw new BadRequest(`the run is ${run?.status ?? 'unknown'} on-chain, not Pending`);
+  const out = await backend.resume(r.run_id, { recipe_id: r.recipe_id, sealed_recipe: await sealedFor(r), sealed_inputs: r.sealed_inputs, checkpoint: r.checkpoint ?? null, approvals: {} });
+  if (!out.ok && out.status !== 409) throw new BadRequest(`runner refused to resume (${out.status})`);
+  r.started = true; r.done = false; saveRun(r);
+  pushEv(r, 'market', 'resume_requested', { checkpoint: r.checkpoint?.local_seq ?? null, manual: true });
+  void followRunner(r);
+  res.json({ ok: true, resumed: out.ok, already_running: out.status === 409 });
 }));
 app.get('/api/runs/:id/events', (req, res) => {
   let r: RunCtx; try { r = runFor(req); } catch { res.status(404).end(); return; }

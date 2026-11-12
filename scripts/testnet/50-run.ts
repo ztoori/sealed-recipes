@@ -137,6 +137,7 @@ step('4. pay: ft_transfer_call(tUSDC → contract) signed by the buyer');
 const ticket = await api<{ run_id: string; run_token: string; pay: { contract: string; method: string; args: object; deposit_yocto: string; gas_tgas: number } }>('/api/runs/prepare', { recipe_id: RECIPE, buyer: BUYER, sealed_inputs: job.sealed_job, signed_quote: signedQuote(q) });
 const payTx = await call(accountOf(BUYER), ticket.pay.contract, ticket.pay.method, ticket.pay.args, BigInt(ticket.pay.deposit_yocto), ticket.pay.gas_tgas);
 console.log(`   paid: ${explorer(payTx)}`);
+console.log(`   run ${ticket.run_id}, ticket token ${ticket.run_token} (keep it to resume: POST /api/runs/${ticket.run_id}/resume?token=…)`);
 await api(`/api/runs/${ticket.run_id}/paid?token=${ticket.run_token}`, { tx_hash: payTx });
 
 // 5. follow
@@ -148,7 +149,12 @@ for (let done = false; !done;) {
   buf += dec.decode(value, { stream: true });
   for (let i; (i = buf.indexOf('\n\n')) >= 0;) {
     let e = JSON.parse(buf.slice(6, i)); buf = buf.slice(i + 2);
-    if (e.type === 'sealed') { e = { ...e, ...open<{ type: string; data: unknown }>(e.data.envelope, job.reply.secretKey) }; if (e.type === 'result') result = e.data; continue; }
+    if (e.type === 'sealed') {
+      e = { ...e, ...open<{ type: string; data: unknown }>(e.data.envelope, job.reply.secretKey) };
+      if (e.type === 'result') result = e.data;
+      if (e.type === 'failure_detail') console.log(`   (sealed to you) why it failed: ${(e.data as { error: string }).error}`);
+      continue;
+    }
     const d = e.data ?? {};
     console.log(`   ${e.source.padEnd(6)} ${e.type}${d.url ? `  ${d.url}` : ''}${d.error ? `  ${d.error}` : ''}`);
     if (e.type === 'completed') { ok = !!d.ok; done = true; break; }

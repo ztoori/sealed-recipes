@@ -150,7 +150,7 @@ async function runJob(job: Job, ctx: Ctx, sealedRecipe: SealedEnvelope, sealedIn
     const msg = runReportMessage(CONTRACT_ID, job.runId, job.recipeId, outcome, outputHash, delivered.toString(), partsUsed);
     const signature = base64.enc(nacl.sign.detached(utf8ToBytes(msg), keys.sign.secretKey));
     emit(job, 'signed', { message: msg, signature, signing_pk: keys.signingPk });
-    const rep = await fetch(`${ctx.chain}/report_run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ run_id: job.runId, outcome, parts_used: partsUsed, output_hash: outputHash, delivered: delivered.toString(), signature }) });
+    const rep = await fetch(`${ctx.chain}/report_run`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-runner-token': TOKEN }, body: JSON.stringify({ run_id: job.runId, outcome, parts_used: partsUsed, output_hash: outputHash, delivered: delivered.toString(), signature }) });
     const settlement = await rep.json();
     if (!rep.ok) throw new Error('report_run rejected: ' + JSON.stringify(settlement));
     reported = true;
@@ -222,7 +222,7 @@ async function runJob(job: Job, ctx: Ctx, sealedRecipe: SealedEnvelope, sealedIn
       if (bill.length || Date.now() - lastOnchain >= HEARTBEAT_MS) {
         const seq = onchainSeq + 1;
         const sig = base64.enc(nacl.sign.detached(utf8ToBytes(checkpointMessage(CONTRACT_ID, job.runId, job.recipeId, seq, state_hash, bill)), keys.sign.secretKey));
-        const r = await fetch(`${ctx.chain}/checkpoint_run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ run_id: job.runId, seq, state_hash, parts_done: bill, signature: sig }) });
+        const r = await fetch(`${ctx.chain}/checkpoint_run`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-runner-token': TOKEN }, body: JSON.stringify({ run_id: job.runId, seq, state_hash, parts_done: bill, signature: sig }) });
         const out = await r.json();
         if (!r.ok) throw new Error('checkpoint_run rejected: ' + JSON.stringify(out));
         onchainSeq = seq; lastOnchain = Date.now();
