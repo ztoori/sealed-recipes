@@ -6,16 +6,17 @@ import { Seal } from '../ui';
 
 /**
  * A first-time visitor needs to know the story continues. One cue floats at the bottom and always names the next
- * section; clicking it moves there. At the end of the page it steps aside.
+ * section; clicking it moves there. The next section is the one after the section at the top of the screen, even when
+ * it is already partly in view, so the last one can always be reached by a click. At the end of the page it steps aside.
  */
 export function NextCue({ steps }: { steps: [string, string][] }) {
   const [next, setNext] = useState<[string, string] | null>(steps[0]);
   useEffect(() => {
     const on = () => {
-      const line = innerHeight * 0.62; // a section counts as reached once its top passes this line
-      const n = steps.find(([id]) => (document.getElementById(id)?.getBoundingClientRect().top ?? 0) > line);
+      const line = 140; // a section counts as reached once its top is under the top bar
+      const reached = steps.filter(([id]) => (document.getElementById(id)?.getBoundingClientRect().top ?? Infinity) <= line).length;
       const atEnd = innerHeight + scrollY >= document.documentElement.scrollHeight - 40;
-      setNext(atEnd ? null : n ?? null);
+      setNext(atEnd ? null : steps[reached] ?? null);
     };
     on(); addEventListener('scroll', on, { passive: true }); addEventListener('resize', on);
     return () => { removeEventListener('scroll', on); removeEventListener('resize', on); };

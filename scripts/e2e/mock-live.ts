@@ -15,6 +15,7 @@ import { decodeSignedTransaction } from 'near-api-js';
 import { seal, open, sealedHash, base64, type SealedEnvelope } from '../../core/src/seal.js';
 import { reportData } from '../../core/src/attestation.js';
 import { quoteMessage } from '../../core/src/ledger.js';
+import { mountDemoProxy } from '../../server/src/demo-proxy.js';
 
 const PORT = Number(process.argv[2] ?? 8099);
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -24,7 +25,7 @@ const signingPk = 'ed25519:' + bs58.encode(sign.publicKey), encPkHex = bytesToHe
 const funded = new Set<string>(); const runs = new Map<string, { buyer: string; reply: string; paid?: string }>(); const log: string[] = [];
 const listing = { ticker: 'CHEK', name: 'Contract check', description: 'Is this contract safe to use?', creator: 'sealedrecipes.testnet', form: [{ id: 'contract', label: "Contract you're about to use", type: 'near.account', required: true, placeholder: 'near-gift-claim.near' }], parts: ['near.contract-info@1.0.0'], capabilities: [], output_type: 'report', price_per_run: '50000', pricing: null, reserve_bps: 0, interface_hash: 'x', risk: 'low', disclosures: [], privacy: 'confidential' };
 
-const app = express(); app.use(express.json({ limit: '2mb' }));
+const app = express(); mountDemoProxy(app); app.use(express.json({ limit: '2mb' })); // /demo → the demo on :8080 if one runs
 app.get('/api/mode', (_, res) => res.json({ mode: 'testnet', contract_id: CONTRACT, payment_token: TOKEN, runner_id: RUNNER, runner_url: '/runner', rpc_url: `http://127.0.0.1:${PORT}/rpc`, faucet: true }));
 app.get('/api/listings', (_, res) => res.json([{ ...listing, onchain: { runs: '3', failed: '0', price_per_run: '50000' } }]));
 app.get('/api/runner/attestation', (req, res) => {

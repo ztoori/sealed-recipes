@@ -22,5 +22,6 @@ export function useSpeed(k: Kind): [number, (v: number) => void] {
   return [store[k], (v) => setSpeed(k, v)];
 }
 
-/** the demo story's pauses: at 1× they are 1.6 times the original timings, so each step can be read */
-export const demoMs = (ms: number) => Math.round((ms * 1.6) / store.demo);
+/** the demo story's pauses: at 1× they are 1.6 / 0.75 (about 2.13) times the original timings, so each step can be read;
+ *  this is what 0.75× used to be. 0.5× and 0.75× slow it further, 1.5× and 2× speed it up. */
+export const demoMs = (ms: number) => Math.round((ms * (1.6 / 0.75)) / store.demo);

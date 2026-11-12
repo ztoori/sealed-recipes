@@ -10,7 +10,7 @@ import nacl from 'tweetnacl';
 import { seal, open, sealedHash, type SealedEnvelope } from '../../../core/src/seal';
 import { jobHash, openQuote } from '../../../core/src/quotes';
 import { verifyRunnerAttestation } from '../../../core/src/attestation';
-import { api, short, usePoll } from '../api';
+import { api, short, usePoll, withBase } from '../api';
 import { Output } from '../components/RunViews';
 import { Icon } from '../icons';
 import { Empty, Head, Seal, Tip } from '../ui';
@@ -44,7 +44,7 @@ export function Quote({ ticker, runId }: { ticker: string; runId?: string }) {
   useEffect(() => {
     if (phase.name !== 'running' || !run.current) return;
     const r = run.current; const sk = fromHex(r.reply_sk);
-    const es = new EventSource(`/api/runs/${r.run_id}/events?token=${r.token}`);
+    const es = new EventSource(withBase(`/api/runs/${r.run_id}/events?token=${r.token}`));
     const seen = new Set<number>();
     es.onmessage = (m) => {
       let e = JSON.parse(m.data) as Ev;

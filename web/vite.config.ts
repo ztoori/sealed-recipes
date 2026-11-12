@@ -6,6 +6,8 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 export default defineConfig({
   root,
   plugins: [react()],
+  // relative asset URLs: the same build is served at / (demo, live) and under /demo on the live site
+  base: './',
   build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 1500, rollupOptions: { input: { main: root + 'index.html', live: root + 'live.html' } } },
   server: { port: 5173, proxy: { '/api': process.env.SRS_API ?? 'http://127.0.0.1:8080', '/mock': 'http://127.0.0.1:8080', '/runner': process.env.SRS_API ?? 'http://127.0.0.1:8080' }, fs: { allow: ['..'] } },
 });

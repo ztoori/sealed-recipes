@@ -2,12 +2,13 @@
  * Shared state of the live page: the contract's mode, the listings, this browser's guest account, navigation and toasts.
  * Navigation mirrors the guided demo's (web/src/route.ts), as a hash, so every page has its own link:
  *   #/  (landing)   #/recipes[/TICKER]   #/quote/TICKER[/RUN_ID]   #/wallet
- * Compose and Docs live in the guided demo; the menu links there.
+ * Compose, Docs and the guided story are the guided demo, which this same site serves under /demo (simulated services).
  */
 import { createContext, useContext } from 'react';
 import type { Guest } from './guest';
 
-export const DEMO = 'https://sealedrecipes.xyz';
+/** the guided demo, served by this site under /demo (server/src/demo-proxy.ts) */
+export const DEMO = '/demo/';
 export const EXPLORER = 'https://testnet.nearblocks.io';
 export const txUrl = (h: string) => `${EXPLORER}/txns/${h}`;
 export const accUrl = (a: string) => `${EXPLORER}/address/${a}`;

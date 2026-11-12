@@ -10,7 +10,7 @@ The eleven recipes in this repo are samples that show what the platform can run;
 
 **Try it:**
 - **Live on NEAR testnet: https://app.sealedrecipes.xyz.** Real contract ([`market.sealedrecipes.testnet`](https://testnet.nearblocks.io/address/market.sealedrecipes.testnet)), real NEAR AI Cloud, real mainnet data read-only. No login: get a sealed quote, continue as a guest (a key made in your browser, funded with test tokens by a faucet), pay, and read the sealed result. Every step links to the explorer. Details in [The live page](#the-live-page-near-testnet).
-- **Guided demo: https://sealedrecipes.xyz.** The whole loop in ninety seconds (compose, seal, quote, pay through NEAR Intents, run, settle), with simulated services. Press **Play demo**.
+- **Guided demo: https://app.sealedrecipes.xyz/demo/** (the **Guided demo** button, and **Compose** and **Docs** in the menu). The whole loop in ninety seconds (compose, seal, quote, pay through NEAR Intents, run, settle), with simulated services. Press **Play demo**.
 - **On your machine:** the quick start below.
 
 ![A signed quote from one sealed recipe](docs/media/03-quote.png)
@@ -354,7 +354,7 @@ Sealed Recipes protects a workflow **by default, without filing anything**. The 
 
 ## What is real, and what is local
 
-These are kept separate so nothing here needs to be taken on faith. The table is about `npm run demo` (and the guided demo at sealedrecipes.xyz). The live page at app.sealedrecipes.xyz uses the production path for the contract (NEAR testnet), NEAR AI Cloud, FastNEAR and NEAR RPC (mainnet, read-only), and the `local-dev` runner; see [The live page](#the-live-page-near-testnet).
+These are kept separate so nothing here needs to be taken on faith. The table is about `npm run demo` (and the guided demo at app.sealedrecipes.xyz/demo). The live page at app.sealedrecipes.xyz uses the production path for the contract (NEAR testnet), NEAR AI Cloud, FastNEAR and NEAR RPC (mainnet, read-only), and the `local-dev` runner; see [The live page](#the-live-page-near-testnet).
 
 | Component | In `npm run demo` | Production path (in this repo) |
 |---|---|---|
@@ -460,7 +460,7 @@ Inputs are sealed in the buyer's browser to the runner, and anything the runner 
 
 ## The live page (NEAR testnet)
 
-Running at **https://app.sealedrecipes.xyz**, against [`market.sealedrecipes.testnet`](https://testnet.nearblocks.io/address/market.sealedrecipes.testnet). `server/src/live.ts` serves `web/dist/live.html` (built by `npm run build`; same look and layout as the guided demo, with Compose and Docs linking to it). The deployment steps are in [scripts/testnet/README.md](scripts/testnet/README.md). Nobody has to log in:
+Running at **https://app.sealedrecipes.xyz**, against [`market.sealedrecipes.testnet`](https://testnet.nearblocks.io/address/market.sealedrecipes.testnet). `server/src/live.ts` serves `web/dist/live.html` (built by `npm run build`; same look and layout as the guided demo). It also serves the guided demo under `/demo` (`server/src/demo-proxy.ts`): requests there go to the demo gateway on the same machine (`SRS_DEMO_GATEWAY`, default `http://127.0.0.1:8080`), so one address serves both. The gateway creates a visitor's sandbox on their first demo page view only; the live pages never create one. Compose, Docs and **Guided demo** in the live menu open it. The deployment steps are in [scripts/testnet/README.md](scripts/testnet/README.md). Nobody has to log in:
 
 - **Accounts to look at** (CHEK, SAFE, AUDIT and other read-only recipes) are typed in like on a block explorer: any public NEAR mainnet account. They are sealed in the browser, as above.
 - **Paying for a run** uses a *guest account*: an ed25519 key made in the browser, whose NEAR implicit account id is the public key. `POST /api/faucet` funds it once with a little testnet NEAR for gas and some tUSDC (test token, no value), limited per guest, per visitor per day and per day in total. The key stays in the browser (it can be downloaded as a near-cli key file) and signs the buyer's own `ft_transfer_call`.

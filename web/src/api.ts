@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 
+/**
+ * Where this app is mounted: '' at the site root, '/demo' when the live site serves the guided demo under /demo.
+ * Every request to the server goes through withBase, so the same build works in both places.
+ */
+export const BASE = new URL('.', location.href).pathname.replace(/\/$/, '');
+export const withBase = (p: string) => (p.startsWith('/') ? BASE + p : p);
+
 export async function api<T = any>(path: string, body?: unknown): Promise<T> {
-  const r = await fetch(path, body === undefined ? undefined : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await fetch(withBase(path), body === undefined ? undefined : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const t = await r.text();
   let j: any; try { j = JSON.parse(t); } catch { j = { error: t }; }
   if (!r.ok) throw new Error(j.error ?? `${r.status}`);
@@ -72,7 +79,7 @@ export const ASSET_LABEL: Record<string, string> = {
  */
 export async function runnerAttestation(nonce: string): Promise<{ attestation: any; onchain: any }> {
   const mode = await api<any>('/api/mode');
-  const attestation = await fetch(`${mode.runner_url}/attestation?nonce=${nonce}`).then((r) => r.json());
+  const attestation = await fetch(withBase(`${mode.runner_url}/attestation?nonce=${nonce}`)).then((r) => r.json());
   const onchain = await api(`/api/chain/runners/${mode.runner_id}`);
   return { attestation, onchain };
 }

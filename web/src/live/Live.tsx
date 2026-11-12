@@ -19,9 +19,9 @@ import { Wallet } from './Wallet';
 type Item = { key: string; label: string; icon: string; route?: LiveRoute; href?: string };
 const MENU: Item[] = [
   { key: 'recipes', label: 'Recipes', icon: 'market', route: { page: 'recipes' } },
-  { key: 'compose', label: 'Compose', icon: 'compose', href: `${DEMO}/#/compose/recipe` },
+  { key: 'compose', label: 'Compose', icon: 'compose', href: `${DEMO}#/compose/recipe` },
   { key: 'wallet', label: 'Wallet', icon: 'wallet', route: { page: 'wallet' } },
-  { key: 'docs', label: 'Docs', icon: 'docs', href: `${DEMO}/#/docs/spec` },
+  { key: 'docs', label: 'Docs', icon: 'docs', href: `${DEMO}#/docs/spec` },
 ];
 
 export function Live() {
@@ -64,7 +64,7 @@ export function Live() {
         {!home && <>
         <nav className="nav" aria-label="Sections">
           {MENU.map((m) => m.href
-            ? <a key={m.key} href={m.href} aria-label={`${m.label} (guided demo)`} title={`${m.label} is in the guided demo`}><Icon name={m.icon} size={17} /><span>{m.label}</span><Icon name="arrow" size={11} className="ext" /></a>
+            ? <a key={m.key} href={m.href} aria-label={m.label} title={`${m.label}: in the guided demo, with simulated services`}><Icon name={m.icon} size={17} /><span>{m.label}</span></a>
             : <button key={m.key} aria-label={m.label} aria-current={current === m.key ? 'page' : undefined} onClick={() => go(m.route!)}><Icon name={m.icon} size={17} /><span>{m.label}</span></button>)}
         </nav>
         <div className="spacer" />
@@ -74,7 +74,7 @@ export function Live() {
           <span className="who"><b>{guest ? short(guest.account, 6, 4) : 'Guest'}</b><small>{guest ? 'guest · testnet' : 'no account yet'}</small></span>
           <Icon name="chevron" size={14} className="caret" />
         </button>
-        <a className="story-btn" href={`${DEMO}/?story=1`} title="The guided demo, with simulated services"><Icon name="play" size={15} fill />Guided demo</a>
+        <a className="story-btn" href={`${DEMO}?story=1`} title="The guided demo, with simulated services"><Icon name="play" size={15} fill />Guided demo</a>
         </>}
       </div>
       <main className={home ? 'home' : undefined}>

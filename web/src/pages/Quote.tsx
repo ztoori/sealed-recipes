@@ -4,7 +4,7 @@ import { seal, open, sealedHash, type SealedEnvelope } from '../../../core/src/s
 import { jobHash, openQuote } from '../../../core/src/quotes';
 import { measuresValue } from '../../../core/src/srs';
 import { verifyRunnerAttestation } from '../../../core/src/attestation';
-import { api, ASSET_LABEL, money, PAY_ASSETS, runnerAttestation, short, txRef, usd, usePoll } from '../api';
+import { api, ASSET_LABEL, money, PAY_ASSETS, runnerAttestation, short, txRef, usd, usePoll, withBase } from '../api';
 import { useApp, useStoryOnce } from '../App';
 import { SettlementFlow } from '../components/Sankey';
 import { Output, timeline, type Ev } from '../components/RunViews';
@@ -114,7 +114,7 @@ export function Quote({ ticker }: { ticker: string }) {
   const runToken = 'pay' in phase ? phase.pay.run_token : '';
   useEffect(() => {
     if (!runId || (phase.name !== 'running' && phase.name !== 'finished')) return;
-    const es = new EventSource(`/api/runs/${runId}/events?token=${runToken}`);
+    const es = new EventSource(withBase(`/api/runs/${runId}/events?token=${runToken}`));
     es.onmessage = (msg) => {
       let e = JSON.parse(msg.data) as Ev;
       if (e.type === 'sealed' && reply.current) {

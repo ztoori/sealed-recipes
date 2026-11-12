@@ -28,6 +28,7 @@ import { loadCatalog } from '../../core/src/codehash.js';
 import { FileBlobStore } from './store.js';
 import { TeeRunnerBackend } from './backends.js';
 import { NearChain } from './near.js';
+import { mountDemoProxy } from './demo-proxy.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const env = process.env;
@@ -157,6 +158,7 @@ async function watchPayment(r: RunCtx, txHash?: string) {
 // ---- HTTP ----
 const app = express();
 app.set('trust proxy', 'loopback');
+mountDemoProxy(app); // /demo: the guided demo, before the body parser
 app.use(express.json({ limit: '2mb' }));
 class BadRequest extends Error {}
 const guard = (fn: (req: express.Request, res: express.Response) => unknown) => async (req: express.Request, res: express.Response) => {

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState } from 'react';
-import { ACCOUNTS, setLedgerMode, usePoll } from './api';
+import { ACCOUNTS, BASE, setLedgerMode, usePoll } from './api';
 import { parseRoute, routeHash, section, type Route } from './route';
 import { Recipes } from './pages/Recipes';
 import { Quote } from './pages/Quote';
@@ -104,6 +104,7 @@ export function App() {
           {MENU.map(([s, label, icon, r]) => <button key={s} aria-label={label} aria-current={current === s ? 'page' : undefined} onClick={() => go(r)}><Icon name={icon} size={17} /><span>{label === 'Documentation' ? 'Docs' : label}</span></button>)}
         </nav>
         <div className="spacer" />
+        {BASE === '/demo' && <a className="mode on-chain" href="/" title="Back to the live marketplace on NEAR testnet"><i className="dot" />Live site</a>}
         <button className="mode" title={mode ? 'Offline demo\n' + Object.entries(mode.services).map(([k, v]) => `${k}: ${v}`).join('\n') : ''} onClick={() => go({ page: 'docs', sub: 'trust' })}><i className="dot" />Local</button>
         <label className="acting" title="Switch who you are acting as">
           <span className="avatar"><Icon name={ROLE_ICON[actor?.role ?? ''] ?? 'user'} size={15} /></span>

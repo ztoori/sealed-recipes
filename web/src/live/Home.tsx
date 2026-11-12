@@ -33,9 +33,9 @@ export function Home() {
             <div><dt>runs settled on-chain</dt><dd>{listings ? runs : '–'}</dd></div>
             <div><dt>parts in use</dt><dd>{listings ? parts.length : '–'}</dd></div>
           </dl>
-          <div className="lp-cta" style={{ justifyContent: 'flex-start', marginTop: 22 }}>
+          <div className="lp-cta lp-hero-cta">
             <button className="btn primary lg" onClick={() => go({ page: 'recipes' })}>Proceed to recipes<Icon name="arrow" size={16} /></button>
-            <a className="btn ghost lg" href={`${DEMO}/?story=1`}><Icon name="play" size={14} fill />Guided demo</a>
+            <a className="btn ghost lg" href={`${DEMO}?story=1`}><Icon name="play" size={14} fill />Guided demo</a>
           </div>
         </div>
         <Loop />
@@ -75,7 +75,7 @@ export function Home() {
             <li><Icon name="vault" size={17} />Only its hash and part list go on-chain</li>
             <li><Icon name="receipt" size={17} />Paid the moment each run settles</li>
           </ul>
-          <a className="linkbtn" href={`${DEMO}/#/compose/recipe`}>Compose a recipe in the guided demo<Icon name="arrow" size={14} /></a>
+          <a className="linkbtn" href={`${DEMO}#/compose/recipe`}>Compose a recipe in the guided demo<Icon name="arrow" size={14} /></a>
         </div>
         <div className="lp-visual">
           <div className="lp-sealed">
@@ -100,7 +100,7 @@ export function Home() {
             <li><Icon name="vault" size={17} />Registered on-chain with your fee</li>
             <li><Icon name="users" size={17} />Paid in the same settlement as everyone else</li>
           </ul>
-          <a className="linkbtn" href={`${DEMO}/#/compose/part`}>Build a part in the guided demo<Icon name="arrow" size={14} /></a>
+          <a className="linkbtn" href={`${DEMO}#/compose/part`}>Build a part in the guided demo<Icon name="arrow" size={14} /></a>
         </div>
         <div className="lp-visual">
           {popular && (
@@ -137,7 +137,7 @@ export function Home() {
         <h2>Run one for real, on testnet.</h2>
         <p>A sealed quote in seconds, a payment you sign in this browser, and every step on <a href={accUrl(mode?.contract_id ?? '')} target="_blank" rel="noreferrer">{mode?.contract_id ?? 'the contract'}</a>.</p>
         <div className="lp-cta">
-          <a className="btn ghost lg" href={`${DEMO}/?story=1`}><Icon name="play" size={14} fill />Watch the guided demo</a>
+          <a className="btn ghost lg" href={`${DEMO}?story=1`}><Icon name="play" size={14} fill />Watch the guided demo</a>
           <button className="btn primary lg" onClick={() => go({ page: 'recipes' })}>Proceed to recipes<Icon name="arrow" size={16} /></button>
         </div>
       </section>

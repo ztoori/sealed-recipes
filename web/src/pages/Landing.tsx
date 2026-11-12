@@ -35,6 +35,10 @@ export function Landing() {
             <div><dt>creators</dt><dd>{creators || '–'}</dd></div>
             <div><dt>parts by {builders || '–'} builders</dt><dd>{parts.length || '–'}</dd></div>
           </dl>
+          <div className="lp-cta lp-hero-cta">
+            <button className="btn primary lg" onClick={() => go({ page: 'recipes' })}>Proceed to recipes<Icon name="arrow" size={16} /></button>
+            <button className="btn ghost lg" onClick={() => story.start()}><Icon name="play" size={14} fill />Watch the demo</button>
+          </div>
         </div>
         <Loop />
       </section>
