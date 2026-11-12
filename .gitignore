@@ -3,6 +3,7 @@ web/dist/
 .data/
 .env
 contracts/sealed-recipes/target/
+contracts/tusdc/target/
 docs/media/.video/
 *.log
 .DS_Store
