@@ -16,6 +16,8 @@ Environment=NODE_ENV=production
 Environment=PORT=8081
 Environment=RUNNER_URL=http://127.0.0.1:8788
 Environment=NEAR_RELAYER_KEY_FILE=/etc/srs/relayer.json
+# near-cli key files don't name their account
+Environment=NEAR_RELAYER_ACCOUNT=relayer.sealedrecipes.testnet
 Environment=SRS_STORE_DIR=/var/lib/srs-live/store
 ExecStart=/usr/bin/node server/src/live.bundle.mjs
 Restart=always

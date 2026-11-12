@@ -12,7 +12,7 @@
  * Keys: near-cli files in ~/.near-credentials/testnet/ (CREATOR, BUYER, FAUCET). Marketplace: SRS_URL (http://127.0.0.1:8081).
  * Target: a public mainnet account the recipe reads (default wrap.near). Spends testnet NEAR gas and test tUSDC only.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,25 +56,63 @@ const runner = await verifiedRunner();
 console.log(`runner attestation: ${runner.checks.filter((c) => c.status === 'pass').length} checks passed (${runner.hardware ? 'hardware TEE' : 'local-dev: no hardware quote'})`);
 
 // 1. publish
+// Sealing is randomized, so the exact sealed copy the contract commits to is saved here before publishing: if the
+// hand-over to the marketplace fails, a rerun hands over the same copy. A recipe that is on-chain without a copy
+// anywhere is re-sealed and its new version announced (update_sealed), applied after the notice period, handed over.
 step(`1. ${RECIPE}: published on the contract?`);
-const onchain = await api<{ sealed_hash: string } | null>(`/api/chain/recipes/${RECIPE}`).catch(() => null);
-const listed = (await api<{ ticker: string }[]>('/api/listings')).some((l) => l.ticker === RECIPE);
-if (onchain && listed) console.log(`   yes (sealed_hash ${onchain.sealed_hash.slice(0, 16)}…)`);
-else {
-  if (onchain) throw new Error(`${RECIPE} is on the contract but this marketplace doesn't hold its sealed version (published elsewhere?)`);
+const saveDir = join(homedir(), '.srs-publish');
+mkdirSync(saveDir, { recursive: true, mode: 0o700 });
+const savedPath = (h: string) => join(saveDir, `${RECIPE}-${h}.json`);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const handOver = async (saved: { listing: unknown; sealed: unknown; creator_copy: unknown }, tx?: string) => {
+  for (let i = 0; ; i++) {
+    try { await api('/api/publish', { ...saved, tx }); return; }
+    catch (e) { if (i >= 12 || !/not published|does not match/.test((e as Error).message)) throw e; await sleep(5000); }
+  }
+};
+const fresh = () => {
   const recipe = JSON.parse(readFileSync(join(root, 'seed/recipes', `${RECIPE}.json`), 'utf8'));
   recipe.meta.creator = CREATOR;
   const v = validateRecipe(recipe, catalog);
   if (!v.ok) throw new Error('invalid recipe: ' + JSON.stringify(v.diagnostics));
-  const listing = publicListing(recipe, catalog);
   const sealed = seal(recipe, runner.onchain.enc_pk_hex, 'recipe');
+  const saved = { listing: publicListing(recipe, catalog), sealed, creator_copy: creatorCopy(recipe) };
+  writeFileSync(savedPath(sealedHash(sealed)), JSON.stringify(saved), { mode: 0o600 });
+  return { recipe, saved, hash: sealedHash(sealed) };
+};
+type OnchainRecipe = { sealed_hash: string; pending_sealed_hash?: string; update_effective_ns?: string };
+const onchain = await api<OnchainRecipe>(`/api/chain/recipes/${RECIPE}`).catch(() => null);
+const listed = (await api<{ ticker: string }[]>('/api/listings')).some((l) => l.ticker === RECIPE);
+if (onchain && listed) console.log(`   yes (sealed_hash ${onchain.sealed_hash.slice(0, 16)}…)`);
+else if (!onchain) {
+  const { recipe, saved, hash } = fresh();
+  const listing = saved.listing as { ticker: string; name: string; parts: string[]; price_per_run: string; reserve_bps?: number; pricing?: unknown };
   const tx = await call(accountOf(CREATOR), mode.contract_id, 'publish_recipe', {
-    id: listing.ticker, name: listing.name, sealed_hash: sealedHash(sealed), runner_id: mode.runner_id, parts: listing.parts,
+    id: listing.ticker, name: listing.name, sealed_hash: hash, runner_id: mode.runner_id, parts: listing.parts,
     price_per_run: listing.price_per_run, reserve_bps: listing.reserve_bps ?? 0, pricing: listing.pricing ?? null, settle_mode: recipe.listing.settle_mode ?? 'final',
   }, 100_000_000_000_000_000_000_000n /* 0.1 NEAR for storage; the rest is refunded */);
   console.log(`   publish_recipe by ${CREATOR}: ${explorer(tx)}`);
-  await api('/api/publish', { listing, sealed, creator_copy: creatorCopy(recipe), tx });
+  await handOver(saved, tx);
   console.log('   sealed recipe handed to the marketplace (it checked the on-chain hash; it never saw the plaintext)');
+} else if (existsSync(savedPath(onchain.sealed_hash))) {
+  await handOver(JSON.parse(readFileSync(savedPath(onchain.sealed_hash), 'utf8')));
+  console.log('   on-chain already; handed the saved sealed copy to the marketplace');
+} else {
+  console.log('   on-chain, but no sealed copy matches it here: announcing a re-sealed version (update_sealed)');
+  const { saved, hash } = fresh();
+  const tx = await call(accountOf(CREATOR), mode.contract_id, 'update_sealed', { id: RECIPE, sealed_hash: hash });
+  console.log(`   update_sealed: ${explorer(tx)}`);
+  for (;;) {
+    const r = await api<OnchainRecipe>(`/api/chain/recipes/${RECIPE}`);
+    if (r.sealed_hash === hash) break;
+    const wait = Math.max(0, Number(BigInt(r.update_effective_ns ?? '0') / 1_000_000n) - Date.now());
+    if (wait > 0) { console.log(`   notice period: ${Math.ceil(wait / 1000)} s`); await sleep(wait + 2000); continue; }
+    try { const t = await call(accountOf(CREATOR), mode.contract_id, 'apply_update', { id: RECIPE }); console.log(`   apply_update: ${explorer(t)}`); }
+    catch (e) { if (!/update not due/.test((e as Error).message)) throw e; /* already applied, or the block clock is a little behind */ }
+    await sleep(3000);
+  }
+  await handOver(saved, tx);
+  console.log('   new sealed version handed to the marketplace');
 }
 
 // 2. tUSDC for the buyer

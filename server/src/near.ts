@@ -17,11 +17,13 @@ export interface ChainEvent { standard: string; version: string; event: string; 
 export interface TxResult { tx_hash: string; ok: boolean; error?: string; events: ChainEvent[]; value?: unknown }
 
 /** near-cli "legacy keychain" file: {"account_id":"…","public_key":"ed25519:…","private_key":"ed25519:…"} */
-export function loadKeyFile(path: string): { accountId: string; secretKey: string } {
-  const k = JSON.parse(readFileSync(path, 'utf8')) as { account_id: string; private_key?: string; secret_key?: string };
+export function loadKeyFile(path: string, accountId?: string): { accountId: string; secretKey: string } {
+  // near-cli-rs key files have no account_id (the account is the file name): pass it explicitly
+  const k = JSON.parse(readFileSync(path, 'utf8')) as { account_id?: string; private_key?: string; secret_key?: string };
   const secretKey = k.private_key ?? k.secret_key;
-  if (!k.account_id || !secretKey?.startsWith('ed25519:')) throw new Error(`${path}: expected a near-cli key file with account_id and an ed25519 private_key`);
-  return { accountId: k.account_id, secretKey };
+  const id = accountId ?? k.account_id;
+  if (!id || !secretKey?.startsWith('ed25519:')) throw new Error(`${path}: expected an ed25519 private_key, and the account (NEAR_RELAYER_ACCOUNT or account_id in the file)`);
+  return { accountId: id, secretKey };
 }
 
 /** EVENT_JSON logs of every receipt in a transaction result */
@@ -44,17 +46,18 @@ export function failureOf(result: { status?: unknown; receipts_outcome?: { outco
 export class NearChain {
   private queue: Promise<unknown> = Promise.resolve();
   private relayer?: Account;
-  constructor(readonly rpcUrl: string, readonly contractId: string, relayerKeyFile?: string) {
+  constructor(readonly rpcUrl: string, readonly contractId: string, relayerKeyFile?: string, relayerAccount?: string) {
     if (relayerKeyFile) {
-      const k = loadKeyFile(relayerKeyFile);
+      const k = loadKeyFile(relayerKeyFile, relayerAccount);
       this.relayer = new Account(k.accountId, new JsonRpcProvider({ url: rpcUrl }), k.secretKey as `ed25519:${string}`);
     }
   }
   get relayerId() { return this.relayer?.accountId; }
 
   /** a view call on any contract (the marketplace by default); null when the method returns null */
-  async view<T>(method: string, args: Record<string, unknown> = {}, contractId = this.contractId): Promise<T> {
-    const body = JSON.stringify({ jsonrpc: '2.0', id: 'srs', method: 'query', params: { request_type: 'call_function', finality: 'final', account_id: contractId, method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString('base64') } });
+  /** `optimistic` sees a transaction as soon as it executed; `final` (default) only once its block is final, a few seconds later */
+  async view<T>(method: string, args: Record<string, unknown> = {}, contractId = this.contractId, finality: 'final' | 'optimistic' = 'final'): Promise<T> {
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 'srs', method: 'query', params: { request_type: 'call_function', finality, account_id: contractId, method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString('base64') } });
     const r = await outboundFetch(this.rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(20_000) });
     const j = (await r.json()) as { result?: { result: number[] }; error?: { cause?: { name?: string }; data?: unknown; message?: string } };
     if (!j.result) throw new Error(`view ${contractId}.${method}: ${JSON.stringify(j.error?.cause ?? j.error?.data ?? j.error?.message ?? j.error)}`);

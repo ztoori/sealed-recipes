@@ -11,7 +11,7 @@
  *  - No mocks, no fixtures, no demo wallet, no dev endpoints. Runner calls are authenticated with RUNNER_TOKEN.
  *
  * Env: PORT (8081)  CONTRACT_ID  RUNNER_ID  RUNNER_URL  RUNNER_TOKEN (required)  NEAR_RPC_URL  NEAR_RELAYER_KEY_FILE
- *      PAYMENT_TOKEN  SRS_STORE_DIR (persistent)  NEAR_NETWORK (testnet)
+ *      NEAR_RELAYER_ACCOUNT  SRS_STORE_DIR (persistent)  NEAR_NETWORK (testnet)
  */
 import express from 'express';
 import { randomBytes } from 'node:crypto';
@@ -37,7 +37,7 @@ const RPC = env.NEAR_RPC_URL ?? 'https://rpc.testnet.fastnear.com';
 const PAY_TIMEOUT_MS = 5 * 60_000;
 const explorer = (tx: string) => `https://testnet.nearblocks.io/txns/${tx}`;
 
-const chain = new NearChain(RPC, CONTRACT_ID, env.NEAR_RELAYER_KEY_FILE);
+const chain = new NearChain(RPC, CONTRACT_ID, env.NEAR_RELAYER_KEY_FILE, env.NEAR_RELAYER_ACCOUNT);
 const backend = new TeeRunnerBackend(RUNNER, RUNNER_ID, RUNNER_TOKEN);
 const catalog = loadCatalog(ROOT);
 const store = new FileBlobStore(need('SRS_STORE_DIR'));
@@ -189,7 +189,8 @@ app.post('/api/publish', guard(async (req, res) => {
   const { listing, sealed, creator_copy, tx } = req.body as { listing: PublicListing; sealed: SealedEnvelope; creator_copy?: SealedEnvelope; tx?: string };
   if (sealed?.v !== 'srs-seal-v1' || sealed.purpose !== 'recipe') throw new BadRequest('expected a sealed recipe envelope');
   if ((listing as unknown as Record<string, unknown>).nodes) throw new BadRequest('refusing plaintext recipe: only the public listing may be sent');
-  const onchain = await chain.view<Recipe | null>('get_recipe', { recipe_id: listing.ticker });
+  // the creator's transaction just executed: read the latest executed state, not only finalized blocks
+  const onchain = await chain.view<Recipe | null>('get_recipe', { recipe_id: listing.ticker }, CONTRACT_ID, 'optimistic');
   if (!onchain) throw new BadRequest(`${listing.ticker} is not published on ${CONTRACT_ID}; send publish_recipe first`);
   const h = sealedHash(sealed);
   if (onchain.sealed_hash !== h) throw new BadRequest('sealed recipe does not match the on-chain sealed_hash');
