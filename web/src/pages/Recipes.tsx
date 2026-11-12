@@ -5,6 +5,7 @@ import { useApp, useStoryOnce } from '../App';
 import { CAT, Icon, RESULT_LABEL, recipeLook } from '../icons';
 import { demoMs } from '../pace';
 import { Empty, Head, Seal, Stat, Tip } from '../ui';
+import { partCat, prettyPart } from '../parts';
 
 /**
  * Recipes: find a recipe (search, favorites), see its market-driven price, public track record and the guarantee
@@ -182,15 +183,6 @@ function RecipeDetail({ ticker, listings }: { ticker: string; listings: any[] })
   );
 }
 
-const partCat = (id: string): string => {
-  const n = id.split('@')[0];
-  if (/scanner|positions|facts|access-keys|rpc|fresh/.test(n)) return 'source';
-  if (/shield|risk|verified|check|allowlist/.test(n)) return 'guard';
-  if (/swap|revoke|withdraw|claim|atomic|intents/.test(n)) return 'action';
-  if (/report|summary|merge/.test(n)) return 'sink';
-  return 'transform';
-};
-const prettyPart = (id: string) => id.split('@')[0].split('.').slice(1).join(' ').replace(/-/g, ' ');
 
 /** Where each run's price goes: one bar, every party. */
 function Split({ rec }: { rec: any }) {
