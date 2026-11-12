@@ -6,7 +6,7 @@
 - **Run.** A buyer or an agent gets a signed quote from a sealed dry run, pays from any chain through NEAR Intents, and the runner executes the recipe privately, under per-part limits.
 - **Settle.** One settlement pays every part author, the runner and the creator. If the result falls short of the quote, the creator's guarantee deposit pays the buyer the difference.
 
-The ten recipes in this repo are samples that show what the platform can run; anyone can compose new ones from the same parts or add parts of their own.
+The eleven recipes in this repo are samples that show what the platform can run; anyone can compose new ones from the same parts or add parts of their own.
 
 ![A signed quote from one sealed recipe](docs/media/03-quote.png)
 
@@ -107,7 +107,7 @@ Then follow these steps. Each one says what you should see.
 
 The app opens on a landing page. Past it, the top menu has four sections: **Recipes** (find one and get a quote), **Compose** (build a recipe from parts with no code, or build a part), **Wallet**, and **Docs** (the SRS-1 spec, Trust & privacy, Landscape, and guides). Every page has its own link (`#/recipes/CLNP`, `#/quote/STAK`, `#/compose/part/…`), so the back button works.
 
-1. **Open http://127.0.0.1:8080.** The landing page explains the idea. **Proceed to recipes** opens **Recipes**: nine listed recipes with a search box and favorites (★).
+1. **Open http://127.0.0.1:8080.** The landing page explains the idea. **Proceed to recipes** opens **Recipes**: ten listed recipes with a search box and favorites (★).
 2. **Click "Play demo"** (top right; on the landing page, **Watch the demo**). Seven chapters play automatically, each with a caption and a speed control. Chapters 1–4 are the loop itself:
    1. **Compose.** As `chef.testnet`, the creator starts a new recipe and adds five parts one by one. Each wires itself to the previous step's matching output, and the buyer's form (wallet, dust threshold, target asset, fresh address) comes with them. The seal dialog verifies the runner attestation: 6 checks pass, and "Hardware TDX quote" shows as skipped in local mode. The plaintext turns into ciphertext and gets a wax seal. `publish_recipe` returns a transaction hash (simulated in local mode), and a $25 guarantee deposit backs CLNP's quotes.
    2. **Find it and get a quote.**
@@ -159,7 +159,7 @@ Expected tail of the output:
 
 ## The sample recipes
 
-Ten sample recipes for common crypto problems, each a sealed workflow of public parts. They exist to exercise the platform (composing, sealing, quoting, running and settling); Compose › Recipe builds new ones from the same parts.
+Eleven sample recipes for common crypto problems, each a sealed workflow of public parts. They exist to exercise the platform (composing, sealing, quoting, running and settling); Compose › Recipe builds new ones from the same parts.
 
 | Recipe | What it does | Parts |
 |---|---|---|
@@ -172,12 +172,13 @@ Ten sample recipes for common crypto problems, each a sealed workflow of public 
 | **KEYS** Lock down app keys | dApp sign-in keys whose app is gone or known bad are revoked in one `DeleteKey` you sign; full-access keys are only reported | access keys, key-risk rules, key revoker |
 | **STAK** Collect unstaked NEAR | `withdraw_all` on every pool that finished unbonding; flags validators that stopped validating or charge high fees | staking positions, unstaked collector |
 | **CHEK** Contract check before you sign | a private AI verdict from on-chain facts: code, who can upgrade it, NEP-330 source, lookalike names | contract inspector, AI contract risk, contract report |
+| **AUDT** Account security audit | read-only: full-access keys that can move everything, app keys to delete, scam tokens and the value at risk, in one sealed report; the owner makes the fixes in their own wallet | access keys, key-risk rules, scanner, AI spam shield, audit report |
 | **TRIM** Concentration cap | sells only the excess of any token above your cap, into a stablecoin at a fresh address | scanner, allowlist shield, trimmer, fresh check, confidential swap |
 
 The four in bold were added with ten new parts. They read the same public NEAR interfaces in production that the local mocks serve: RPC `view_access_key_list`, `view_account` and `validators`; the staking pool's `get_account`, `get_reward_fee_fraction` and `withdraw_all`; NEP-330 `contract_source_metadata`; and FastNEAR `/v1/account/{id}/staking`.
 
 ```bash
-npm run test:recipes  # KEYS revokes 2 risky keys and confirms on-chain (full-access keys untouched); STAK withdraws 4.2 NEAR from
+npm run test:recipes  # AUDT reports 4 key issues and 2 scam tokens without asking for a signature; KEYS revokes 2 risky keys and confirms on-chain (full-access keys untouched); STAK withdraws 4.2 NEAR from
                       # 2 pools, skips 1 still unbonding, flags an inactive validator; CHEK rates a phishing lookalike high and
                       # v2.ref-finance.near low; TRIM sells $172 of dana's NEAR (48% → 25%) and delivers USDC to a fresh address
 ```
@@ -479,7 +480,7 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 - **Quotes cost compute.** Quote requests are capped at 12 per minute per client. A small quote fee would be the on-chain version.
 - **Part admission is partly permissioned.** Open-tier parts are admitted on automated checks and sandboxed; parts that send data somewhere new or ask buyers to sign need owner-appointed reviewers (SRS-1 §11). The release log makes every decision auditable. Next: a multisig or DAO as owner, reviewer stakes, several runners with their own releases, reproducible builds. The sandbox is a Node process with the permission model, not yet WASM with fuel metering.
 - **Supplier risk.** Bundled parts can't be switched off by their author, but remote and closed-model parts can. SRS-1 labels this risk; fallback parts, notice periods and supplier bonds are planned.
-- **Thin markets.** With 10 recipes, each price moves with its own demand only.
+- **Thin markets.** With 11 recipes, each price moves with its own demand only.
 - **Demand can be faked, at a cost.** A creator can pay for their own runs to push the price up. Each fake run costs the protocol, runner and part fees, and the price rises at most 12.5% a period while buyers simply pick another recipe or set a max price. Counting only quoted runs from distinct buyers would make it harder.
 - **Unquoted payments can miss a price change.** A payment without a quote is charged the list price when it arrives; if that rose since the payment was quoted, the payment is credited back to the buyer (never overcharged). Paying with a signed quote locks the price.
 - **Spam.** `register_part` and `publish_recipe` are payable: the caller attaches NEAR for the bytes stored (the rest is refunded). Versions and hashes have size limits; names and part lists don't (SRS-1 §12), they just cost more storage. Run records and used quotes are created by `ft_on_transfer`, which can't carry NEAR, so their storage is paid from the contract's balance; a minimum protocol fee sized to cover it, or pruning settled runs, is next.

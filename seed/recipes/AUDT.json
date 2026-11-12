@@ -1,0 +1,106 @@
+{
+  "srs": "1.0",
+  "kind": "recipe",
+  "meta": {
+    "ticker": "AUDT",
+    "name": "Account security audit",
+    "creator": "sealedrecipes.testnet",
+    "description": "Read-only: who can move your assets (full-access keys), which app keys to remove, which tokens are scams, and what is at risk. Sealed: the rules and the AI policy stay private."
+  },
+  "form": [
+    {
+      "id": "account",
+      "label": "Account to audit",
+      "type": "near.account",
+      "required": true,
+      "placeholder": "alice.near"
+    }
+  ],
+  "listing": {
+    "price_per_run": "200000",
+    "reserve_bps": 2000,
+    "bond": "0",
+    "pricing": {
+      "price_floor": "150000",
+      "price_ceiling": "500000",
+      "target_runs": 2
+    }
+  },
+  "nodes": [
+    {
+      "id": "keys",
+      "part": "near.access-keys@1.0.0",
+      "inputs": {
+        "account": "form.account"
+      },
+      "params": {},
+      "ui": {
+        "x": 0,
+        "y": 40
+      }
+    },
+    {
+      "id": "risk",
+      "part": "rules.key-risk@1.0.0",
+      "inputs": {
+        "keys": "keys.keys"
+      },
+      "params": {
+        "blocklist": [
+          "near-gift-claim.near",
+          "ref-finance-airdrop.near"
+        ],
+        "trusted": [
+          "v2.ref-finance.near",
+          "social.near",
+          "app.burrow.finance"
+        ]
+      },
+      "ui": {
+        "x": 280,
+        "y": 40
+      }
+    },
+    {
+      "id": "scan",
+      "part": "near.wallet-scanner@1.0.0",
+      "inputs": {
+        "account": "form.account"
+      },
+      "params": {},
+      "ui": {
+        "x": 0,
+        "y": 220
+      }
+    },
+    {
+      "id": "shield",
+      "part": "ai.spam-shield@1.1.0",
+      "inputs": {
+        "holdings": "scan.holdings"
+      },
+      "params": {
+        "policy": "Flag SCAM tokens and explain the red flag in under 12 words. Answer JSON only."
+      },
+      "ui": {
+        "x": 280,
+        "y": 220
+      }
+    },
+    {
+      "id": "report",
+      "part": "report.audit@1.0.0",
+      "inputs": {
+        "keys": "risk.risky",
+        "holdings": "scan.holdings",
+        "flags": "shield.flags"
+      },
+      "params": {},
+      "ui": {
+        "x": 560,
+        "y": 130
+      }
+    }
+  ],
+  "output": "report.report"
+}

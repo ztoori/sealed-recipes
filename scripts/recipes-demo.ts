@@ -1,5 +1,6 @@
 /**
- * The four everyday-safety recipes end to end, against a running demo (`npm run test:recipes` starts one):
+ * The everyday-safety recipes end to end, against a running demo (`npm run test:recipes` starts one):
+ *   AUDT  account security audit: keys + tokens in one sealed report, read-only
  *   KEYS  revoke risky app keys (DeleteKey, confirmed by re-reading the key list)
  *   STAK  withdraw unstaked NEAR that finished unbonding (withdraw_all, confirmed per pool)
  *   CHEK  check a contract before signing (private AI verdict, verified), on a phishing lookalike and on a real app
@@ -20,6 +21,17 @@ const quoteOf = async (only: string, inputs: Record<string, unknown>) => {
   return { j, q };
 };
 const items = (r: any) => (r?.output?.items ?? []) as { label: string; detail: string; tag?: string }[];
+
+// AUDT (before KEYS, which revokes the buyer's risky app keys)
+{
+  const { j, q } = await quoteOf('AUDT', { account: BUYER });
+  say(`AUDT quote: ${q.details?.output?.title ?? 'report'}`);
+  const run = await payAndRun(j, q, BUYER);
+  const out = run.result?.output;
+  for (const x of items(run.result)) say(`  ${x.tag ?? ''} ${x.label}: ${x.detail}`);
+  for (const f of out?.fixes ?? []) say(`  fix: ${f.action} ${f.key ?? f.token ?? ''} (${f.why})`);
+  ok('AUDT audited keys and tokens in one sealed report, read-only, with the fixes the owner makes', run.final?.type === 'completed' && out?.counts?.revoke === 2 && Array.isArray(out?.fixes) && out.fixes.some((f: any) => f.action === 'delete app key') && !run.events.some((e: any) => e.type === 'approval_required'));
+}
 
 // KEYS
 {

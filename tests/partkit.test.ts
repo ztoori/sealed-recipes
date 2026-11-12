@@ -46,8 +46,8 @@ test('partkit: the source checks reject fetch, env access and non-durable approv
   assert.deepEqual(t, []);
 });
 
-test('partkit: all 10 seed recipes can be composed from parts: buyer form + parts added in order, every wire available', () => {
-  assert.equal(recipes.length, 10);
+test('partkit: all 11 seed recipes can be composed from parts: buyer form + parts added in order, every wire available', () => {
+  assert.equal(recipes.length, 11);
   for (const r of recipes) {
     // rebuild from a blank recipe with the seed's buyer form, adding each part with auto-wiring, then rewire any port
     // whose seed wiring differs, from the offered sources

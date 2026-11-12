@@ -164,6 +164,7 @@ for (let done = false; !done;) {
 await reader.cancel().catch(() => {});
 step(ok ? '✔ run settled on-chain' : '✘ run did not complete');
 if (result) console.log(JSON.stringify(result, null, 1).slice(0, 2000));
+await sleep(4000); // the track record is read from final blocks, a few seconds behind the settlement
 const r = await api<{ runs: string; revenue: string }>(`/api/chain/recipes/${RECIPE}`);
 console.log(`\n${RECIPE} on-chain track record: ${r.runs} run(s), revenue ${usd(r.revenue)}`);
 process.exit(ok ? 0 : 1);

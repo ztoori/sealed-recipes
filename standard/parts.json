@@ -1367,6 +1367,48 @@
         "max_model_calls": 0,
         "max_output_bytes": 32000
       }
+    },
+    {
+      "id": "report.audit@1.0.0",
+      "name": "Account Audit Report",
+      "category": "sink",
+      "author": "sealedrecipes.testnet",
+      "summary": "Combines an account's key risks and token flags into one security audit: severity, value at risk and the fixes the owner makes in their own wallet.",
+      "inputs": {
+        "keys": {
+          "type": "key.list"
+        },
+        "holdings": {
+          "type": "token.holdings"
+        },
+        "flags": {
+          "type": "token.flags"
+        }
+      },
+      "outputs": {
+        "report": {
+          "type": "report"
+        }
+      },
+      "params": {},
+      "capabilities": [],
+      "fee_per_call": "10000",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 1000,
+        "max_http_calls": 0,
+        "max_model_calls": 0,
+        "max_output_bytes": 16000
+      },
+      "implementation": "runner/src/parts/report-audit.ts"
     }
   ],
   "disclosure_rules": {
