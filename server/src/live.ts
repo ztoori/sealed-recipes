@@ -170,7 +170,7 @@ const runnerOnly: express.RequestHandler = (req, res, next) => { if (req.get('x-
 app.get('/api/mode', guard(async (_, res) => {
   const cfg = await chain.view<Config>('get_config');
   res.json({ mode: NETWORK, contract_id: CONTRACT_ID, payment_token: cfg.payment_token, runner_id: RUNNER_ID, runner_url: '/runner', relayer: chain.relayerId, rpc_url: RPC, faucet: !!faucet,
-    services: { contract: `${CONTRACT_ID} on ${NETWORK}`, data: 'FastNEAR / NEAR RPC (mainnet, read-only)', ai: 'NEAR AI Cloud', tee: 'local-dev runner (no hardware quote)' } });
+    services: { contract: `${CONTRACT_ID} on ${NETWORK}`, data: 'FastNEAR / NEAR RPC (mainnet, read-only)', ai: 'NEAR AI Cloud', tee: env.SRS_RUNNER_TEE ?? 'local-dev runner (no hardware quote)' } });
 }));
 app.get('/api/chain/config', guard(async (_, res) => { res.json({ ...(await chain.view<Config>('get_config')), contract_id: CONTRACT_ID, network: NETWORK }); }));
 app.get('/api/chain/recipes/:id', guard(async (req, res) => { const r = await chain.view<Recipe | null>('get_recipe', { recipe_id: String(req.params.id) }); r ? res.json(r) : res.status(404).json({ error: 'no recipe' }); }));

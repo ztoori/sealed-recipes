@@ -1,0 +1,10 @@
+# the runner image copies only runner/, core/src and standard/ (runner/Dockerfile); keep the build context small
+node_modules
+**/node_modules
+.data
+.git
+docs/media
+archive
+web/dist
+_to_delete
+contracts/**/target

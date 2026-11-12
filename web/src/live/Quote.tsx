@@ -31,7 +31,7 @@ export function Quote({ ticker, runId }: { ticker: string; runId?: string }) {
   const resume = runId ? savedRuns().find((r) => r.run_id === runId) ?? null : null;
   const [values, setValues] = useState<Record<string, string>>({});
   const [phase, setPhase] = useState<Phase>(resume ? { name: 'running' } : { name: 'form' });
-  const [checks, setChecks] = useState<{ ok: boolean; hardware: boolean; passed: number } | null>(null);
+  const [checks, setChecks] = useState<{ ok: boolean; hardware: boolean; tdx: boolean; passed: number } | null>(null);
   const [events, setEvents] = useState<Ev[]>([]);
   const job = useRef<{ sealed_job: SealedEnvelope; job_hash: string; reply: nacl.BoxKeyPair; buyer: string } | null>(null);
   const run = useRef<SavedRun | null>(resume);
@@ -72,7 +72,7 @@ export function Quote({ ticker, runId }: { ticker: string; runId?: string }) {
       const nonce = hex(nacl.randomBytes(32));
       const { attestation, onchain } = await api<any>(`/api/runner/attestation?nonce=${nonce}`);
       const v = verifyRunnerAttestation(attestation, { nonce, signing_pk: onchain.signing_pk, enc_pk_hex: onchain.enc_pk_hex, codehash: onchain.codehash });
-      setChecks({ ok: v.ok, hardware: v.hardware, passed: v.checks.filter((c) => c.status === 'pass').length });
+      setChecks({ ok: v.ok, hardware: v.hardware, tdx: attestation.tee === 'dstack-tdx' && !!attestation.quote, passed: v.checks.filter((c) => c.status === 'pass').length });
       if (!v.ok) throw new Error('the runner attestation did not verify: not sending your inputs');
       // 2. seal the inputs to the runner; the quote comes back sealed to a one-time key made here
       const inputs = Object.fromEntries(listing.form.map((f) => [f.id, values[f.id]?.trim()]));
@@ -176,7 +176,9 @@ export function Quote({ ticker, runId }: { ticker: string; runId?: string }) {
               {phase.name === 'done' || resume
                 ? <button className="btn lg" onClick={again}><Icon name="refresh" size={15} />Get another quote</button>
                 : <button id="get-quote-btn" className="btn lg" disabled={missing || bad.length > 0 || busy} onClick={() => { void getQuote(); }}>{phase.name === 'quoting' ? <><span className="spinner" />Sealing and quoting</> : phase.name === 'quoted' ? <><Icon name="refresh" size={15} />Quote again</> : <><Icon name="lock" size={15} />Seal and get a quote</>}</button>}
-              {checks && <div className="row wrap small" style={{ gap: 6 }}>{checks.ok ? <span className="pill ok"><Icon name="cpu" size={12} />runner verified · {checks.passed} checks</span> : <span className="pill bad">runner attestation failed</span>} {!checks.hardware && <span className="pill warn" title="The runner is the local-dev build: real keys and signatures, no hardware TEE quote yet">no hardware quote yet</span>}</div>}
+              {checks && <div className="row wrap small" style={{ gap: 6 }}>{checks.ok ? <span className="pill ok"><Icon name="cpu" size={12} />runner verified · {checks.passed} checks</span> : <span className="pill bad">runner attestation failed</span>} {!checks.hardware && (checks.tdx
+                ? <span className="pill ok" title="The runner sent an Intel TDX quote that carries its keys and your nonce. Intel's signature chain is checked by the operator (scripts/testnet/tee-identity.ts) before registration; this browser does not check it yet.">TDX quote</span>
+                : <span className="pill warn" title="The runner is the local-dev build: real keys and signatures, no hardware TEE quote yet">no hardware quote yet</span>)}</div>}
             </div>
           </div>
         </section>
