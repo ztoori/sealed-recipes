@@ -90,9 +90,9 @@ function GuestPanel({ mode, guest, setGuest, say }: { mode?: Mode; guest: Guest 
   const [busy, setBusy] = useState(false);
   const fund = async (g: Guest) => {
     setBusy(true);
-    try { await api('/api/faucet', { account_id: g.account }); say('Guest account funded with test tokens'); refresh(); }
-    catch (e) { say((e as Error).message, true); }
-    finally { setBusy(false); }
+    try { await api('/api/faucet', { account_id: g.account }); say('Guest account funded with test tokens'); }
+    catch (e) { const m = (e as Error).message; say(m.startsWith('<') ? 'The faucet could not be reached; try again in a minute' : m, true); }
+    finally { setBusy(false); refresh(); }
   };
   const create = async () => { const g = newGuest(); setGuest(g); await fund(g); };
   return (

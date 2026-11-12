@@ -13,7 +13,7 @@
  * Env: PORT (8081)  CONTRACT_ID  RUNNER_ID  RUNNER_URL  RUNNER_TOKEN (required)  NEAR_RPC_URL  NEAR_RELAYER_KEY_FILE
  *      NEAR_RELAYER_ACCOUNT  SRS_STORE_DIR (persistent)  NEAR_NETWORK (testnet)
  *      NEAR_FAUCET_KEY_FILE  NEAR_FAUCET_ACCOUNT (optional: enables POST /api/faucet for guest accounts)
- *      FAUCET_NEAR (0.05)  FAUCET_TUSDC (5)  FAUCET_PER_IP_DAY (3)  FAUCET_PER_DAY (50)
+ *      FAUCET_NEAR (0.2)  FAUCET_TUSDC (5)  FAUCET_PER_IP_DAY (3)  FAUCET_PER_DAY (30)
  */
 import express from 'express';
 import { createHash, randomBytes } from 'node:crypto';
@@ -44,10 +44,10 @@ const explorer = (tx: string) => `https://testnet.nearblocks.io/txns/${tx}`;
 const chain = new NearChain(RPC, CONTRACT_ID, env.NEAR_RELAYER_KEY_FILE, env.NEAR_RELAYER_ACCOUNT);
 const faucet = env.NEAR_FAUCET_KEY_FILE && existsSync(env.NEAR_FAUCET_KEY_FILE) ? new NearChain(RPC, CONTRACT_ID, env.NEAR_FAUCET_KEY_FILE, env.NEAR_FAUCET_ACCOUNT) : undefined;
 const yoctoOf = (near: string) => { const [i, f = ''] = near.split('.'); return BigInt(i || '0') * 10n ** 24n + BigInt((f + '0'.repeat(24)).slice(0, 24)); };
-const FAUCET_NEAR = yoctoOf(env.FAUCET_NEAR ?? '0.05');               // gas money for a few payments
+const FAUCET_NEAR = yoctoOf(env.FAUCET_NEAR ?? '0.2');                // a 150 Tgas payment needs ~0.151 NEAR available up front (most is refunded)
 const FAUCET_TUSDC = BigInt(Math.round(Number(env.FAUCET_TUSDC ?? '5') * 1e6)); // tUSDC has 6 decimals
 const FAUCET_PER_IP_DAY = Number(env.FAUCET_PER_IP_DAY ?? 3);
-const FAUCET_PER_DAY = Number(env.FAUCET_PER_DAY ?? 50);
+const FAUCET_PER_DAY = Number(env.FAUCET_PER_DAY ?? 30);
 const TUSDC_STORAGE = 12_500_000_000_000_000_000n;                    // 0.0125 NEAR registers a new tUSDC holder
 const backend = new TeeRunnerBackend(RUNNER, RUNNER_ID, RUNNER_TOKEN);
 const catalog = loadCatalog(ROOT);
@@ -157,7 +157,8 @@ app.set('trust proxy', 'loopback');
 app.use(express.json({ limit: '2mb' }));
 class BadRequest extends Error {}
 const guard = (fn: (req: express.Request, res: express.Response) => unknown) => async (req: express.Request, res: express.Response) => {
-  try { await fn(req, res); } catch (e) { res.status(e instanceof BadRequest ? 400 : 502).json({ error: (e as Error).message }); }
+  // 500, not 502: Cloudflare replaces an origin's 502 with its own error page, hiding the message from the visitor
+  try { await fn(req, res); } catch (e) { if (!(e instanceof BadRequest)) console.error(`[live] ${req.method} ${req.path}: ${(e as Error).message}`); res.status(e instanceof BadRequest ? 400 : 500).json({ error: (e as Error).message }); }
 };
 const runnerOnly: express.RequestHandler = (req, res, next) => { if (req.get('x-runner-token') !== RUNNER_TOKEN) { res.status(401).json({ error: 'runner token required' }); return; } next(); };
 
