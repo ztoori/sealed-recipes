@@ -535,6 +535,22 @@ impl Contract {
         self.runners.insert(id, runner);
     }
 
+    /// Records a new audited code release of a runner (owner only). The runner keeps its keys, so recipes sealed to it
+    /// stay readable and assigned; clients compare the code hash a runner attests with this value, and the event
+    /// makes every change public.
+    pub fn set_runner_codehash(&mut self, id: AccountId, codehash: String) {
+        self.assert_owner();
+        let r = self
+            .runners
+            .get_mut(&id)
+            .unwrap_or_else(|| env::panic_str("unknown runner"));
+        let previous = std::mem::replace(&mut r.codehash, codehash);
+        emit(
+            "runner_codehash_updated",
+            json!({ "id": id, "previous": previous, "codehash": r.codehash }),
+        );
+    }
+
     pub fn set_runner_active(&mut self, id: AccountId, active: bool) {
         self.assert_owner();
         let r = self

@@ -11,7 +11,9 @@ export const query = <T>(ctx: PartCtx, params: Record<string, unknown>) => rpc<T
 /** view call; returns undefined when the method does not exist (MethodNotFound) */
 export async function view<T>(ctx: PartCtx, contract: string, method: string, args: Record<string, unknown> = {}): Promise<T | undefined> {
   try {
-    const r = await query<{ result: number[] }>(ctx, { request_type: 'call_function', account_id: contract, method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString('base64') });
+    const r = await query<{ result?: number[]; error?: string }>(ctx, { request_type: 'call_function', account_id: contract, method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString('base64') });
+    // public RPC nodes report a failed view inside the result (`result.error`, e.g. MethodResolveError(MethodNotFound))
+    if (!r.result) throw new Error(r.error ?? 'view call returned no result');
     return JSON.parse(new TextDecoder().decode(Uint8Array.from(r.result))) as T;
   } catch (e) { if (/METHOD_NOT_FOUND|MethodNotFound/.test((e as Error).message)) return undefined; throw e; }
 }

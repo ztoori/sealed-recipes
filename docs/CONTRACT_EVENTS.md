@@ -7,6 +7,7 @@ Source of truth: `contracts/sealed-recipes/src/lib.rs`. The TS mirror (`core/src
 | Event | When | `data[0]` fields |
 |---|---|---|
 | `runner_added` | `add_runner` | the full `Runner`: `id: AccountId, signing_pk: string, enc_pk_hex: string, codehash: string, fee_per_run: U128, active: bool` |
+| `runner_codehash_updated` | `set_runner_codehash` (owner records a new audited runner release; keys unchanged) | `id: AccountId, previous: string, codehash: string` |
 | `part_registered` | `register_part` | the full `Part`: `id: string, version: string, author: AccountId, fee_per_call: U128, manifest_hash: string, active: bool` |
 | `recipe_published` | `publish_recipe` | the full `Recipe`: `id: string, name: string, creator: AccountId, sealed_hash: string, runner_id: AccountId, parts: string[], price_per_run: U128, reserve_bps: u16, runs: u64 (0), revenue: U128 ("0"), listed: bool (true), failed: u64 (0), aborted: u64 (0), promised_total: U128 ("0"), delivered_total: U128 ("0"), compensated_total: U128 ("0"), bond_available: U128 ("0"), bond_locked: U128 ("0"), settle_mode: "final" \| "checkpoint", version: u32 (1), pending_sealed_hash: string (""), update_effective_ns: U64 ("0"), price_floor: U128, price_ceiling: U128, target_runs: u32, period_start_ns: U64 (publish time), period_runs: u64 (0)` |
 | `recipe_update_scheduled` | `update_sealed` (new version announced; takes effect after `update_delay_ns`) | `recipe_id: string, sealed_hash: string, version: u32 (the number it will get), effective_ns: U64` |

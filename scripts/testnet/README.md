@@ -8,6 +8,7 @@ whose `~/.near-credentials/testnet/` holds the keys of the accounts in `config.s
 | `./00-tools.sh` | installs Rust + wasm target, cargo-near, near-cli-rs (for this user) | yes, skips what exists |
 | `./10-build.sh` | builds `contracts/tusdc` and `contracts/sealed-recipes` to wasm | yes |
 | `./20-deploy.sh` | deploys and initializes tUSDC (minter: the faucet account) and the marketplace contract; registers tUSDC storage for the market, treasury, owner and runner | no: `new` runs once |
+| `./25-upgrade.sh` | upgrades the marketplace contract's code in place (state kept) after `./10-build.sh` | when the contract gains methods |
 | `./30-parts.sh` | registers every catalog part (fee + manifest hash) | yes, skips registered parts |
 | `./40-runner.sh` | registers the live runner (its public keys, read as the service user, and the audited code hash) | when the runner's keys or code change |
 | `node --import tsx scripts/testnet/50-run.ts --recipe CHEK --target wrap.near` | a real paid run: publish (if needed), mint tUSDC, quote, pay, run, settle; prints explorer links | yes |

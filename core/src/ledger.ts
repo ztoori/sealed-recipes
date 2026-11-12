@@ -139,6 +139,13 @@ export class LocalLedger {
     this.runners.set(a.id, r);
     this.emit('runner_added', { ...r });
   }
+  /** a new audited code release of a runner: keys unchanged, so recipes sealed to it stay readable */
+  set_runner_codehash(a: { id: string; codehash: string }) {
+    assert(this.caller() === this.owner, 'only owner');
+    const r = this.runners.get(a.id); assert(r, 'unknown runner');
+    const previous = r.codehash; r.codehash = a.codehash;
+    this.emit('runner_codehash_updated', { id: a.id, previous, codehash: a.codehash });
+  }
   set_runner_active(a: { id: string; active: boolean }) {
     assert(this.caller() === this.owner, 'only owner');
     const r = this.runners.get(a.id); assert(r, 'no runner'); r.active = a.active;

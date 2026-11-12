@@ -1434,6 +1434,27 @@ fn checkpoint_needs_active_runner() {
     checkpoint(&mut c, "r1", "CLNP", 1, &[], 10);
 }
 
+#[test]
+fn owner_records_a_new_runner_release() {
+    let mut c = setup();
+    ctx("owner.testnet", 0);
+    c.set_runner_codehash(acct("runner.testnet"), "beef".into());
+    let r = c.get_runner(acct("runner.testnet")).unwrap();
+    assert_eq!(r.codehash, "beef");
+    assert!(r.active);
+    // keys unchanged: reports and checkpoints still verify, recipes sealed to it stay assigned
+    pay_run(&mut c, "buyer.testnet", "r1", 750_000, 0);
+    checkpoint(&mut c, "r1", "CLNP", 1, &[], 10);
+}
+
+#[test]
+#[should_panic(expected = "owner only")]
+fn only_owner_records_a_runner_release() {
+    let mut c = setup();
+    ctx("creator.testnet", 0);
+    c.set_runner_codehash(acct("runner.testnet"), "beef".into());
+}
+
 // ------------------------------------------------------------- v5: reserve into the guarantee deposit
 
 /// CLNP plus "RSRV": the same five parts, final mode, reserve_bps 2500.
