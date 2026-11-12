@@ -11,7 +11,7 @@ whose `~/.near-credentials/testnet/` holds the keys of the accounts in `config.s
 | `./25-upgrade.sh` | upgrades the marketplace contract's code in place (state kept) after `./10-build.sh` | when the contract gains methods |
 | `./30-parts.sh` | registers every catalog part (fee + manifest hash) | yes, skips registered parts |
 | `./40-runner.sh` | registers the live runner (its public keys, read as the service user, and the audited code hash) | when the runner's keys or code change |
-| `node --import tsx scripts/testnet/50-run.ts --recipe CHEK --target wrap.near` | a real paid run: publish (if needed), mint tUSDC, quote, pay, run, settle; prints explorer links | yes |
+| `node --import tsx scripts/testnet/50-run.ts --recipe CHEK --target wrap.near` (`--ticker X` publishes the seed recipe under another ticker: a published recipe's parts are fixed, so a new part version needs a new listing) | a real paid run: publish (if needed), mint tUSDC, quote, pay, run, settle; prints explorer links | yes |
 
 Costs come from the accounts themselves: contract storage (about 2 NEAR for tUSDC, 4-5 NEAR for the marketplace),
 about 0.01 NEAR per part registration, and gas. Top up from the testnet faucet page if a step says the balance is too low.

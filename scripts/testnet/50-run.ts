@@ -26,7 +26,9 @@ const BUYER = process.env.BUYER ?? ROOT_ACCOUNT;
 const FAUCET = process.env.FAUCET ?? `faucet.${ROOT_ACCOUNT}`;
 const RPC = process.env.NEAR_RPC_URL ?? 'https://rpc.testnet.fastnear.com';
 process.env.SRS_URL ??= 'http://127.0.0.1:8081';
-const RECIPE = arg('recipe', 'CHEK');
+const SEED = arg('recipe', 'CHEK');
+/** publish a seed recipe under another ticker (a published recipe's parts are fixed; a new part version needs a new listing) */
+const RECIPE = arg('ticker', SEED);
 const TARGET = arg('target', 'wrap.near');
 const explorer = (tx: string) => `https://testnet.nearblocks.io/txns/${tx}`;
 const usd = (u: string | bigint) => `${(Number(u) / 1e6).toFixed(4)} tUSDC`;
@@ -71,8 +73,9 @@ const handOver = async (saved: { listing: unknown; sealed: unknown; creator_copy
   }
 };
 const fresh = () => {
-  const recipe = JSON.parse(readFileSync(join(root, 'seed/recipes', `${RECIPE}.json`), 'utf8'));
+  const recipe = JSON.parse(readFileSync(join(root, 'seed/recipes', `${SEED}.json`), 'utf8'));
   recipe.meta.creator = CREATOR;
+  recipe.meta.ticker = RECIPE;
   const v = validateRecipe(recipe, catalog);
   if (!v.ok) throw new Error('invalid recipe: ' + JSON.stringify(v.diagnostics));
   const sealed = seal(recipe, runner.onchain.enc_pk_hex, 'recipe');
@@ -125,7 +128,7 @@ if (bal < 2_000_000n) {
 
 // 3. quote
 step(`3. sealed quote from ${RECIPE} on target ${TARGET} (a public mainnet account)`);
-const form = JSON.parse(readFileSync(join(root, 'seed/recipes', `${RECIPE}.json`), 'utf8')).form as { id: string; type: string }[];
+const form = JSON.parse(readFileSync(join(root, 'seed/recipes', `${SEED}.json`), 'utf8')).form as { id: string; type: string }[];
 const inputs = Object.fromEntries(form.filter((f) => f.type === 'near.account').map((f) => [f.id, TARGET]));
 const job = await requestQuotes([RECIPE], inputs, runner.onchain, BUYER);
 const q = job.quotes[0];

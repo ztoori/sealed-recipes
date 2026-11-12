@@ -26,7 +26,7 @@ test('admission: every catalog part passes the security scan, and tiers follow w
     assert.deepEqual(securityScan(src(m), m).diagnostics.filter((d) => d.severity === 'error'), [], m.id);
     tiers[partTier(m).tier]++;
   }
-  assert.deepEqual(tiers, { open: 15, reviewed: 3, signing: 6 });
+  assert.deepEqual(tiers, { open: 16, reviewed: 3, signing: 6 });
   assert.equal(partTier(part('keys.revoke@1.0.0')).tier, 'signing', 'asks the buyer to sign');
   assert.equal(partTier(part('ai.spam-shield@1.1.0')).tier, 'reviewed', 'calls a model');
   assert.equal(partTier(part('filter.dust@1.0.0')).tier, 'open', 'pure');

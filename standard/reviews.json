@@ -1,7 +1,7 @@
 {
   "srs": "1.0",
   "kind": "release-log",
-  "release": 2,
+  "release": 3,
   "note": "Release 1 (genesis): the parts shipped by the owner before the review process existed. Later releases append records with their automated checks and signed approvals.",
   "records": [
     {
@@ -267,6 +267,19 @@
       "basis": "automated",
       "submission": "5c233900b5e2",
       "checks_hash": "da1ce2cb14a4c7832843673256551cbf6b2802bfdcf40e026262c7c5f98d61be",
+      "approvals": [],
+      "released_at": "2026-11-12"
+    },
+    {
+      "part": "report.audit@1.1.0",
+      "tier": "open",
+      "author": "sealedrecipes.testnet",
+      "implementation": "runner/src/parts/report-audit-v1-1-0.ts",
+      "manifest_hash": "d359400bf69c85895a8fd9cd8b9d188f0a8500f6d130886d16b12867b4273548",
+      "source_sha256": "0d8c4f4aa96647567c18b5f6b0df32b00660b89c160e834ec518159587e754ba",
+      "basis": "automated",
+      "submission": "110267c8cee3",
+      "checks_hash": "3151262af44a262f2b79a185939c12ce858e8a95dd045cf2feb928f4698bd110",
       "approvals": [],
       "released_at": "2026-11-12"
     }

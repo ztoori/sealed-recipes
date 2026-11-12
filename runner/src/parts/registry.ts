@@ -57,5 +57,6 @@ export const HANDLERS: Record<string, PartHandler> = {
 /** open-tier parts: implementation file (relative to the repo root) and exported handler name */
 export const SANDBOXED: Record<string, { file: string; exportName: string }> = {
   'report.audit@1.0.0': { file: 'runner/src/parts/report-audit.ts', exportName: 'auditReport' },
+  'report.audit@1.1.0': { file: 'runner/src/parts/report-audit-v1-1-0.ts', exportName: 'auditReport' },
   // <release:sandboxed>
 };

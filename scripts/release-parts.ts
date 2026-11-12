@@ -36,7 +36,11 @@ const release = log.release + 1;
 const today = new Date().toISOString().slice(0, 10);
 
 for (const s of approved) {
-  const file = `runner/src/parts/${s.part.split('@')[0].replace(/[^a-z0-9]+/g, '-')}.ts`;
+  // a new version of a released part gets its own file: earlier versions stay released and runnable, because published
+  // recipes name the exact part versions they use
+  const base = `runner/src/parts/${s.part.split('@')[0].replace(/[^a-z0-9]+/g, '-')}`;
+  const taken = catalog.parts.some((p: { id: string; implementation?: string }) => p.id !== s.part && p.implementation === `${base}.ts`);
+  const file = taken ? `${base}-v${s.part.split('@')[1].replace(/[^0-9]+/g, '-')}.ts` : `${base}.ts`;
   const name = exportNameOf(s.source);
   if (!name) throw new Error(`${s.part}: no exported PartHandler`);
   const manifest = { ...s.manifest, implementation: file };

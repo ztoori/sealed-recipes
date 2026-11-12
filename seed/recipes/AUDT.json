@@ -89,8 +89,9 @@
     },
     {
       "id": "report",
-      "part": "report.audit@1.0.0",
+      "part": "report.audit@1.1.0",
       "inputs": {
+        "account": "form.account",
         "keys": "risk.risky",
         "holdings": "scan.holdings",
         "flags": "shield.flags"
