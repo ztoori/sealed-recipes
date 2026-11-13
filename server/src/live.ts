@@ -53,7 +53,6 @@ const FAUCET_NEAR = yoctoOf(env.FAUCET_NEAR ?? '0.2');                // a 150 T
 const FAUCET_TUSDC = BigInt(Math.round(Number(env.FAUCET_TUSDC ?? '5') * 1e6)); // tUSDC has 6 decimals
 const FAUCET_PER_IP_DAY = Number(env.FAUCET_PER_IP_DAY ?? 3);
 const FAUCET_PER_DAY = Number(env.FAUCET_PER_DAY ?? 30);
-const TUSDC_STORAGE = 12_500_000_000_000_000_000n;                    // 0.0125 NEAR registers a new tUSDC holder
 const backend = new TeeRunnerBackend(RUNNER, RUNNER_ID, RUNNER_TOKEN);
 const catalog = loadCatalog(ROOT);
 const store = new FileBlobStore(need('SRS_STORE_DIR'));
@@ -371,12 +370,16 @@ interface FaucetLog { funded: Record<string, string>; minted?: Record<string, st
 const faucetLog = store.readMeta<FaucetLog>('faucet', { funded: {}, ip: {}, day: '', total: 0 });
 faucetLog.minted ??= {};
 /** the tUSDC half of funding a guest; retried, and finished on a later request if it still failed */
+/** what registering a new tUSDC holder costs (NEP-145 storage_balance_bounds.min, about 0.00125 NEAR), read from the
+ *  token: mint keeps whatever is attached, so the faucet attaches exactly this */
+let storageMin: Promise<bigint> | undefined;
+const tusdcStorage = (token: string) => (storageMin ??= chain.view<{ min: string }>('storage_balance_bounds', {}, token).then((b) => BigInt(b.min), (e) => { storageMin = undefined; throw e; }));
 async function mintFor(account_id: string, token: string) {
   let last = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt) await new Promise((ok) => setTimeout(ok, 1500 * attempt));
     try {
-      const m = await faucet!.relay('mint', { account_id, amount: FAUCET_TUSDC.toString() }, 30, TUSDC_STORAGE, token);
+      const m = await faucet!.relay('mint', { account_id, amount: FAUCET_TUSDC.toString() }, 30, await tusdcStorage(token), token);
       if (m.ok) { faucetLog.minted![account_id] = new Date().toISOString().slice(0, 10); store.writeMeta('faucet', faucetLog); return m; }
       last = m.error ?? 'mint failed';
     } catch (e) { last = (e as Error).message; }

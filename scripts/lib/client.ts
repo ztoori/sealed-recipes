@@ -26,8 +26,9 @@ if (process.env.SRS_COOKIE) {
 export async function api<T = any>(path: string, body?: unknown): Promise<T> {
   const r = await fetch(BASE + path, body === undefined ? undefined : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const t = await r.text();
-  if (!r.ok) throw new Error(`${path} → ${r.status} ${t}`);
-  return JSON.parse(t) as T;
+  if (!r.ok) throw new Error(`${path} → ${r.status} ${t.slice(0, 300)}`);
+  // a proxy or bot check in front of the marketplace answers with a web page, not JSON: say so plainly
+  try { return JSON.parse(t) as T; } catch { throw new Error(`${BASE}${path} → ${r.status} ${r.headers.get('content-type') ?? ''}, not JSON (a proxy or bot check in front of the marketplace?): ${t.slice(0, 160).replace(/\s+/g, ' ')}`); }
 }
 
 export async function verifiedRunner() {

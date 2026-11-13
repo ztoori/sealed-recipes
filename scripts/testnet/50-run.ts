@@ -122,7 +122,7 @@ else if (!onchain) {
 step(`2. tUSDC for the buyer ${BUYER}`);
 const bal = BigInt(await provider.callFunction({ contractId: mode.payment_token, method: 'ft_balance_of', args: { account_id: BUYER } }) as string);
 if (bal < 2_000_000n) {
-  const tx = await call(accountOf(FAUCET), mode.payment_token, 'mint', { account_id: BUYER, amount: '5000000' }, 12_500_000_000_000_000_000n);
+  const tx = await call(accountOf(FAUCET), mode.payment_token, 'mint', { account_id: BUYER, amount: '5000000' }, BigInt((await provider.callFunction({ contractId: mode.payment_token, method: 'storage_balance_bounds', args: {} }) as { min: string }).min));
   console.log(`   faucet minted 5 tUSDC: ${explorer(tx)}`);
 } else console.log(`   balance ${usd(bal)}`);
 
