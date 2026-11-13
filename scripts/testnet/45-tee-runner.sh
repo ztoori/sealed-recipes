@@ -7,7 +7,7 @@
 source "$(dirname "$0")/config.sh"
 : "${TEE_RUNNER_ID:=tee.$ROOT_ACCOUNT}"
 : "${RUNNER_FEE:=30000}"   # 0.03 tUSDC per run to the runner
-: "${RUNNER_URL:?set RUNNER_URL to the CVM's public URL for port 8787}"
+: "${RUNNER_URL:?set RUNNER_URL to the public URL of the CVM for port 8787}"
 id=$(cd "$REPO" && RUNNER_URL="$RUNNER_URL" node --import tsx scripts/testnet/tee-identity.ts)
 echo "TEE runner identity: $id"
 if near_view "$MARKET" get_runner "{\"runner_id\":\"$TEE_RUNNER_ID\"}" 2>/dev/null | grep -q signing_pk; then
