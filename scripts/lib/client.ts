@@ -5,7 +5,8 @@
 import { randomBytes } from 'node:crypto';
 import nacl from 'tweetnacl';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { seal, publicListing, validateRecipe, verifyRunnerAttestation, creatorKeyFromSignature, creatorKeyMessage, demoWalletSign, type Catalog, type Recipe, type RunnerAttestation } from '../../core/src/index.js';
+import bs58 from 'bs58';
+import { seal, publicListing, validateRecipe, verifyRunnerAttestation, creatorKeyFromSignature, creatorKeyMessage, demoWalletSign, base64, hashObject, type Catalog, type Recipe, type RunnerAttestation } from '../../core/src/index.js';
 
 export const BASE = process.env.SRS_URL ?? 'http://127.0.0.1:8080';
 /** SRS_COOKIE: a demo-gateway session cookie (e.g. `srs_sb=…`), so the CLI story can run inside one visitor's
@@ -121,4 +122,22 @@ export async function payAndRun(job: { sealed_job: unknown; reply: { secretKey: 
   }
   await reader.cancel().catch(() => {});
   return { run_id: r.run_id, final, events, result: events.find((e) => e.type === 'result')?.data };
+}
+
+/**
+ * What a buyer can check after a run, on its own: the runner's report (the `signed` event) is signed by the runner key
+ * registered on-chain, is for this contract, run and recipe with outcome ok, and its output_hash commits to the sealed
+ * result. The salt in that hash reaches only the buyer (SRS-1 §6), so only the buyer can make this last check.
+ * Report message: srs-run-v3|contract|run|recipe|outcome|output_hash|delivered|parts (core/src/ledger.ts).
+ */
+export function checkSignedReport(a: { signed?: { message: string; signature: string }; result: { salt: string; output: unknown }; contractId: string; runId: string; recipeId: string; signingPk: string }) {
+  const [version, contractId, runId, recipeId, outcome, outputHash, delivered = '0'] = a.signed?.message.split('|') ?? [];
+  let sigOk = false;
+  try { sigOk = !!a.signed && nacl.sign.detached.verify(new TextEncoder().encode(a.signed.message), base64.dec(a.signed.signature), bs58.decode(a.signingPk.replace(/^ed25519:/, ''))); } catch { sigOk = false; }
+  const checks: [string, boolean][] = [
+    ['report signed by the runner key registered on-chain', sigOk],
+    ['report is for this contract, run and recipe, outcome ok', version === 'srs-run-v3' && contractId === a.contractId && runId === a.runId && recipeId === a.recipeId && outcome === 'ok'],
+    ['sealed result matches the signed output_hash', !!outputHash && outputHash === hashObject({ run_id: a.runId, salt: a.result.salt, output: a.result.output })],
+  ];
+  return { checks, delivered, ok: checks.every(([, ok]) => ok) };
 }
