@@ -13,6 +13,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import { tokenMatches } from './token.js';
 import { LocalLedger, toJson, LedgerError, type SignedQuote } from '../../core/src/ledger.js';
 import { hashObject, sha256Hex } from '../../core/src/canonical.js';
 import { sealedHash, type SealedEnvelope } from '../../core/src/seal.js';
@@ -267,7 +268,7 @@ app.post('/api/chain/checkpoint_run', guard((req, res) => {
 /** Durable runs: the runner stores each checkpoint here before moving on (ciphertext only the runner can open,
  *  plus its signature). Runner-authenticated; the latest checkpoint is replayed on resume. */
 app.post('/api/internal/checkpoints', guard((req, res) => {
-  if (RUNNER_TOKEN && req.get('x-runner-token') !== RUNNER_TOKEN) { res.status(401).json({ error: 'runner token required' }); return; }
+  if (RUNNER_TOKEN && !tokenMatches(req.get('x-runner-token'), RUNNER_TOKEN)) { res.status(401).json({ error: 'runner token required' }); return; }
   const c = req.body as CheckpointRecord;
   const r = runs.get(c.run_id); if (!r) throw new LedgerError('unknown run');
   if (c.envelope?.purpose !== 'state' || sealedHash(c.envelope) !== c.state_hash) throw new LedgerError('bad checkpoint');

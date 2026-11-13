@@ -18,6 +18,7 @@
  */
 import express from 'express';
 import { createHash, randomBytes } from 'node:crypto';
+import { tokenMatches } from './token.js';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolve, dirname } from 'node:path';
@@ -166,7 +167,7 @@ const guard = (fn: (req: express.Request, res: express.Response) => unknown) => 
   // 500, not 502: Cloudflare replaces an origin's 502 with its own error page, hiding the message from the visitor
   try { await fn(req, res); } catch (e) { if (!(e instanceof BadRequest)) console.error(`[live] ${req.method} ${req.path}: ${(e as Error).message}`); res.status(e instanceof BadRequest ? 400 : 500).json({ error: (e as Error).message }); }
 };
-const runnerOnly: express.RequestHandler = (req, res, next) => { if (req.get('x-runner-token') !== RUNNER_TOKEN) { res.status(401).json({ error: 'runner token required' }); return; } next(); };
+const runnerOnly: express.RequestHandler = (req, res, next) => { if (!tokenMatches(req.get('x-runner-token'), RUNNER_TOKEN)) { res.status(401).json({ error: 'runner token required' }); return; } next(); };
 
 app.get('/api/mode', guard(async (_, res) => {
   const cfg = await chain.view<Config>('get_config');
