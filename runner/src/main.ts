@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { utf8ToBytes } from '@noble/hashes/utils.js';
 import { open, seal, sealedHash, base64, type SealedEnvelope } from '../../core/src/seal.js';
 import { runReportMessage, quoteMessage, checkpointMessage, type Outcome } from '../../core/src/ledger.js';
-import { jobHash, type JobPayload } from '../../core/src/quotes.js';
+import { jobHash, bindingProblem, type JobPayload } from '../../core/src/quotes.js';
 import { measure, fetchPrices, creditedDelivered } from './metrics.js';
 import { hashObject, sha256Hex } from '../../core/src/canonical.js';
 import { reportData, type RunnerAttestation } from '../../core/src/attestation.js';
@@ -173,7 +173,7 @@ async function runJob(job: Job, ctx: Ctx, sealedRecipe: SealedEnvelope, sealedIn
   const ZERO = '0'.repeat(64);
   try {
     // the run (what was paid for) is the source of truth; the recipe is taken from it, not from the request
-    const run = await chainView<{ status: string; inputs_hash: string; recipe_id: string; buyer: string; sealed_hash?: string; job_hash?: string; promised?: string; checkpoint_seq?: number }>(ctx, `runs/${job.runId}`);
+    const run = await chainView<{ status: string; inputs_hash: string; recipe_id: string; buyer: string; sealed_hash?: string; job_hash?: string; promised?: string; checkpoint_seq?: number; parts_billed?: string[] }>(ctx, `runs/${job.runId}`);
     if (run.recipe_id !== job.recipeId) throw new Error(`run ${job.runId} paid for ${run.recipe_id}, not ${job.recipeId}`);
     const recipeOnChain = await chainView<{ sealed_hash: string; runner_id: string; parts: string[]; settle_mode?: string }>(ctx, `recipes/${run.recipe_id}`);
     if (run.status !== 'Pending') throw new Error(`run is ${run.status}, not Pending (was it paid?)`);
@@ -200,6 +200,9 @@ async function runJob(job: Job, ctx: Ctx, sealedRecipe: SealedEnvelope, sealedIn
     if (READ_ONLY && signsAnything(v.partsUsed)) throw new Error(READ_ONLY_REFUSAL);
     const opened = open<JobPayload>(sealedInputs, keys.box.secretKey);
     if (!/^[0-9a-f]{64}$/.test(opened?.reply_to ?? '')) throw new Error('sealed inputs must include a reply_to key');
+    // the inputs run only for the buyer who paid and a recipe that buyer chose (core/src/quotes.ts, JobBinding)
+    const bound = bindingProblem(opened, { contract: CONTRACT_ID, buyer: run.buyer, recipe: run.recipe_id });
+    if (bound) throw new Error(bound);
     // a quoted run must execute exactly the job that was quoted (and that the bond backs)
     if (run.job_hash && jobHash(opened.inputs, String(opened.salt ?? '')) !== run.job_hash) throw new Error('inputs do not match the quoted job');
     let inputs: Record<string, unknown> | undefined = opened.inputs;
@@ -222,6 +225,21 @@ async function runJob(job: Job, ctx: Ctx, sealedRecipe: SealedEnvelope, sealedIn
       emit(job, 'resuming', { local_seq: localSeq, completed_parts: st.point.index, mid_part: st.point.node !== undefined ? `s${st.point.index + 1}` : null, onchain_seq: onchainSeq });
     }
     const settleMode = recipeOnChain.settle_mode ?? 'final';
+    /**
+     * Checkpoint settlement bills parts on-chain while the run goes, which is public. With bill "declared" (the
+     * default) what is billed must not show which parts ran, or in which order, or which branch the buyer's inputs
+     * took: after k of the recipe's n steps (run or skipped), the first round(k·m/n) of its m declared parts, sorted,
+     * are billed. That depends only on progress, and the final report bills all of them anyway. With bill "executed"
+     * the parts that ran are what is paid for, so they are billed as they finish (the creator chose to reveal that).
+     */
+    const declaredSorted = v.partsUsed.slice().sort();
+    let billedCount = run.parts_billed?.length ?? 0;
+    const toBill = (point: ResumePoint, partsDone: string[]): string[] => {
+      if (settleMode !== 'checkpoint') return [];
+      if (v.bill === 'executed') return partsDone;
+      const target = Math.min(declaredSorted.length, Math.round((point.index * declaredSorted.length) / Math.max(1, v.order.length)));
+      return target > billedCount ? declaredSorted.slice(billedCount, target) : [];
+    };
     const checkpoint = async (point: ResumePoint, partsDone: string[]) => {
       localSeq += 1;
       const state: DurableState = { v: 1, run_id: job.runId, recipe_id: job.recipeId, local_seq: localSeq, fresh: String(fresh), point };
@@ -232,14 +250,14 @@ async function runJob(job: Job, ctx: Ctx, sealedRecipe: SealedEnvelope, sealedIn
       const st = await fetch(`${ctx.market}/api/internal/checkpoints`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-runner-token': TOKEN }, redirect: 'error', body: JSON.stringify({ run_id: job.runId, local_seq: localSeq, state_hash, envelope, signature } satisfies CheckpointRecord) });
       if (!st.ok) throw new Error('checkpoint store failed: ' + (await st.text()));
       emit(job, 'checkpoint', { local_seq: localSeq, state_hash, completed_parts: point.index, mid_part: point.node !== undefined ? `s${point.index + 1}` : null });
-      const bill = settleMode === 'checkpoint' ? partsDone : [];
+      const bill = toBill(point, partsDone);
       if (bill.length || Date.now() - lastOnchain >= HEARTBEAT_MS) {
         const seq = onchainSeq + 1;
         const sig = base64.enc(nacl.sign.detached(utf8ToBytes(checkpointMessage(CONTRACT_ID, job.runId, job.recipeId, seq, state_hash, bill)), keys.sign.secretKey));
         const r = await fetch(`${ctx.chain}/checkpoint_run`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-runner-token': TOKEN }, redirect: 'error', body: JSON.stringify({ run_id: job.runId, seq, state_hash, parts_done: bill, signature: sig }) });
         const out = await r.json();
         if (!r.ok) throw new Error('checkpoint_run rejected: ' + JSON.stringify(out));
-        onchainSeq = seq; lastOnchain = Date.now();
+        onchainSeq = seq; lastOnchain = Date.now(); billedCount += bill.length;
         emit(job, 'checkpoint_onchain', { seq, billed_parts: bill, ...out });
       }
     };
@@ -314,7 +332,10 @@ app.use((_, res, next) => { res.setHeader('access-control-allow-origin', '*'); r
 /** checked in constant time (core/src/token.ts); open only for the token-less local-dev case allowed at startup */
 const auth: express.RequestHandler = (req, res, next) => { if (TOKEN && !tokenMatches(req.get('x-runner-token'), TOKEN)) { res.status(401).json({ error: 'runner token required' }); return; } next(); };
 
-app.get('/health', (_, res) => { res.json({ ok: true, runner_id: RUNNER_ID, tee: keys.tee, outbound: outbound.stats() }); });
+// public: liveness only. Per-host outbound counters show when and which services runs call, which is activity a
+// stranger should not be able to watch, so they are for the marketplace only (token required).
+app.get('/health', (_, res) => { res.json({ ok: true, runner_id: RUNNER_ID, tee: keys.tee }); });
+app.get('/health/outbound', auth, (_, res) => { res.json({ outbound: outbound.stats() }); });
 app.get('/attestation', async (req, res) => {
   const nonce = String(req.query.nonce ?? '');
   if (!/^[0-9a-f]{16,128}$/.test(nonce)) { res.status(400).json({ error: 'nonce must be 16-128 hex chars' }); return; }
@@ -370,6 +391,9 @@ app.post('/quotes', auth, async (req, res) => {
     if (READ_ONLY && signsAnything(v.partsUsed)) return fail(READ_ONLY_REFUSAL);
     const p = open<JobPayload>(sealed_job, keys.box.secretKey);
     if (!/^[0-9a-f]{64}$/.test(p?.reply_to ?? '')) return fail('sealed job must include a reply_to key');
+    // refused before any dry run: a leaked envelope cannot be quoted against a recipe its buyer did not choose
+    const bound = bindingProblem(p, { contract: CONTRACT_ID, buyer, recipe: recipe_id });
+    if (bound) return fail(bound);
     if (jobHash(p.inputs, p.salt) !== job_hash) return fail('job_hash does not match the sealed job');
     reply = p.reply_to;
     const dry = await execute(`quote-${recipe_id}`, recipe, p.inputs, { catalog, rewrites: ctx.rewrites, mode: 'quote', emit: () => {}, secrets: { nearAiKey: env.NEAR_AI_API_KEY, oneClickJwt: env.ONECLICK_JWT, oneClickApiKey: env.ONECLICK_API_KEY }, requestApproval: async () => ({ approved: false, txHashes: [] }) });
@@ -415,8 +439,22 @@ if (env.SRS_ALLOW_CRASH === '1' && env.SRS_PUBLIC !== '1') app.post('/__crash', 
 
 app.use((err: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (err instanceof TenantError) { res.status(400).json({ error: err.message }); return; }
-  next(err);
+  // never Express's default handler: it prints the stack (and the message, which may hold request data) to stderr,
+  // and a CVM's container logs can be public
+  if (res.headersSent) { next(err); return; }
+  res.status(err instanceof SyntaxError ? 400 : 500).json({ error: err instanceof SyntaxError ? 'malformed request' : 'internal error' });
 });
+/**
+ * Nothing about a job reaches the logs. A TEE runner's container logs may be readable outside the TEE (Phala's
+ * public_logs), so an uncaught error is reported as its type only: its message or stack could carry buyer data.
+ */
+const quiet = env.TEE_MODE === 'dstack' || env.SRS_QUIET_ERRORS === '1';
+const lastResort = (kind: string) => (e: unknown) => {
+  console.error(`[runner] ${kind}: ${quiet ? (e as Error)?.name ?? 'error' : (e as Error)?.stack ?? String(e)}`);
+  process.exit(1); // as Node does by default: restart clean (the container restarts it; paid runs resume)
+};
+process.on('uncaughtException', lastResort('uncaughtException'));
+process.on('unhandledRejection', lastResort('unhandledRejection'));
 
 app.listen(PORT, HOST, () => {
   console.log(`[runner] ${RUNNER_ID} (${keys.tee}) on http://${HOST}:${PORT}`);

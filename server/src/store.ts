@@ -10,7 +10,7 @@
  * Backends: `FileBlobStore` (local disk, atomic writes) is what the demo uses. The same interface fits IPFS
  * (CID = content hash), S3/R2 (key = hash) or Arweave; only `put`/`get` change.
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { sealedHash, type SealedEnvelope } from '../../core/src/seal.js';
@@ -55,6 +55,10 @@ export class FileBlobStore implements BlobStore {
     return existsSync(p) ? (JSON.parse(readFileSync(p, 'utf8')) as T) : fallback;
   }
   writeMeta(name: string, value: unknown) { this.writeAtomic(join(this.dir, 'meta', `${name}.json`), JSON.stringify(value)); }
+  /** forget a metadata document (retention: run tickets are not kept forever) */
+  deleteMeta(name: string) { if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new Error('bad meta name'); rmSync(join(this.dir, 'meta', `${name}.json`), { force: true }); }
+  /** forget a blob nothing needs any more (a finished run's checkpoints); never for recipe versions */
+  delete(hash: string) { rmSync(this.path(hash), { force: true }); }
   count() { return readdirSync(join(this.dir, 'blobs')).filter((f) => f.endsWith('.json')).length; }
 }
 

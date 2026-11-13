@@ -18,7 +18,7 @@
  *      FAUCET_NEAR (0.2)  FAUCET_TUSDC (5)  FAUCET_PER_IP_DAY (3)  FAUCET_PER_DAY (30)
  */
 import express from 'express';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { tokenMatches } from './token.js';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -58,6 +58,11 @@ function runnerUrl(raw: string): string {
 const RUNNER = runnerUrl(need('RUNNER_URL'));
 const RUNNER_TOKEN = need('RUNNER_TOKEN');
 const RPC = env.NEAR_RPC_URL ?? 'https://rpc.testnet.fastnear.com';
+/**
+ * The RPC address browsers are told to use (/api/mode). Never NEAR_RPC_URL as such when it may carry a provider key
+ * (a path, query or credentials): then SRS_PUBLIC_RPC_URL, or the public FastNEAR endpoint.
+ */
+const PUBLIC_RPC = env.SRS_PUBLIC_RPC_URL ?? (() => { try { const u = new URL(RPC); return u.username || u.password || u.search || u.pathname.replace(/\/+$/, '') ? 'https://rpc.testnet.fastnear.com' : RPC; } catch { return 'https://rpc.testnet.fastnear.com'; } })();
 const PAY_TIMEOUT_MS = 5 * 60_000;
 /**
  * Listings this marketplace no longer offers (still on-chain: the contract has no delisting). A listing assigned to
@@ -94,7 +99,7 @@ const saveListings = () => store.writeMeta('listings', listings);
 
 type Ev = { seq: number; at: number; source: 'market' | 'chain' | 'runner'; type: string; data: Record<string, unknown> };
 interface CheckpointRecord { run_id: string; local_seq: number; state_hash: string; envelope: SealedEnvelope; signature: string }
-interface RunCtx { run_id: string; token: string; recipe_id: string; buyer: string; sealed_inputs: SealedEnvelope; msg: string; price: string; checkpoint?: CheckpointRecord; started: boolean; done: boolean; events: Ev[]; created: number }
+interface RunCtx { run_id: string; token: string; recipe_id: string; buyer: string; sealed_inputs: SealedEnvelope; msg: string; price: string; checkpoint?: CheckpointRecord; started: boolean; done: boolean; events: Ev[]; created: number; ended?: number; blobs?: string[] }
 const runs = new Map<string, RunCtx>();
 const listeners = new Map<string, Set<(e: Ev) => void>>();
 const saveRun = (r: RunCtx) => store.writeMeta(`run-${r.run_id}`, { ...r, events: r.events.slice(-200) });
@@ -106,6 +111,28 @@ const saveRun = (r: RunCtx) => store.writeMeta(`run-${r.run_id}`, { ...r, events
     if (m) { const r = store.readMeta<RunCtx | null>(`run-${m[1]}`, null); if (r) runs.set(r.run_id, r); }
   }
 }
+/**
+ * Retention. A run ticket (run token, buyer account, sealed inputs, sealed checkpoints, the event log) is kept only as
+ * long as the run may need it: to resume a paid run and to show the buyer its sealed result. Then it is deleted, so
+ * no archive builds up that a later leak of a runner or reply key could open, and old run tokens stop working.
+ *  - a finished run: SRS_RUN_RETENTION_H after it ended (default 336 h, two weeks: the hackathon judging window)
+ *  - a ticket that was never paid: 24 h
+ *  - a run that started and never finished: 14 days (the buyer reclaims on-chain long before)
+ */
+const RUN_KEEP_MS = Number(env.SRS_RUN_RETENTION_H ?? 336) * 3_600_000;
+const UNPAID_KEEP_MS = 24 * 3_600_000, STUCK_KEEP_MS = 14 * 24 * 3_600_000;
+function pruneRuns(now = Date.now()) {
+  for (const r of [...runs.values()]) {
+    const expired = r.done ? now - (r.ended ?? r.created) > RUN_KEEP_MS : !r.started ? now - r.created > UNPAID_KEEP_MS : now - r.created > STUCK_KEEP_MS;
+    if (!expired) continue;
+    for (const h of r.blobs ?? []) store.delete(h);
+    store.deleteMeta(`run-${r.run_id}`);
+    runs.delete(r.run_id); listeners.delete(r.run_id);
+  }
+}
+pruneRuns();
+setInterval(pruneRuns, 10 * 60_000).unref();
+const finishRun = (r: RunCtx) => { r.done = true; r.ended = Date.now(); saveRun(r); };
 const pushEv = (r: RunCtx, source: Ev['source'], type: string, data: Record<string, unknown>) => {
   const e: Ev = { seq: r.events.length, at: Date.now(), source, type, data };
   r.events.push(e); for (const l of listeners.get(r.run_id) ?? []) l(e);
@@ -149,7 +176,7 @@ async function followRunner(r: RunCtx) {
             if (seq < next) continue; // already relayed before the reconnect
             next = seq + 1; drops = 0;
             pushEv(r, 'runner', e.type, e.data);
-            if (e.type === 'completed' || e.type === 'failed') { r.done = true; saveRun(r); await reader.cancel(); return; }
+            if (e.type === 'completed' || e.type === 'failed') { finishRun(r); await reader.cancel(); return; }
           }
         }
       }
@@ -197,14 +224,15 @@ async function watchPaymentInner(r: RunCtx, txHash?: string) {
       r.started = true; saveRun(r);
       const res = await backend.start({ run_id: r.run_id, recipe_id: r.recipe_id, sealed_recipe: await sealedFor(r), sealed_inputs: r.sealed_inputs });
       // unreachable: the run is paid and Pending, so keep it alive; followRunner resumes it once the runner answers
-      if (!res.ok && !res.unreachable) { pushEv(r, 'runner', 'failed', { error: res.error ?? 'runner refused the run' }); return; }
+      if (!res.ok && !res.unreachable) { pushEv(r, 'runner', 'failed', { error: res.error ?? 'runner refused the run' }); finishRun(r); return; }
       void followRunner(r);
       return;
     }
-    if (run && run.status !== 'Pending') { pushEv(r, 'chain', 'run_not_pending', { status: run.status }); return; }
+    if (run && run.status !== 'Pending') { pushEv(r, 'chain', 'run_not_pending', { status: run.status }); finishRun(r); return; }
     await sleep(2000);
   }
   pushEv(r, 'market', 'payment_timeout', { waited_s: PAY_TIMEOUT_MS / 1000 });
+  finishRun(r);
 }
 
 // ---- HTTP ----
@@ -216,8 +244,22 @@ app.use(express.json({ limit: '2mb' }));
 class BadRequest extends Error {}
 const guard = (fn: (req: express.Request, res: express.Response) => unknown) => async (req: express.Request, res: express.Response) => {
   // 500, not 502: Cloudflare replaces an origin's 502 with its own error page, hiding the message from the visitor
-  try { await fn(req, res); } catch (e) { if (!(e instanceof BadRequest)) console.error(`[live] ${req.method} ${req.path}: ${(e as Error).message}`); res.status(e instanceof BadRequest ? 400 : 500).json({ error: (e as Error).message }); }
+  try { await fn(req, res); } catch (e) {
+    if (e instanceof BadRequest) { res.status(400).json({ error: (e as Error).message }); return; }
+    // an upstream's error text (RPC, relayer, runner) may reveal internals: the visitor gets a generic message and a
+    // reference; the detail goes to the journal only (URLs reduced to their host and long keys cut even there)
+    const ref = randomBytes(4).toString('hex');
+    console.error(`[live] ${ref} ${req.method} ${req.path.replace(/\/r-[0-9a-f]+/g, '/r-…')}: ${redact((e as Error).message)}`);
+    res.status(500).json({ error: `something went wrong on our side; please try again (ref ${ref})` });
+  }
 };
+/** for the journal: one line, at most 500 characters, URLs reduced to their host, long hex/base58/base64 runs (keys, tokens) cut */
+function redact(m: string): string {
+  return String(m ?? 'error').split('\n')[0]
+    .replace(/\bhttps?:\/\/[^\s"'<>]+/g, (u) => { try { return new URL(u).host; } catch { return 'a URL'; } })
+    .replace(/[A-Za-z0-9+/_=-]{32,}/g, '…')
+    .slice(0, 500);
+}
 const runnerOnly: express.RequestHandler = (req, res, next) => { if (!tokenMatches(req.get('x-runner-token'), RUNNER_TOKEN)) { res.status(401).json({ error: 'runner token required' }); return; } next(); };
 
 /** what the runner is, from its own attestation when SRS_RUNNER_TEE does not say (cached; unknown while unreachable) */
@@ -233,7 +275,7 @@ async function runnerTee(): Promise<string> {
 }
 app.get('/api/mode', guard(async (_, res) => {
   const cfg = await chain.view<Config>('get_config');
-  res.json({ mode: NETWORK, contract_id: CONTRACT_ID, payment_token: cfg.payment_token, runner_id: RUNNER_ID, runner_url: '/runner', relayer: chain.relayerId, rpc_url: RPC, faucet: !!faucet,
+  res.json({ mode: NETWORK, contract_id: CONTRACT_ID, payment_token: cfg.payment_token, runner_id: RUNNER_ID, runner_url: '/runner', relayer: chain.relayerId, rpc_url: PUBLIC_RPC, faucet: !!faucet,
     services: { contract: `${CONTRACT_ID} on ${NETWORK}`, data: 'FastNEAR / NEAR RPC (mainnet, read-only)', ai: 'NEAR AI Cloud', tee: await runnerTee() }, retired: [...RETIRED] });
 }));
 app.get('/api/chain/config', guard(async (_, res) => { res.json({ ...(await chain.view<Config>('get_config')), contract_id: CONTRACT_ID, network: NETWORK }); }));
@@ -258,7 +300,7 @@ app.post('/api/internal/checkpoints', runnerOnly, guard(async (req, res) => {
   const c = req.body as CheckpointRecord;
   const r = runs.get(c.run_id); if (!r) throw new BadRequest('unknown run');
   if (c.envelope?.purpose !== 'state' || sealedHash(c.envelope) !== c.state_hash) throw new BadRequest('bad checkpoint');
-  if (!r.checkpoint || c.local_seq > r.checkpoint.local_seq) { store.put(c.envelope); r.checkpoint = c; saveRun(r); }
+  if (!r.checkpoint || c.local_seq > r.checkpoint.local_seq) { (r.blobs ??= []).push(store.put(c.envelope)); r.checkpoint = c; saveRun(r); }
   res.json({ ok: true, stored: r.checkpoint.local_seq });
 }));
 
@@ -392,7 +434,8 @@ app.post('/api/runs/prepare', guard(async (req, res) => {
 }));
 const runFor = (req: express.Request) => {
   const r = runs.get(String(req.params.id));
-  if (!r || String(req.query.token ?? req.get('x-run-token') ?? '') !== r.token) throw new BadRequest('unknown run or missing run token');
+  // header only: a token in the query string ends up in proxy and edge logs
+  if (!r || !tokenMatches(req.get('x-run-token'), r.token)) throw new BadRequest('unknown run or missing run token');
   return r;
 };
 /** the buyer says it paid (optionally with the tx hash): watch the chain and start the run */
@@ -456,7 +499,14 @@ async function mintFor(account_id: string, token: string) {
   }
   throw new Error(`created the account but could not mint tUSDC: ${last}`);
 }
-const ipKey = (ip: string) => createHash('sha256').update('srs-faucet:' + ip).digest('hex').slice(0, 16);
+/**
+ * Per-visitor faucet counters are keyed by an HMAC of the IP under a key that lives only in memory: a plain hash
+ * with a known salt could be reversed over the 2^32 IPv4 addresses from the file on disk. The counters are per day
+ * anyway, so the ones saved under an earlier key (a restart) are dropped.
+ */
+const IP_KEY = randomBytes(32);
+faucetLog.ip = {};
+const ipKey = (ip: string) => createHmac('sha256', IP_KEY).update(ip).digest('hex').slice(0, 16);
 let faucetBusy = Promise.resolve();
 
 app.get('/api/account/:id/balance', guard(async (req, res) => {
@@ -507,7 +557,20 @@ app.post('/api/faucet', guard(async (req, res) => {
 // ---- the live web page (npm run build → web/dist/live.html); everything else under / is the built assets ----
 const WEB = join(ROOT, 'web/dist');
 if (existsSync(join(WEB, 'live.html'))) {
-  app.get(['/', '/index.html'], (_, res) => { res.set('cache-control', 'no-cache'); res.sendFile(join(WEB, 'live.html')); });
+  /**
+   * The page holds the guest account's key and each run's reply key (localStorage), so it loads script from this
+   * origin only and talks to this origin and the public RPC only. 'wasm-unsafe-eval' lets the in-browser Intel DCAP
+   * check run WebAssembly; it does not allow eval of JavaScript. Inline style attributes stay allowed (React styles).
+   */
+  const rpcOrigin = (() => { try { return new URL(PUBLIC_RPC).origin; } catch { return ''; } })();
+  const CSP = [
+    "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data:", "font-src 'self' data:",
+    `connect-src 'self' ${rpcOrigin}`.trim(), "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'",
+  ].join('; ');
+  app.get(['/', '/index.html'], (_, res) => {
+    res.set({ 'cache-control': 'no-cache', 'content-security-policy': CSP, 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' });
+    res.sendFile(join(WEB, 'live.html'));
+  });
   app.use('/assets', express.static(join(WEB, 'assets'), { immutable: true, maxAge: '30d', index: false }));
 } else console.warn('[live] web/dist/live.html is missing: run npm run build to serve the page');
 

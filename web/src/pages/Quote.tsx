@@ -4,7 +4,7 @@ import { seal, open, sealedHash, type SealedEnvelope } from '../../../core/src/s
 import { jobHash, openQuote } from '../../../core/src/quotes';
 import { measuresValue } from '../../../core/src/srs';
 import { verifyRunnerAttestation } from '../../../core/src/attestation';
-import { api, ASSET_LABEL, money, PAY_ASSETS, runnerAttestation, short, txRef, usd, usePoll, withBase } from '../api';
+import { api, eventStream, ASSET_LABEL, money, PAY_ASSETS, runnerAttestation, short, txRef, usd, usePoll } from '../api';
 import { useApp, useStoryOnce } from '../App';
 import { SettlementFlow } from '../components/Sankey';
 import { Output, timeline, type Ev } from '../components/RunViews';
@@ -74,9 +74,10 @@ export function Quote({ ticker }: { ticker: string }) {
       reply.current = nacl.box.keyPair();
       const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
       const job_hash = jobHash(inputs, salt);
-      const sealed = seal({ inputs, salt, reply_to: hex(reply.current.publicKey) }, onchain.enc_pk_hex, 'inputs');
-      jobRef.current = { sealed, job_hash };
       const { contract_id } = await api('/api/chain/config');
+      // bound to this contract, the acting buyer and this recipe: the runner refuses the envelope for anything else
+      const sealed = seal({ inputs, salt, reply_to: hex(reply.current.publicKey), bind: { contract: contract_id, buyer: acting, recipes: [ticker] } }, onchain.enc_pk_hex, 'inputs');
+      jobRef.current = { sealed, job_hash };
       const mp = maxUnits();
       const { quote: q } = await api('/api/quotes', { recipe_id: ticker, sealed_job: sealed, job_hash, buyer: acting, ...(mp ? { max_price: mp } : {}) });
       // a failed dry run's detail may contain these inputs, so the runner sealed it to this browser's reply key
@@ -105,7 +106,7 @@ export function Quote({ ticker }: { ticker: string }) {
   const pay = async () => {
     if (phase.name !== 'ready') return;
     dispatch({ t: 'pay' });
-    try { await api(`/api/runs/${phase.pay.run_id}/pay?token=${phase.pay.run_token}`, {}); dispatch({ t: 'paid' }); }
+    try { await api(`/api/runs/${phase.pay.run_id}/pay`, {}, undefined, { 'x-run-token': phase.pay.run_token }); dispatch({ t: 'paid' }); }
     catch (e) { toast((e as Error).message, true); dispatch({ t: 'pay_failed' }); }
   };
 
@@ -114,15 +115,14 @@ export function Quote({ ticker }: { ticker: string }) {
   const runToken = 'pay' in phase ? phase.pay.run_token : '';
   useEffect(() => {
     if (!runId || (phase.name !== 'running' && phase.name !== 'finished')) return;
-    const es = new EventSource(withBase(`/api/runs/${runId}/events?token=${runToken}`));
-    es.onmessage = (msg) => {
-      let e = JSON.parse(msg.data) as Ev;
+    // the run token goes in a header, never in the URL
+    return eventStream(`/api/runs/${runId}/events`, { 'x-run-token': runToken }, (data) => {
+      let e = JSON.parse(data) as Ev;
       if (e.type === 'sealed' && reply.current) {
         try { const inner = open<{ type: string; data: any }>(e.data.envelope as SealedEnvelope, reply.current.secretKey); e = { ...e, type: inner.type, data: inner.data, sealed: true }; } catch { return; }
       }
       setEvents((x) => (x.some((y) => y.seq === e.seq) ? x : [...x, e]));
-    };
-    return () => es.close();
+    }, () => {});
   }, [runId, phase.name === 'running' || phase.name === 'finished']);
   // reveal events one by one so a human can follow the run (presentation only; the run itself is not slowed)
   useEffect(() => {
@@ -148,7 +148,7 @@ export function Quote({ ticker }: { ticker: string }) {
   const approve = async (ok: boolean) => {
     if (!runId || approving) return;
     setApproving(true);
-    try { await api(`/api/runs/${runId}/approve?token=${runToken}`, { approved: ok, transactions: ok ? approval?.transactions : [], ...(ok && approval?.sign_message ? { sign_message: approval.sign_message } : {}) }); }
+    try { await api(`/api/runs/${runId}/approve`, { approved: ok, transactions: ok ? approval?.transactions : [], ...(ok && approval?.sign_message ? { sign_message: approval.sign_message } : {}) }, undefined, { 'x-run-token': runToken }); }
     catch (e) { toast((e as Error).message, true); } finally { setApproving(false); }
   };
 

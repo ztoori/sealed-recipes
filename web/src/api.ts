@@ -14,12 +14,40 @@ export const setScopedBase = (b: string | null) => { scoped = b; };
 export const ApiBase = createContext<string | null>(null);
 export const withBase = (p: string, base?: string | null) => (p.startsWith('/') ? (base ?? scoped ?? BASE) + p : p);
 
-export async function api<T = any>(path: string, body?: unknown, base?: string | null): Promise<T> {
-  const r = await fetch(withBase(path, base), body === undefined ? undefined : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+export async function api<T = any>(path: string, body?: unknown, base?: string | null, headers: Record<string, string> = {}): Promise<T> {
+  const r = await fetch(withBase(path, base), body === undefined ? { headers } : { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
   const t = await r.text();
   let j: any; try { j = JSON.parse(t); } catch { j = { error: t }; }
   if (!r.ok) throw new Error(j.error ?? `${r.status}`);
   return j as T;
+}
+
+/**
+ * A server-sent event stream read with fetch, so a secret (a run token) travels in a header rather than in the URL,
+ * where proxies and edge logs would keep it. Reconnects while open (the server replays the run's events; callers
+ * drop repeats by seq). Returns a function that closes the stream.
+ */
+export function eventStream(path: string, headers: Record<string, string>, onData: (data: string) => void, onGone: () => void): () => void {
+  const ac = new AbortController();
+  let closed = false;
+  (async () => {
+    for (let attempt = 0; !closed; attempt++) {
+      try {
+        const r = await fetch(withBase(path), { headers: { accept: 'text/event-stream', ...headers }, signal: ac.signal });
+        if (r.status === 404 || r.status === 401) { closed = true; onGone(); return; }
+        if (!r.ok || !r.body) throw new Error(String(r.status));
+        attempt = 0;
+        const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
+        for (;;) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true });
+          for (let i; (i = buf.indexOf('\n\n')) >= 0;) { const chunk = buf.slice(0, i); buf = buf.slice(i + 2); if (chunk.startsWith('data: ')) onData(chunk.slice(6)); }
+        }
+      } catch { if (closed) return; }
+      await new Promise((ok) => setTimeout(ok, Math.min(10_000, 1000 * (attempt + 1))));
+    }
+  })();
+  return () => { closed = true; ac.abort(); };
 }
 
 export function usePoll<T>(path: string | null, ms = 1500, deps: unknown[] = []): [T | undefined, () => void] {

@@ -21,4 +21,8 @@ const v = verifyRunnerAttestation(a, { nonce, codehash: audited, dcapVerified: u
 for (const c of v.checks) console.error(`${c.status.padEnd(4)}  ${c.label}`);
 console.error(`Intel DCAP: TCB status ${dcap.status}; compose_hash ${a.compose_hash}`);
 if (!v.hardware) { console.error('not registering: the attestation is not hardware-verified with the audited code hash'); process.exit(1); }
+// the CVM's container logs must not be public: anything the runner ever prints (a stack trace included) would be
+// world-readable. Phala Cloud → the CVM → settings: turn "Public logs" off, then update the CVM (same app, same keys).
+const appCompose = (() => { try { return JSON.parse((a as { app_compose?: string }).app_compose ?? '{}') as { public_logs?: boolean }; } catch { return {}; } })();
+if (appCompose.public_logs !== false) { console.error(`not registering: the CVM's app-compose has public_logs ${String(appCompose.public_logs)}; turn public logs off in Phala Cloud and update the CVM`); process.exit(1); }
 console.log(JSON.stringify({ signing_pk: a.signing_pk, enc_pk_hex: a.enc_pk_hex, codehash: a.codehash, compose_hash: a.compose_hash }));

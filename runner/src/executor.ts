@@ -26,17 +26,39 @@ export function parseRewrites(spec = ''): Map<string, string> {
   return new Map(spec.split(',').filter(Boolean).map((kv) => { const [h, ...rest] = kv.split('='); return [h.trim(), rest.join('=').trim()]; }));
 }
 
-/** fetch limited to the part's declared `net:<host>` capabilities. */
+/**
+ * fetch limited to the part's declared `net:<host>` capabilities. Redirects are followed here, one hop at a time, so
+ * every hop is checked against the same list: a redirect from an allowed host cannot carry the request (its body, or
+ * its credentials) anywhere else. Credentials are dropped on a hop to another host, and a 303 (or a 301/302 after a
+ * POST) continues as a GET without the body, as browsers do.
+ */
 export function guardedFetch(partId: string, capabilities: string[], rewrites: Map<string, string>) {
   const allowed = new Set(capabilities.filter((c) => c.startsWith('net:')).map((c) => c.slice(4)));
   return async (url: string, init?: RequestInit) => {
-    const u = new URL(url);
-    if (!allowed.has(u.host)) throw new Error(`capability violation: ${partId} may not reach ${u.host} (declared: ${[...allowed].join(', ') || 'none'})`);
-    const base = rewrites.get(u.host);
-    const target = base ? base.replace(/\/$/, '') + u.pathname + u.search : url;
+    let u = new URL(url);
+    let req: RequestInit = { ...init };
     const timeout = AbortSignal.timeout(20_000);
-    // third-party services are rate-limited, cached and retried safely (core/src/outbound.ts); local mocks are not
-    return outboundFetch(target, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
+    const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
+    for (let hop = 0; ; hop++) {
+      if (!allowed.has(u.host)) throw new Error(`capability violation: ${partId} may not reach ${u.host} (declared: ${[...allowed].join(', ') || 'none'})`);
+      const base = rewrites.get(u.host);
+      const target = base ? base.replace(/\/$/, '') + u.pathname + u.search : u.href;
+      // third-party services are rate-limited, cached and retried safely (core/src/outbound.ts); local mocks are not
+      const res = await outboundFetch(target, { ...req, redirect: 'manual', signal });
+      const location = res.headers.get('location');
+      if (![301, 302, 303, 307, 308].includes(res.status) || !location) return res;
+      if (hop >= 4) throw new Error(`${partId}: too many redirects from ${u.host}`);
+      await res.body?.cancel().catch(() => {});
+      const next = new URL(location, u); // relative to the address the part asked for, not the local rewrite
+      const method = (req.method ?? 'GET').toUpperCase();
+      if (res.status === 303 || ((res.status === 301 || res.status === 302) && method === 'POST')) req = { ...req, method: 'GET', body: undefined };
+      if (next.host !== u.host) {
+        const h = new Headers(req.headers);
+        for (const k of ['authorization', 'x-api-key', 'cookie', 'proxy-authorization']) h.delete(k);
+        req = { ...req, headers: h };
+      }
+      u = next;
+    }
   };
 }
 

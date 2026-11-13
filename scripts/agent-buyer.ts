@@ -100,7 +100,7 @@ if (LIVE) await buyLive(pick); else await buyDemo(pick);
 /** the server's event stream for a run, sealed events opened with the one-time reply key; stops at a final event */
 async function follow(runId: string, token: string, onEvent: (e: any) => Promise<void> | void) {
   const FINAL = new Set(['completed', 'failed', 'payment_failed', 'run_not_pending', 'payment_timeout']);
-  const res = await fetch(`${BASE}/api/runs/${runId}/events?token=${token}`);
+  const res = await fetch(`${BASE}/api/runs/${runId}/events`, { headers: { 'x-run-token': token } });
   if (!res.ok || !res.body) throw new Error(`events for ${runId}: ${res.status}`);
   const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
   for (let done = false; !done;) {
@@ -121,14 +121,14 @@ async function follow(runId: string, token: string, onEvent: (e: any) => Promise
 /** demo: pay through the 1Click mock, approve deposits within the approval cap, compare delivery with the promise */
 async function buyDemo(q: any) {
   const r = await api<{ run_id: string; run_token: string }>('/api/runs/quote', { recipe_id: q.listing.ticker, buyer: me.id, pay_asset: 'nep141:wrap.near', refund_to: me.id, sealed_inputs: job.sealed_job, signed_quote: signedQuote(q) });
-  await api(`/api/runs/${r.run_id}/pay?token=${r.run_token}`, {});
+  await api(`/api/runs/${r.run_id}/pay`, {}, { 'x-run-token': r.run_token });
   let result: any; let settled: any;
   await follow(r.run_id, r.run_token, async (e) => {
     if (e.type === 'approval_required') {
       const total = e.data.summary.reduce((s: number, x: { usd: number }) => s + x.usd, 0);
       const ok = total <= (policy.maxApprovalUsd ?? 0);
       say(`wallet request: ${e.data.transactions.length} transfers worth $${total.toFixed(2)} → ${ok ? 'approve' : 'reject (over my limit)'}`);
-      await api(`/api/runs/${r.run_id}/approve?token=${r.run_token}`, { approved: ok, transactions: ok ? e.data.transactions : [] });
+      await api(`/api/runs/${r.run_id}/approve`, { approved: ok, transactions: ok ? e.data.transactions : [] }, { 'x-run-token': r.run_token });
     }
     if (e.type === 'result') result = e.data;
     if (e.type === 'srs_settlement') settled = e.data;
@@ -156,7 +156,7 @@ async function buyLive(q: any) {
   if (failure) { say(`payment failed: ${explorer(payTx)} ${JSON.stringify(failure.Failure)}`); process.exit(1); }
   say(`paid ${usd(priceOf(q))} tUSDC with ft_transfer_call: ${explorer(payTx)}`);
   say(`run ${ticket.run_id} (token saved in .data/agent-runs.json)`);
-  await api(`/api/runs/${ticket.run_id}/paid?token=${ticket.run_token}`, { tx_hash: payTx });
+  await api(`/api/runs/${ticket.run_id}/paid`, { tx_hash: payTx }, { 'x-run-token': ticket.run_token });
 
   let result: any; let signed: { message: string; signature: string } | undefined; let completed: any; let last = '';
   await follow(ticket.run_id, ticket.run_token, (e) => {
@@ -170,7 +170,7 @@ async function buyLive(q: any) {
     say(`  ${String(e.source).padEnd(6)} ${e.type}${link ? '  ' + link : ''}${e.data?.error ? '  ' + e.data.error : ''}`);
   });
 
-  if (!completed?.ok || !result?.ok) { say(`run did not complete${result?.error ? ': ' + result.error : ''}; a failed run is refunded on-chain. Resume: POST ${BASE}/api/runs/${ticket.run_id}/resume?token=…`); process.exit(1); }
+  if (!completed?.ok || !result?.ok) { say(`run did not complete${result?.error ? ': ' + result.error : ''}; a failed run is refunded on-chain. Resume: POST ${BASE}/api/runs/${ticket.run_id}/resume with header x-run-token (token in .data/agent-runs.json)`); process.exit(1); }
 
   // the check: the runner signed (contract, run, recipe, outcome, output_hash, delivered, parts) with its on-chain key,
   // and the contract settled on that report; the salt came only to this agent, so only it can tie the output to the hash

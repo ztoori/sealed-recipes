@@ -12,7 +12,23 @@ import { utf8ToBytes } from '@noble/hashes/utils.js';
 import { quoteMessage, type QuoteFields, type SignedQuote } from './ledger.js';
 import { base64, open, type SealedEnvelope } from './seal.js';
 
-export interface JobPayload { inputs: Record<string, unknown>; salt: string; reply_to: string }
+/**
+ * Who may use a sealed job, sealed with it: the contract, the buyer who pays, and the recipes the buyer asked about.
+ * The runner refuses the job for anything else, so an envelope that leaks (through the marketplace, a log, a replay)
+ * cannot be run or quoted against a recipe someone else wrote, or paid for by another account.
+ */
+export interface JobBinding { contract: string; buyer: string; recipes: string[] }
+export interface JobPayload { inputs: Record<string, unknown>; salt: string; reply_to: string; bind?: JobBinding }
+
+/** why a sealed job may not be used for this contract, buyer and recipe (undefined: it may) */
+export function bindingProblem(p: Pick<JobPayload, 'bind'> | undefined, ctx: { contract: string; buyer: string; recipe: string }): string | undefined {
+  const b = p?.bind;
+  if (!b || typeof b.contract !== 'string' || typeof b.buyer !== 'string' || !Array.isArray(b.recipes)) return 'sealed inputs are not bound to a buyer and recipes (update the client)';
+  if (b.contract !== ctx.contract) return 'sealed inputs are bound to a different contract';
+  if (b.buyer !== ctx.buyer) return 'sealed inputs are bound to a different buyer';
+  if (!b.recipes.includes(ctx.recipe)) return 'sealed inputs are not bound to this recipe';
+  return undefined;
+}
 
 export function jobHash(inputs: Record<string, unknown>, salt: string): string {
   return hashObject({ inputs, salt });

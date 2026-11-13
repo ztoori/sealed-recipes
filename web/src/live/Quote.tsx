@@ -10,7 +10,7 @@ import nacl from 'tweetnacl';
 import { seal, open, sealedHash, type SealedEnvelope } from '../../../core/src/seal';
 import { jobHash, openQuote } from '../../../core/src/quotes';
 import { verifyRunnerAttestation } from '../../../core/src/attestation';
-import { api, short, usePoll, withBase } from '../api';
+import { api, eventStream, short, usePoll } from '../api';
 import { Output } from '../components/RunViews';
 import { Icon } from '../icons';
 import { Empty, Head, Seal, Tip } from '../ui';
@@ -50,18 +50,19 @@ export function Quote({ ticker, runId }: { ticker: string; runId?: string }) {
   useEffect(() => {
     if (phase.name !== 'running' || !run.current) return;
     const r = run.current; const sk = fromHex(r.reply_sk);
-    const es = new EventSource(withBase(`/api/runs/${r.run_id}/events?token=${r.token}`));
     const seen = new Set<number>();
-    es.onmessage = (m) => {
-      let e = JSON.parse(m.data) as Ev;
+    // the run token goes in a header, never in the URL (proxy and edge logs keep URLs)
+    let close = () => {};
+    const onData = (data: string) => {
+      let e = JSON.parse(data) as Ev;
       if (seen.has(e.seq)) return; seen.add(e.seq);
       if (e.type === 'sealed') { try { e = { ...e, ...open<{ type: string; data: any }>(e.data.envelope, sk), sealed: true }; } catch { return; } }
       setEvents((x) => [...x, e]);
-      if (e.type === 'completed') { setPhase((p) => ({ name: 'done', ok: !!e.data?.ok, q: 'q' in p ? p.q : undefined })); es.close(); refreshBal(); }
-      if (['failed', 'payment_failed', 'run_not_pending', 'payment_timeout'].includes(e.type)) { setPhase((p) => ({ name: 'done', ok: false, q: 'q' in p ? p.q : undefined })); es.close(); }
+      if (e.type === 'completed') { setPhase((p) => ({ name: 'done', ok: !!e.data?.ok, q: 'q' in p ? p.q : undefined })); close(); refreshBal(); }
+      if (['failed', 'payment_failed', 'run_not_pending', 'payment_timeout'].includes(e.type)) { setPhase((p) => ({ name: 'done', ok: false, q: 'q' in p ? p.q : undefined })); close(); }
     };
-    es.onerror = () => { if (es.readyState === EventSource.CLOSED) setPhase((p) => (p.name === 'running' ? { name: 'done', ok: false, q: p.q } : p)); };
-    return () => es.close();
+    close = eventStream(`/api/runs/${r.run_id}/events`, { 'x-run-token': r.token }, onData, () => setPhase((p) => (p.name === 'running' ? { name: 'done', ok: false, q: p.q } : p)));
+    return () => close();
   }, [phase.name]);
 
   if (listings && !listing) return <div className="panel body">No recipe {ticker} on this contract. <button className="btn ghost sm" onClick={() => go({ page: 'recipes' })}>Back to Recipes</button></div>;
@@ -91,9 +92,10 @@ export function Quote({ ticker, runId }: { ticker: string; runId?: string }) {
       const reply = nacl.box.keyPair();
       const salt = hex(nacl.randomBytes(16));
       const job_hash = jobHash(inputs, salt);
-      const sealed_job = seal({ inputs, salt, reply_to: hex(reply.publicKey) }, onchain.enc_pk_hex, 'inputs');
       // quotes are bound to the buyer who pays; without a guest yet, the quote is bound to a placeholder and re-asked at pay time
       const who = buyer || 'guest.testnet';
+      // the sealed inputs are bound the same way (contract, buyer, this recipe): the runner refuses them for anything else
+      const sealed_job = seal({ inputs, salt, reply_to: hex(reply.publicKey), bind: { contract: mode.contract_id, buyer: who, recipes: [listing.ticker] } }, onchain.enc_pk_hex, 'inputs');
       job.current = { sealed_job, job_hash, reply, buyer: who };
       const { quote: q } = await api<any>('/api/quotes', { recipe_id: listing.ticker, sealed_job, job_hash, buyer: who });
       if (!q.ok) {
@@ -124,7 +126,7 @@ export function Quote({ ticker, runId }: { ticker: string; runId?: string }) {
       const r: any = await acct.callFunctionRaw({ contractId: ticket.pay.contract, methodName: ticket.pay.method, args: ticket.pay.args, deposit: BigInt(ticket.pay.deposit_yocto), gas: BigInt(ticket.pay.gas_tgas) * 10n ** 12n, waitUntil: 'EXECUTED_OPTIMISTIC' });
       const tx = r.transaction.hash as string;
       saveRun({ ...saved, pay_tx: tx }); run.current = { ...saved, pay_tx: tx };
-      await api(`/api/runs/${ticket.run_id}/paid?token=${ticket.run_token}`, { tx_hash: tx });
+      await api(`/api/runs/${ticket.run_id}/paid`, { tx_hash: tx }, undefined, { 'x-run-token': ticket.run_token });
       history.replaceState(null, '', `#/quote/${listing.ticker}/${ticket.run_id}`);
       setPhase({ name: 'running', q });
     } catch (e) { toast((e as Error).message, true); setPhase({ name: 'quoted', q }); }
@@ -132,7 +134,7 @@ export function Quote({ ticker, runId }: { ticker: string; runId?: string }) {
 
   const resumeRun = async () => {
     const r = run.current; if (!r) return;
-    try { await api(`/api/runs/${r.run_id}/resume?token=${r.token}`, {}); setEvents([]); setPhase({ name: 'running' }); } catch (e) { toast((e as Error).message, true); }
+    try { await api(`/api/runs/${r.run_id}/resume`, {}, undefined, { 'x-run-token': r.token }); setEvents([]); setPhase({ name: 'running' }); } catch (e) { toast((e as Error).message, true); }
   };
   const again = () => { run.current = null; job.current = null; setEvents([]); setPhase({ name: 'form' }); history.replaceState(null, '', `#/quote/${listing.ticker}`); };
 
@@ -177,7 +179,7 @@ export function Quote({ ticker, runId }: { ticker: string; runId?: string }) {
                       {bad.includes(f.id) && <div className="small" style={{ color: 'var(--loss)' }}>That doesn't look like a NEAR account id.</div>}
                       {/^(near\.account|address\.near)$/.test(f.type) && (
                         <div className="small muted" id={'lf-' + f.id + '-privacy'}>
-                          <Icon name="lock" size={11} /> Encrypted in your browser: only the sealed runner can read it. We don't log or store it, and it never goes on-chain.
+                          <Icon name="lock" size={11} /> Encrypted in your browser: only the sealed runner can read it, and it never goes on-chain. The marketplace never logs it; it keeps only the encrypted copy, to resume your run if the runner restarts, and deletes it two weeks after the run ends.
                           Like any block explorer, the runner looks up this account's public data from NEAR data providers (FastNEAR, NEAR RPC), which see that lookup.
                         </div>
                       )}

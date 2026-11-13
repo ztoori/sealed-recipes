@@ -2,6 +2,13 @@ node_modules/
 web/dist/
 .data/
 .env
+.env.*
+!.env.example
+# key material copied into the repo by mistake
+*.pem
+*.key
+relayer*.json
+faucet*.json
 contracts/sealed-recipes/target/
 contracts/tusdc/target/
 docs/media/.video/

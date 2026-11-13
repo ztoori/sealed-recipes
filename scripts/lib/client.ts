@@ -23,8 +23,9 @@ if (process.env.SRS_COOKIE) {
   }) as typeof fetch;
 }
 
-export async function api<T = any>(path: string, body?: unknown): Promise<T> {
-  const r = await fetch(BASE + path, body === undefined ? undefined : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+/** `headers`: e.g. the run token (x-run-token), which never goes in the URL */
+export async function api<T = any>(path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
+  const r = await fetch(BASE + path, body === undefined ? { headers } : { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
   const t = await r.text();
   if (!r.ok) throw new Error(`${path} → ${r.status} ${t.slice(0, 300)}`);
   // a proxy or bot check in front of the marketplace answers with a web page, not JSON: say so plainly
@@ -72,9 +73,10 @@ export async function requestQuotes(recipes: string[], inputs: Record<string, un
   const reply = nacl.box.keyPair();
   const salt = randomBytes(16).toString('hex');
   const job_hash = jobHash(inputs, salt);
-  const sealed_job = seal({ inputs, salt, reply_to: bytesToHex(reply.publicKey) }, runner.enc_pk_hex, 'inputs');
-  const inputsHash = sealedHash(sealed_job);
   const { contract_id } = await api<{ contract_id: string }>('/api/chain/config');
+  // bound to this contract, this buyer and the recipes asked here: the runner refuses the envelope for anything else
+  const sealed_job = seal({ inputs, salt, reply_to: bytesToHex(reply.publicKey), bind: { contract: contract_id, buyer, recipes } }, runner.enc_pk_hex, 'inputs');
+  const inputsHash = sealedHash(sealed_job);
   // a recipe that is not listed (or refuses) comes back as a failed quote, so one bad entry doesn't sink the rest
   const ask = (recipe_id: string) => api<{ quote: any }>('/api/quotes', { recipe_id, sealed_job, job_hash, buyer, ...(maxPrice !== undefined ? { max_price: maxPrice.toString() } : {}) })
     .then((r) => r.quote, (e: Error) => ({ recipe_id, ok: false, error: e.message, listing: { ticker: recipe_id } }));
@@ -111,8 +113,8 @@ export function pickQuote(quotes: any[], policy: { requirePrivacy?: 'confidentia
 export async function payAndRun(job: { sealed_job: unknown; reply: { secretKey: Uint8Array } }, q: any, buyer: string, opts: { approve?: boolean; onEvent?: (e: any) => void } = {}) {
   const { open } = await import('../../core/src/index.js');
   const r = await api<{ run_id: string; run_token: string }>('/api/runs/quote', { recipe_id: q.recipe_id, buyer, pay_asset: 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near', refund_to: '0xB0b0000000000000000000000000000000000001', sealed_inputs: job.sealed_job, signed_quote: signedQuote(q) });
-  await api(`/api/runs/${r.run_id}/pay?token=${r.run_token}`, {});
-  const res = await fetch(`${BASE}/api/runs/${r.run_id}/events?token=${r.run_token}`);
+  await api(`/api/runs/${r.run_id}/pay`, {}, { 'x-run-token': r.run_token });
+  const res = await fetch(`${BASE}/api/runs/${r.run_id}/events`, { headers: { 'x-run-token': r.run_token } });
   const reader = res.body!.getReader(); const dec = new TextDecoder(); let buf = '';
   const events: any[] = []; let final: any;
   for (let done = false; !done;) {
@@ -123,7 +125,7 @@ export async function payAndRun(job: { sealed_job: unknown; reply: { secretKey: 
       let e = JSON.parse(buf.slice(6, i)); buf = buf.slice(i + 2);
       if (e.type === 'sealed') e = { ...e, ...open<{ type: string; data: any }>(e.data.envelope, job.reply.secretKey) };
       events.push(e); opts.onEvent?.(e);
-      if (e.type === 'approval_required') await api(`/api/runs/${r.run_id}/approve?token=${r.run_token}`, { approved: opts.approve ?? true, transactions: e.data.transactions, sign_message: e.data.sign_message });
+      if (e.type === 'approval_required') await api(`/api/runs/${r.run_id}/approve`, { approved: opts.approve ?? true, transactions: e.data.transactions, sign_message: e.data.sign_message }, { 'x-run-token': r.run_token });
       if (e.type === 'completed' || e.type === 'failed') { final = e; done = true; break; }
     }
   }

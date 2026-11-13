@@ -37,7 +37,7 @@ const explorer = (tx: string) => `https://testnet.nearblocks.io/txns/${tx}`;
 const usd = (u: string | bigint) => `${(Number(u) / 1e6).toFixed(4)} tUSDC`;
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
-const { api, verifiedRunner, requestQuotes, signedQuote, creatorCopy } = await import('../lib/client.js');
+const { api, verifiedRunner, requestQuotes, signedQuote } = await import('../lib/client.js');
 const { seal, open, sealedHash, publicListing, validateRecipe } = await import('../../core/src/index.js');
 const { loadCatalog } = await import('../../core/src/codehash.js');
 const catalog = loadCatalog(root);
@@ -84,7 +84,9 @@ const fresh = () => {
   const v = validateRecipe(recipe, catalog);
   if (!v.ok) throw new Error('invalid recipe: ' + JSON.stringify(v.diagnostics));
   const sealed = seal(recipe, runner.onchain.enc_pk_hex, 'recipe');
-  const saved = { listing: publicListing(recipe, catalog), sealed, creator_copy: creatorCopy(recipe) };
+  // no creator copy: in this script it would be sealed to a key derived from the account name (the demo's stand-in
+  // for a wallet signature), which the marketplace could derive too. The seed recipe is the creator's copy.
+  const saved = { listing: publicListing(recipe, catalog), sealed, creator_copy: undefined };
   writeFileSync(savedPath(sealedHash(sealed)), JSON.stringify(saved), { mode: 0o600 });
   return { recipe, saved, hash: sealedHash(sealed) };
 };
@@ -149,12 +151,15 @@ step('4. pay: ft_transfer_call(tUSDC → contract) signed by the buyer');
 const ticket = await api<{ run_id: string; run_token: string; pay: { contract: string; method: string; args: object; deposit_yocto: string; gas_tgas: number } }>('/api/runs/prepare', { recipe_id: RECIPE, buyer: BUYER, sealed_inputs: job.sealed_job, signed_quote: signedQuote(q) });
 const payTx = await call(accountOf(BUYER), ticket.pay.contract, ticket.pay.method, ticket.pay.args, BigInt(ticket.pay.deposit_yocto), ticket.pay.gas_tgas);
 console.log(`   paid: ${explorer(payTx)}`);
-console.log(`   run ${ticket.run_id}, ticket token ${ticket.run_token} (keep it to resume: POST /api/runs/${ticket.run_id}/resume?token=…)`);
-await api(`/api/runs/${ticket.run_id}/paid?token=${ticket.run_token}`, { tx_hash: payTx });
+// the run token is a secret (it reads the run and resumes it): kept in a 0600 file, never printed
+const tokenPath = join(saveDir, `run-${ticket.run_id}.token`);
+writeFileSync(tokenPath, ticket.run_token + '\n', { mode: 0o600 });
+console.log(`   run ${ticket.run_id}; its token is in ${tokenPath} (to resume: POST /api/runs/${ticket.run_id}/resume with header x-run-token)`);
+await api(`/api/runs/${ticket.run_id}/paid`, { tx_hash: payTx }, { 'x-run-token': ticket.run_token });
 
 // 5. follow
 step(`5. run ${ticket.run_id}`);
-const res = await fetch(`${process.env.SRS_URL}/api/runs/${ticket.run_id}/events?token=${ticket.run_token}`);
+const res = await fetch(`${process.env.SRS_URL}/api/runs/${ticket.run_id}/events`, { headers: { 'x-run-token': ticket.run_token } });
 const reader = res.body!.getReader(); const dec = new TextDecoder(); let buf = ''; let result: unknown; let ok = false;
 for (let done = false; !done;) {
   const { value, done: end } = await reader.read(); if (end) break;

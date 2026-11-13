@@ -40,6 +40,8 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
+# no core dumps: a dump of this process would hold the relayer and faucet keys
+LimitCORE=0
 
 [Install]
 WantedBy=multi-user.target

@@ -51,6 +51,9 @@ upgrades), and `/attestation` carries a TDX quote whose REPORTDATA binds those k
 3. Phala Cloud → Create CVM → docker-compose → paste `runner/docker-compose.yml`; Encrypted Secrets: `RUNNER_TOKEN`
    (`openssl rand -hex 32`, the same value as in `/etc/srs/secrets.env`), `NEAR_AI_API_KEY`, `ONECLICK_API_KEY` (may be empty). The CVM's
    Network tab shows the public URL for port 8787: that is `RUNNER_URL`.
+   Turn **Public logs** off (and public system info): container logs are readable outside the TEE when it is on, so
+   anything the runner ever printed would be public. `45-tee-runner.sh` refuses to register a CVM whose measured
+   app-compose has `public_logs` on.
 4. `RUNNER_URL=… ./45-tee-runner.sh`: tUSDC storage for `tee.$ROOT_ACCOUNT`, Intel DCAP check of the quote, code hash
    against `AUDITED_CODEHASH`, then `add_runner` as `tee.$ROOT_ACCOUNT`.
 5. `/etc/srs/live.env`: `RUNNER_ID=tee.sealedrecipes.testnet`, `RUNNER_URL=…` (no trailing path), optionally

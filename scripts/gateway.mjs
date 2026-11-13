@@ -274,6 +274,8 @@ const preparing = (res) => page(res, 200, 'Preparing your private demo…', '<p>
 const busy = (res) => { stats.busy++; page(res, 503, 'The demo is busy', '<p>All demo sandboxes are in use. Please try again in a few minutes.</p>', 30); };
 
 const cookieOf = (req) => /(?:^|;\s*)srs_sb=([0-9a-f]{32})/.exec(String(req.headers.cookie ?? ''))?.[1];
+/** files that are identical in every sandbox (web/dist/assets, hashed names): the only thing served without a session */
+const isSharedStatic = (req) => (req.method === 'GET' || req.method === 'HEAD') && /^\/(assets\/[A-Za-z0-9_-][A-Za-z0-9._-]*|favicon\.(ico|svg))(\?[^#]*)?$/.test(req.url ?? '');
 const isPage = (req) => req.method === 'GET' && String(req.headers.accept ?? '').includes('text/html');
 const secure = (req) => req.headers['x-forwarded-proto'] === 'https' || String(req.headers['cf-visitor'] ?? '').includes('https');
 const setCookie = (req, res, id) => res.setHeader('set-cookie', `srs_sb=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400${secure(req) ? '; Secure' : ''}`);
@@ -313,8 +315,10 @@ const server = http.createServer(async (req, res) => {
   if (!sb) {
     if (!isPage(req)) {
       // the app's static files are the same in every sandbox, so any ready one serves them
+      // An allowlist, not a denylist: the sandboxes' routing is case-insensitive and decodes paths, so "/Api/…" or
+      // "/%61pi/…" would slip past a prefix check into another visitor's sandbox. Only the built bundle's files go.
       const any = [...sandboxes.values()].find((s) => s.ready && !s.stopping);
-      if (!req.url.startsWith('/api') && !req.url.startsWith('/runner') && !req.url.startsWith('/mock') && any) { proxy(req, res, any); return; }
+      if (isSharedStatic(req) && any) { proxy(req, res, any); return; }
       res.writeHead(409, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: 'your demo session ended; reload the page to start a new one' }));
       return;
