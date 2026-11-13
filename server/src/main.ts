@@ -225,6 +225,7 @@ const record = (t: string) => {
 };
 
 const app = express();
+app.disable('x-powered-by'); // no framework banner in responses
 // behind cloudflared / the sandbox gateway on this machine: take the client address from X-Forwarded-For (rate limits)
 app.set('trust proxy', 'loopback');
 app.use('/mock', mocks.router);

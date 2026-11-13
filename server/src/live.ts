@@ -157,6 +157,7 @@ async function watchPayment(r: RunCtx, txHash?: string) {
 
 // ---- HTTP ----
 const app = express();
+app.disable('x-powered-by'); // no framework banner in responses
 app.set('trust proxy', 'loopback');
 mountDemoProxy(app); // /demo: the guided demo, before the body parser
 app.use(express.json({ limit: '2mb' }));
