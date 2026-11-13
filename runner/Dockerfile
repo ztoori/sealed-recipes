@@ -5,6 +5,14 @@ FROM node:22-bookworm-slim
 WORKDIR /app
 COPY runner/package.json package.json
 RUN npm install --omit=dev --no-audit --no-fund --legacy-peer-deps
+# @phala/dstack-sdk needs @noble/hashes and @noble/curves 1.x (required peers; it imports '@noble/hashes/sha512'),
+# while the runner uses 2.x. Give the SDK its own 1.x copies in its own node_modules, then fail the build if it can't load.
+RUN mkdir /tmp/noble1 && cd /tmp/noble1 && npm init -y >/dev/null \
+ && npm install --no-audit --no-fund @noble/hashes@^1.6.1 @noble/curves@^1.8.1 \
+ && mkdir -p /app/node_modules/@phala/dstack-sdk/node_modules \
+ && cp -r node_modules/@noble /app/node_modules/@phala/dstack-sdk/node_modules/ \
+ && cd /app && rm -rf /tmp/noble1 \
+ && node --input-type=module -e "await import('@phala/dstack-sdk'); await import('@noble/hashes/sha2.js'); console.log('dstack-sdk and runner hashes load')"
 COPY core/src core/src
 COPY runner/src runner/src
 COPY runner/docker-compose.yml runner/docker-compose.yml
