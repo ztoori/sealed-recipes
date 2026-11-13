@@ -132,9 +132,10 @@ async function chainView<T>(ctx: Ctx, path: string): Promise<T> {
 async function attestation(nonce: string): Promise<RunnerAttestation> {
   const base = { codehash, enc_pk_hex: keys.encPkHex, nonce, signing_pk: keys.signingPk };
   const rd = reportData(base);
+  const q = keys.quoteWithLog ? await keys.quoteWithLog(rd) : { quote: await keys.quote(rd), event_log: undefined };
   return {
     v: 'srs-attest-v1', tee: keys.tee, runner_id: RUNNER_ID, ...base, compose_hash: keys.composeHash,
-    report_data: rd, quote: await keys.quote(rd), issued_at: new Date().toISOString(),
+    report_data: rd, quote: q.quote, ...(q.event_log ? { event_log: q.event_log } : {}), ...(keys.appCompose ? { app_compose: keys.appCompose } : {}), issued_at: new Date().toISOString(),
     self_sig: base64.enc(nacl.sign.detached(utf8ToBytes(rd), keys.sign.secretKey)),
   };
 }

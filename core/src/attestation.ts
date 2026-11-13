@@ -31,6 +31,10 @@ export interface RunnerAttestation {
   nonce: string;
   report_data: string;
   quote: string | null; // hex TDX quote
+  /** dstack only: the CVM's event log (JSON) and its app-compose.json, so a client can replay RTMR3 from the Intel-signed
+   *  quote and check the compose hash measured there against the pinned runner/docker-compose.yml */
+  event_log?: string;
+  app_compose?: string;
   issued_at: string;
   self_sig: string; // ed25519(report_data) by signing key, proves possession
 }

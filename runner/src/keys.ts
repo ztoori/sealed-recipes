@@ -20,13 +20,17 @@ export interface RunnerKeys {
   signingPk: string;
   encPkHex: string;
   quote: (reportDataHex: string) => Promise<string | null>;
+  /** the event log of the last quote (dstack), for RTMR3 replay by clients */
+  quoteWithLog?: (reportDataHex: string) => Promise<{ quote: string; event_log?: string }>;
+  /** app-compose.json as the CVM measured it (dstack) */
+  appCompose?: string;
   composeHash: string;
 }
 
 export async function loadKeys(mode: string, devKeyFile: string, composeHash: string): Promise<RunnerKeys> {
   if (mode === 'dstack') {
     // Imported lazily: the SDK is only installed inside the runner container (runner/package.json).
-    const { DstackClient } = (await import('@phala/dstack-sdk' as string)) as { DstackClient: new () => { getKey(p: string, purpose?: string): Promise<{ key: Uint8Array }>; getQuote(rd: Uint8Array): Promise<{ quote: string }>; info(): Promise<{ compose_hash?: string }> } };
+    const { DstackClient } = (await import('@phala/dstack-sdk' as string)) as { DstackClient: new () => { getKey(p: string, purpose?: string): Promise<{ key: Uint8Array }>; getQuote(rd: Uint8Array): Promise<{ quote: string; event_log?: string }>; info(): Promise<{ compose_hash?: string; tcb_info?: string | { app_compose?: string } }> } };
     const c = new DstackClient();
     const sk = await c.getKey('sealed-recipes/runner/sign', 'ed25519-seed');
     const ek = await c.getKey('sealed-recipes/runner/enc', 'x25519-seed');
@@ -36,6 +40,8 @@ export async function loadKeys(mode: string, devKeyFile: string, composeHash: st
     return {
       tee: 'dstack-tdx', sign, box, signingPk: 'ed25519:' + bs58.encode(sign.publicKey), encPkHex: bytesToHex(box.publicKey),
       quote: async (rd) => (await c.getQuote(hexToBytes(rd))).quote,
+      quoteWithLog: async (rd) => { const q = await c.getQuote(hexToBytes(rd)); return { quote: q.quote, event_log: q.event_log }; },
+      appCompose: (() => { try { const t = typeof info.tcb_info === 'string' ? JSON.parse(info.tcb_info) : info.tcb_info; return typeof t?.app_compose === 'string' ? t.app_compose : undefined; } catch { return undefined; } })(),
       composeHash: info.compose_hash ?? composeHash,
     };
   }
