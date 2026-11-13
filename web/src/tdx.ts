@@ -8,7 +8,7 @@
  */
 import { withBase } from './api';
 
-export interface IntelCheck { ok: boolean; status?: string; advisories?: string[]; reportData?: string; error?: string }
+export interface IntelCheck { ok: boolean; status?: string; advisories?: string[]; reportData?: string; rtmr3?: string; error?: string }
 /** TCB states that count as genuine and current; anything else (out of date, revoked, …) is reported as a failure */
 const GOOD = ['UpToDate', 'SWHardeningNeeded'];
 
@@ -32,9 +32,10 @@ export async function checkWithIntel(quoteHex: string, expectReportData?: string
     const td = r.report.asTd10() ?? r.report.asTd15()?.base ?? r.report.asTd15Ex()?.base.base ?? null;
     const reportData = td ? hex(Uint8Array.from(td.reportData)) : '';
     if (!td) return { ok: false, status: r.status, error: 'not a TDX quote' };
+    const rtmr3 = hex(Uint8Array.from(td.rtMr3));
     if (expectReportData && !reportData.startsWith(expectReportData.toLowerCase())) return { ok: false, status: r.status, reportData, error: 'Intel-signed REPORTDATA does not carry the runner keys and this nonce' };
     const ok = GOOD.includes(r.status);
-    return { ok, status: r.status, advisories: r.advisory_ids, reportData, ...(ok ? {} : { error: `TCB status ${r.status}` }) };
+    return { ok, status: r.status, advisories: r.advisory_ids, reportData, rtmr3, ...(ok ? {} : { error: `TCB status ${r.status}` }) };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }

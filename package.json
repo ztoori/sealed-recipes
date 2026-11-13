@@ -18,7 +18,7 @@
     "dev:web": "vite --config web/vite.config.ts",
     "build": "vite build --config web/vite.config.ts && node scripts/build-node.mjs",
     "build:node": "node scripts/build-node.mjs",
-    "test": "node --import tsx --test tests/core.test.ts tests/srs.test.ts tests/runner.test.ts tests/partkit.test.ts tests/review.test.ts tests/web-state.test.ts tests/outbound.test.ts tests/near.test.ts tests/audit-report.test.ts tests/tdx.test.ts tests/wallet-scanner.test.ts",
+    "test": "node --import tsx --test tests/core.test.ts tests/srs.test.ts tests/runner.test.ts tests/partkit.test.ts tests/review.test.ts tests/web-state.test.ts tests/outbound.test.ts tests/near.test.ts tests/audit-report.test.ts tests/tdx.test.ts tests/wallet-scanner.test.ts tests/compose.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "story": "tsx scripts/story-cli.ts",
     "release:parts": "tsx scripts/release-parts.ts",

@@ -17,6 +17,9 @@ import { Empty, Head, Seal, Tip } from '../ui';
 import { fmtNear, tusdc, txUrl, useLive } from './ctx';
 import { hex, saveRun, savedRuns, type SavedRun } from './guest';
 import { checkWithIntel, type IntelCheck } from '../tdx';
+import { checkCompose, type ComposeCheck } from '../compose';
+// the compose file this site was built with: the runner must be running exactly this (web/src/compose.ts)
+import pinnedCompose from '../../../runner/docker-compose.yml?raw';
 
 const STAGES: [string, string][] = [['lock', 'Seal inputs'], ['receipt', 'Quote'], ['wallet', 'Pay'], ['cpu', 'Run'], ['check', 'Settled']];
 const SRC_ICON: Record<string, string> = { chain: 'vault', contract: 'vault', runner: 'cpu', part: 'box', market: 'market', you: 'user' };
@@ -35,6 +38,7 @@ export function Quote({ ticker, runId }: { ticker: string; runId?: string }) {
   const [checks, setChecks] = useState<{ ok: boolean; hardware: boolean; tdx: boolean; passed: number } | null>(null);
   const [events, setEvents] = useState<Ev[]>([]);
   const [intel, setIntel] = useState<IntelCheck | 'checking' | null>(null);
+  const [compose, setCompose] = useState<ComposeCheck | null>(null);
   const job = useRef<{ sealed_job: SealedEnvelope; job_hash: string; reply: nacl.BoxKeyPair; buyer: string } | null>(null);
   const run = useRef<SavedRun | null>(resume);
   const [bal, refreshBal] = usePoll<Balance>(guest ? `/api/account/${guest.account}/balance` : null, 15000, [guest?.account]);
@@ -77,7 +81,11 @@ export function Quote({ ticker, runId }: { ticker: string; runId?: string }) {
       setChecks({ ok: v.ok, hardware: v.hardware, tdx: attestation.tee === 'dstack-tdx' && !!attestation.quote, passed: v.checks.filter((c) => c.status === 'pass').length });
       if (!v.ok) throw new Error('the runner attestation did not verify: not sending your inputs');
       // Intel's signature chain, checked here in the background (web/src/tdx.ts): it never holds up the quote
-      if (attestation.tee === 'dstack-tdx' && attestation.quote) { setIntel('checking'); checkWithIntel(attestation.quote, attestation.report_data).then(setIntel); }
+      if (attestation.tee === 'dstack-tdx' && attestation.quote) {
+        setIntel('checking'); setCompose(null);
+        // then which image: the compose hash measured into the Intel-signed RTMR3 against the pinned compose file
+        checkWithIntel(attestation.quote, attestation.report_data).then(async (i) => { setIntel(i); if (i.ok && i.rtmr3) setCompose(await checkCompose(attestation, i.rtmr3, pinnedCompose)); });
+      }
       // 2. seal the inputs to the runner; the quote comes back sealed to a one-time key made here
       const inputs = Object.fromEntries(listing.form.map((f) => [f.id, values[f.id]?.trim()]));
       const reply = nacl.box.keyPair();
@@ -180,13 +188,23 @@ export function Quote({ ticker, runId }: { ticker: string; runId?: string }) {
               {phase.name === 'done' || resume
                 ? <button className="btn lg" onClick={again}><Icon name="refresh" size={15} />Get another quote</button>
                 : <button id="get-quote-btn" className="btn lg" disabled={missing || bad.length > 0 || busy} onClick={() => { void getQuote(); }}>{phase.name === 'quoting' ? <><span className="spinner" />Sealing and quoting</> : phase.name === 'quoted' ? <><Icon name="refresh" size={15} />Quote again</> : <><Icon name="lock" size={15} />Seal and get a quote</>}</button>}
-              {checks && <div className="row wrap small" style={{ gap: 6 }}>{checks.ok ? <span className="pill ok"><Icon name="cpu" size={12} />runner verified · {checks.passed} checks</span> : <span className="pill bad">runner attestation failed</span>} {!checks.ok ? null : checks.tdx
-                ? intel === 'checking' || !intel
-                  ? <span className="pill"><span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />checking with Intel</span>
-                  : intel.ok
-                    ? <span className="pill ok" title={`This browser checked the runner's TDX quote against Intel's root certificate (DCAP): TCB ${intel.status}. The quote carries the runner's keys and this browser's nonce.`}><Icon name="shieldCheck" size={12} />Intel TDX · verified in this browser</span>
-                    : <span className="pill bad" title={intel.error}>Intel check failed: {intel.error}</span>
-                : <span className="pill warn" title="The runner is the local-dev build: real keys and signatures, no hardware TEE quote yet">no hardware quote yet</span>}</div>}
+              {checks && <div className="row wrap small" style={{ gap: 6 }}>
+                {checks.ok ? <span className="pill ok"><Icon name="cpu" size={12} />runner verified · {checks.passed} checks</span> : <span className="pill bad">runner attestation failed</span>}{' '}
+                {!checks.ok ? null : !checks.tdx
+                  ? <span className="pill warn" title="The runner is the local-dev build: real keys and signatures, no hardware TEE quote yet">no hardware quote yet</span>
+                  : intel === 'checking' || !intel
+                    ? <span className="pill"><span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />checking with Intel</span>
+                    : !intel.ok
+                      ? <span className="pill bad" title={intel.error}>Intel check failed: {intel.error}</span>
+                      : <>
+                          <span className="pill ok" title={`This browser checked the runner's TDX quote against Intel's root certificate (DCAP): TCB ${intel.status}. The quote carries the runner's keys and this browser's nonce.`}><Icon name="shieldCheck" size={12} />Intel TDX · verified in this browser</span>{' '}
+                          {!compose
+                            ? <span className="pill"><span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />checking the image</span>
+                            : compose.ok
+                              ? <span className="pill ok" title={`The compose hash measured into the quote's RTMR3 (${compose.composeHash}) is the pinned runner/docker-compose.yml: image ${compose.image}.`}><Icon name="shieldCheck" size={12} />image matches the pinned compose</span>
+                              : <span className="pill bad" title={compose.error}>image check failed: {compose.error}</span>}
+                        </>}
+              </div>}
             </div>
           </div>
         </section>

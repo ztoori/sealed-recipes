@@ -14,7 +14,7 @@ Projects are screened first by Claude Code and Codex, which check that the repo 
   git push -u origin main --tags
   ```
   The tag `baseline-2026-10-31` marks the first build, written after the hackathon was announced; the rules count code written since the announcement. `git diff baseline-2026-10-31..main` shows everything built during the window.
-- [ ] On a clean machine: `npm install && npm run test:e2e` ends with `✔ story complete`; `npm test` (97 tests), `npm run test:rust` (114 tests), `npm run verify` and `npm run test:recipes` pass.
+- [ ] On a clean machine: `npm install && npm run test:e2e` ends with `✔ story complete`; `npm test` (102 tests), `npm run test:rust` (114 tests), `npm run verify` and `npm run test:recipes` pass.
 - [x] Deploy the contract: live on NEAR testnet at `market.sealedrecipes.testnet`, with the live page at https://app.sealedrecipes.xyz (steps in `scripts/testnet/README.md`). Mainnet stays undeployed by decision (no real funds), so NEAR Intents is used for real dry quotes only. The README's top and **Status** link the contract and both sites.
 - [ ] `main` is the default branch and must hold the testnet work: fast-forward it to `live` and push (`git push origin live:main`) before submitting, and again after any later `live-N` tag.
 - [ ] Optional: record a voice-over for `docs/media/demo.mp4` with the script in §5. The video has on-screen captions, so it also works silent.
