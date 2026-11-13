@@ -57,6 +57,8 @@ function runnerUrl(raw: string): string {
 }
 const RUNNER = runnerUrl(need('RUNNER_URL'));
 const RUNNER_TOKEN = need('RUNNER_TOKEN');
+// the runner refuses to start with a shorter token, so a short one here can only be a mismatch
+if (RUNNER_TOKEN.length < 32) { console.error('[live] RUNNER_TOKEN must be at least 32 characters (openssl rand -hex 32)'); process.exit(2); }
 const RPC = env.NEAR_RPC_URL ?? 'https://rpc.testnet.fastnear.com';
 /**
  * The RPC address browsers are told to use (/api/mode). Never NEAR_RPC_URL as such when it may carry a provider key
@@ -154,11 +156,21 @@ const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
  * runner no longer has the run (404: it restarted) or stays unreachable is the run reported lost and resumed from its
  * last checkpoint; a resumed run is a new runner job whose events start again at seq 0.
  */
+/** runs whose runner stream is being relayed: one relay per run, or every runner event would be stored twice */
+const following = new Set<string>();
+/** runs the buyer resumed while a relay was running: the runner started a new job, whose events start at seq 0 */
+const restarted = new Set<string>();
 async function followRunner(r: RunCtx) {
+  if (following.has(r.run_id)) return;
+  following.add(r.run_id);
+  try { await relayRunner(r); } finally { following.delete(r.run_id); }
+}
+async function relayRunner(r: RunCtx) {
   let next = 0;   // next runner seq to relay for the current runner job
   let drops = 0;  // reconnects in a row without a new event
   for (;;) {
     let gone = false;
+    if (restarted.delete(r.run_id)) { next = 0; drops = 0; }
     try {
       const sse = await backend.events(r.run_id);
       if (sse.status === 404) { gone = true; await sse.body?.cancel(); }
@@ -200,6 +212,8 @@ async function followRunner(r: RunCtx) {
   }
 }
 
+/** tickets whose payment is being watched (in memory: after a restart the buyer's page asks again) */
+const watching = new Set<string>();
 /** wait until the contract has the run as Pending (the buyer's ft_transfer_call landed), then start the runner */
 async function watchPayment(r: RunCtx, txHash?: string) {
   try { await watchPaymentInner(r, txHash); }
@@ -238,9 +252,11 @@ async function watchPaymentInner(r: RunCtx, txHash?: string) {
 // ---- HTTP ----
 const app = express();
 app.disable('x-powered-by'); // no framework banner in responses
+// the site is only ever served over HTTPS (Cloudflare): browsers should never try plain HTTP for it
+app.use((_, res, next) => { res.set('strict-transport-security', 'max-age=15552000'); next(); });
 app.set('trust proxy', 'loopback');
 mountDemoProxy(app); // /demo: the guided demo, before the body parser
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '512kb' })); // recipes and inputs are a few KB sealed; the cap keeps one request from filling memory or disk
 class BadRequest extends Error {}
 const guard = (fn: (req: express.Request, res: express.Response) => unknown) => async (req: express.Request, res: express.Response) => {
   // 500, not 502: Cloudflare replaces an origin's 502 with its own error page, hiding the message from the visitor
@@ -332,13 +348,27 @@ app.post('/api/publish', guard(async (req, res) => {
   if (onchain.runner_id !== RUNNER_ID) throw new BadRequest('recipe is assigned to a different runner');
   const runner = await chain.view<{ enc_pk_hex: string }>('get_runner', { runner_id: RUNNER_ID });
   if (sealed.to !== runner.enc_pk_hex) throw new BadRequest('envelope is not sealed to the registered runner key');
-  const labels = labelsFromParts(onchain.parts, catalog);
+  if (typeof listing.name !== 'string' || listing.name !== onchain.name) throw new BadRequest('listing name does not match the on-chain name');
+  /**
+   * First hand-over wins, per version. The sealed envelope is public (/api/vault), so without this anyone could
+   * hand it over again with a rewritten listing (description, form fields asking for anything) or replace the
+   * creator's copy. Only the creator's first hand-over of a version sets them; a new version (update_sealed) may
+   * bring a new listing. Only the known public fields are kept.
+   */
+  const prev = listings[listing.ticker] as (typeof listings)[string] & { sealed_hash?: string } | undefined;
   const e = (vault.recipes[listing.ticker] ??= { versions: [], creator_copies: {} });
+  if (prev?.sealed_hash === h || (!prev?.sealed_hash && prev && e.versions.includes(h))) { res.json({ ok: true, sealed_hash: h, already: true }); return; }
+  const labels = labelsFromParts(onchain.parts, catalog);
   store.put(sealed);
   if (!e.versions.includes(h)) e.versions.push(h);
-  if (creator_copy?.purpose === 'creator-copy') e.creator_copies[h] = store.put(creator_copy);
+  if (creator_copy?.purpose === 'creator-copy' && !e.creator_copies[h]) e.creator_copies[h] = store.put(creator_copy);
   saveVault();
-  listings[listing.ticker] = { ...listing, parts: onchain.parts, risk: labels.risk, disclosures: labels.disclosures, privacy: labels.privacy, capabilities: labels.capabilities, published_at: new Date().toISOString(), publish_tx: tx };
+  const pub = {
+    ticker: listing.ticker, name: onchain.name, creator: onchain.creator, description: String(listing.description ?? '').slice(0, 2000),
+    form: Array.isArray(listing.form) ? listing.form.slice(0, 20) : [], output_type: String(listing.output_type ?? ''), price_per_run: listing.price_per_run,
+    pricing: listing.pricing ?? null, reserve_bps: listing.reserve_bps, interface_hash: listing.interface_hash,
+  } as PublicListing;
+  listings[listing.ticker] = { ...pub, sealed_hash: h, parts: onchain.parts, risk: labels.risk, disclosures: labels.disclosures, privacy: labels.privacy, capabilities: labels.capabilities, published_at: new Date().toISOString(), publish_tx: tx } as (typeof listings)[string];
   saveListings();
   res.json({ ok: true, sealed_hash: h });
 }));
@@ -392,6 +422,19 @@ app.get('/api/intents/log', (_, res) => { res.json([]); });
 
 const QUOTES_PER_MINUTE = 12;
 const quoteLog = new Map<string, number[]>();
+/** per visitor, per minute: run tickets are written to disk, so they are limited like quotes, and capped in total */
+const PREPARES_PER_MINUTE = 6, MAX_UNPAID_TICKETS = 2000, MAX_SEALED_INPUTS = 64 * 1024;
+const prepareLog = new Map<string, number[]>();
+const visitor = (req: express.Request) => req.get('cf-connecting-ip') ?? req.ip ?? 'local';
+function limited(log: Map<string, number[]>, key: string, perMinute: number): boolean {
+  const now = Date.now();
+  const recent = (log.get(key) ?? []).filter((t) => now - t < 60_000);
+  if (recent.length >= perMinute) return true;
+  log.set(key, [...recent, now]);
+  return false;
+}
+// forget visitors with no request in the last minute, so the limiters do not grow without bound
+setInterval(() => { const now = Date.now(); for (const log of [quoteLog, prepareLog]) for (const [k, v] of log) if (!v.some((t) => now - t < 60_000)) log.delete(k); }, 60_000).unref();
 app.post('/api/quotes', guard(async (req, res) => {
   // per visitor: behind the tunnel every request comes from 127.0.0.1, so use the address Cloudflare reports
   const ip = req.get('cf-connecting-ip') ?? req.ip ?? 'local', now = Date.now();
@@ -415,6 +458,9 @@ app.post('/api/quotes', guard(async (req, res) => {
 
 /** a run ticket: the msg the buyer attaches to ft_transfer_call(tUSDC → contract, price) */
 app.post('/api/runs/prepare', guard(async (req, res) => {
+  if (limited(prepareLog, visitor(req), PREPARES_PER_MINUTE)) throw new BadRequest('too many run tickets in the last minute');
+  if ([...runs.values()].filter((x) => !x.started).length >= MAX_UNPAID_TICKETS) { res.status(503).json({ error: 'too many open run tickets; try again later' }); return; }
+  if (JSON.stringify(req.body?.sealed_inputs ?? null).length > MAX_SEALED_INPUTS) throw new BadRequest('sealed inputs are too large');
   const { recipe_id, buyer, sealed_inputs, signed_quote: sq, max_price } = req.body as { recipe_id: string; buyer: string; sealed_inputs: SealedEnvelope; signed_quote?: { sealed_hash: string; job_hash: string; price: string; expected: string; promised: string; cover: string; expires_ns: string; signature: string }; max_price?: string };
   if (typeof buyer !== 'string' || !/^[a-z0-9._-]{2,64}$/.test(buyer)) throw new BadRequest('buyer account required');
   if (typeof recipe_id !== 'string' || retired(recipe_id)) throw new BadRequest(typeof recipe_id === 'string' ? RETIRED_MSG : 'recipe_id required');
@@ -441,9 +487,12 @@ const runFor = (req: express.Request) => {
 /** the buyer says it paid (optionally with the tx hash): watch the chain and start the run */
 app.post('/api/runs/:id/paid', guard(async (req, res) => {
   const r = runFor(req);
-  if (r.started) { res.json({ ok: true, already: true }); return; }
+  // one watcher per ticket: a second one would start the run twice, and the runner's "already started" would be
+  // shown to the buyer as a failure of a run that is in fact executing
+  if (r.started || watching.has(r.run_id)) { res.json({ ok: true, already: true }); return; }
   const tx = typeof req.body?.tx_hash === 'string' && /^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(req.body.tx_hash) ? req.body.tx_hash : undefined;
-  void watchPayment(r, tx);
+  watching.add(r.run_id);
+  void watchPayment(r, tx).finally(() => watching.delete(r.run_id));
   res.json({ ok: true, watching: true });
 }));
 /**
@@ -456,6 +505,7 @@ app.post('/api/runs/:id/resume', guard(async (req, res) => {
   if (run?.status !== 'Pending') throw new BadRequest(`the run is ${run?.status ?? 'unknown'} on-chain, not Pending`);
   const out = await backend.resume(r.run_id, { recipe_id: r.recipe_id, sealed_recipe: await sealedFor(r), sealed_inputs: r.sealed_inputs, checkpoint: r.checkpoint ?? null, approvals: {} });
   if (!out.ok && out.status !== 409) throw new BadRequest(`runner refused to resume (${out.status})`);
+  if (out.ok && following.has(r.run_id)) restarted.add(r.run_id);
   r.started = true; r.done = false; saveRun(r);
   pushEv(r, 'market', 'resume_requested', { checkpoint: r.checkpoint?.local_seq ?? null, manual: true });
   void followRunner(r);
@@ -575,5 +625,13 @@ if (existsSync(join(WEB, 'live.html'))) {
 } else console.warn('[live] web/dist/live.html is missing: run npm run build to serve the page');
 
 app.get('/healthz', (_, res) => res.json({ ok: true, mode: NETWORK, runs: runs.size, listings: Object.keys(listings).length }));
+
+// last: malformed JSON, oversize bodies and anything else Express raises answer in JSON, never its HTML error page
+app.use((err: Error & { status?: number; type?: string }, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) { next(err); return; }
+  const status = err.status && err.status >= 400 && err.status < 500 ? err.status : 500;
+  if (status === 500) console.error(`[live] ${req.method} ${req.path.replace(/\/r-[0-9a-f]+/g, '/r-…')}: ${redact(err.message)}`);
+  res.status(status).json({ error: err.type === 'entity.too.large' ? 'request too large' : status === 500 ? 'something went wrong on our side; please try again' : 'malformed request' });
+});
 
 app.listen(PORT, '127.0.0.1', () => console.log(`[live] marketplace for ${CONTRACT_ID} on ${NETWORK}: http://127.0.0.1:${PORT} (runner ${RUNNER}, relayer ${chain.relayerId ?? 'none'}, faucet ${faucet?.relayerId ?? 'off'})`));

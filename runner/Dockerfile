@@ -4,7 +4,9 @@
 FROM node:22-bookworm-slim
 WORKDIR /app
 COPY runner/package.json package.json
-RUN npm install --omit=dev --no-audit --no-fund --legacy-peer-deps
+COPY runner/package-lock.json package-lock.json
+# exact versions from the lockfile (npm ci), so the same commit always builds the same dependency tree
+RUN npm ci --omit=dev --no-audit --no-fund --legacy-peer-deps
 # @phala/dstack-sdk needs @noble/hashes and @noble/curves 1.x (required peers; it imports '@noble/hashes/sha512'),
 # while the runner uses 2.x. Give the SDK its own 1.x copies in its own node_modules, then fail the build if it can't load.
 RUN mkdir /tmp/noble1 && cd /tmp/noble1 && npm init -y >/dev/null \

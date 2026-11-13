@@ -279,6 +279,8 @@ export class LocalLedger {
       const r = this.recipes.get(m.recipe_id);
       if (!r) return reject('unknown recipe');
       if (!r.listed) return reject('recipe not listed');
+      // as the contract: an unquoted run needs an active runner (a quoted one is checked below, in order)
+      if (!m.quote && !this.runners.get(r.runner_id)?.active) return reject('runner inactive');
       // a signed quote locks its price (within the band); otherwise the current list price applies
       const qp = m.quote as SignedQuote | undefined;
       if (qp && !(typeof qp.price === 'string' && /^\d+$/.test(qp.price))) throw new LedgerError('invalid msg');

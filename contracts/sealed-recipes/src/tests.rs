@@ -750,6 +750,13 @@ fn quote_rejection_reasons() {
     ctx("owner.testnet", 0);
     c.set_runner_active(acct("runner.testnet"), false);
     assert_eq!(solver_pays(&mut c, "bob.testnet", "r1", &ff, &ok, 0).as_deref(), Some("runner inactive"));
+    // an unquoted payment is refused too (it could never be reported)
+    ctx(USDC, 0);
+    let msg = json!({"action":"run","recipe_id":"CLNP","run_id":"r2","inputs_hash":ff,"on_behalf_of":"bob.testnet"});
+    let _ = c.ft_on_transfer(acct("solver.testnet"), U128(750_000), msg.to_string());
+    let e = last_event();
+    assert_eq!(e["event"], "transfer_rejected");
+    assert_eq!(e["data"][0]["reason"], "runner inactive");
 
     // 4. wrong key
     let mut c = setup();

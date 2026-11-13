@@ -50,7 +50,9 @@ const RECHECK_MIN_BPS = 9800n;
 /** durable runs: where checkpoints are stored (the marketplace keeps ciphertext; only this runner can open it) */
 const MARKET = env.MARKET_URL ?? CHAIN.replace(/\/api\/chain\/?$/, '');
 /** in "final" settle mode, a heartbeat checkpoint goes on-chain at least this often so long runs never time out */
-const HEARTBEAT_MS = Number(env.SRS_HEARTBEAT_MS ?? 5 * 60_000);
+// at most 5 minutes: the contract lets the buyer reclaim a run 15 minutes after its last progress (RUN_TIMEOUT_NS),
+// so a longer heartbeat would let a healthy long run be refunded mid-execution
+const HEARTBEAT_MS = Math.min(Number(env.SRS_HEARTBEAT_MS ?? 5 * 60_000) || 5 * 60_000, 5 * 60_000);
 
 /**
  * Where a job's marketplace lives: its relayer (`chain`), checkpoint store (`market`) and the endpoints parts reach.

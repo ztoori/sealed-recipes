@@ -933,6 +933,14 @@ impl Contract {
         if !recipe.listed {
             return Err("recipe not listed".into());
         }
+        // an unquoted run needs an active runner too (a quoted one is checked below, in the documented order): a run
+        // paid for a deactivated runner could never be reported, so the buyer's money would wait for the reclaim timeout
+        if quote.is_none() {
+            match self.runners.get(&recipe.runner_id) {
+                Some(r) if r.active => {}
+                _ => return Err("runner inactive".into()),
+            }
+        }
         // a signed quote locks its price (within the band); otherwise the current list price applies
         let price = match &quote {
             Some(q) => q.price.0,

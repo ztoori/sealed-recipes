@@ -38,6 +38,18 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
+# further hardening (systemd-analyze security <unit>): no capabilities, no kernel logs/clock/hostname changes,
+# no namespaces or realtime scheduling, IP and Unix sockets only, private files by default
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
