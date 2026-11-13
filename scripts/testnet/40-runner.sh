@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# RETIRED on the live site: this registered the local-dev runner (runner.sealedrecipes.testnet, deactivated with
+# set_runner_active false). The live runner is the TDX one: ./45-tee-runner.sh. Kept for a local-dev setup.
 # Registers the live runner on the contract, or records its new code release if it is registered (owner only): its signing key (verifies quotes and reports), its
 # encryption key (recipes and inputs are sealed to it) and the audited code hash. Run after the srs-live-runner
 # service has started once (it creates its keys). The keys file belongs to the service user, so the identity is read

@@ -10,7 +10,7 @@ whose `~/.near-credentials/testnet/` holds the keys of the accounts in `config.s
 | `./20-deploy.sh` | deploys and initializes tUSDC (minter: the faucet account) and the marketplace contract; registers tUSDC storage for the market, treasury, owner and runner | no: `new` runs once |
 | `./25-upgrade.sh` | upgrades the marketplace contract's code in place (state kept) after `./10-build.sh` | when the contract gains methods |
 | `./30-parts.sh` | registers every catalog part (fee + manifest hash) | yes, skips registered parts |
-| `./40-runner.sh` | registers the live runner (its public keys, read as the service user, and the audited code hash) | when the runner's keys or code change |
+| `./40-runner.sh` | retired: registered the earlier local-dev runner on the VPS (`runner.sealedrecipes.testnet`, now deactivated). The live runner is the TDX one, step 45 | no |
 | `RUNNER_URL=… ./45-tee-runner.sh` | registers the runner running in a TDX CVM (Phala Cloud) as `tee.$ROOT_ACCOUNT`, after Intel DCAP verification of its quote and a check of its code hash against `AUDITED_CODEHASH` | when its code changes (same CVM app: same keys) |
 | `node --import tsx scripts/testnet/50-run.ts --recipe CHEK --target wrap.near` (`--ticker X` publishes the seed recipe under another ticker: a published recipe's parts are fixed, so a new part version needs a new listing) | a real paid run: publish (if needed), mint tUSDC, quote, pay, run, settle; prints explorer links | yes |
 
@@ -26,12 +26,15 @@ Only the faucet account can mint, at most 10,000 tUSDC per call, and only to acc
 
 ## Live services (after step 30)
 
-The live marketplace (`server/src/live.ts`, port 8081) and the read-only runner (port 8788) run as `srs` from a
+The live marketplace (`server/src/live.ts`, port 8081) runs as `srs` from a
 separate checkout, `/opt/srs-live`, so the demo in `/opt/srs-demo` stays on its tag. Settings: `/etc/srs/live.env`
 (see `deploy/live.env.example`); secrets: `/etc/srs/secrets.env` (`RUNNER_TOKEN`, `NEAR_AI_API_KEY`, optional
-`ONECLICK_API_KEY`); relayer key: `/etc/srs/relayer.json`. Units: `deploy/srs-live-runner.service`,
-`deploy/srs-live-server.service`. The runner refuses recipes that ask the buyer to sign (`SRS_READ_ONLY=1`), and its
-parts read real mainnet data. Then `./40-runner.sh` and `50-run.ts`.
+`ONECLICK_API_KEY`); relayer key: `/etc/srs/relayer-fc.json`, a function-call key for `report_run` and `checkpoint_run` only. Unit:
+`deploy/srs-live-server.service`. The runner is the TDX one below (the earlier local-dev runner on this machine,
+`runner.sealedrecipes.testnet`, is retired and deactivated on the contract); it refuses recipes that ask the buyer to
+sign (`SRS_READ_ONLY=1`), and its parts read real mainnet data. Its port is public through the Phala gateway, because
+the marketplace runs outside Phala: `/attestation` is meant to be public, and the job endpoints need `RUNNER_TOKEN`
+(32 random bytes, checked in constant time).
 
 ## Runner in a TEE (Intel TDX on Phala Cloud)
 

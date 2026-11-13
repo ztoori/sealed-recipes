@@ -3,7 +3,7 @@
 #   sudo cp deploy/srs-live-server.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now srs-live-server
 [Unit]
 Description=Sealed Recipes live marketplace (testnet)
-After=network-online.target srs-live-runner.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]
@@ -14,8 +14,9 @@ EnvironmentFile=/etc/srs/live.env
 EnvironmentFile=/etc/srs/secrets.env
 Environment=NODE_ENV=production
 Environment=PORT=8081
-Environment=RUNNER_URL=http://127.0.0.1:8788
-Environment=NEAR_RELAYER_KEY_FILE=/etc/srs/relayer.json
+# RUNNER_ID and RUNNER_URL (the TDX runner on Phala Cloud) come from /etc/srs/live.env
+# the relayer signs with a function-call key: report_run and checkpoint_run on the contract only
+Environment=NEAR_RELAYER_KEY_FILE=/etc/srs/relayer-fc.json
 # near-cli key files don't name their account
 Environment=NEAR_RELAYER_ACCOUNT=relayer.sealedrecipes.testnet
 # the guest faucet (POST /api/faucet) is on when this key file exists; it signs NEAR transfers and tUSDC mints only
