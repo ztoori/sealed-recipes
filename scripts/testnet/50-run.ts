@@ -55,7 +55,7 @@ const step = (s: string) => console.log(`\n\x1b[1m${s}\x1b[0m`);
 const mode = await api<{ mode: string; contract_id: string; payment_token: string; runner_id: string }>('/api/mode');
 console.log(`marketplace ${process.env.SRS_URL}: ${mode.contract_id} on ${mode.mode}, payment token ${mode.payment_token}, runner ${mode.runner_id}`);
 const runner = await verifiedRunner();
-console.log(`runner attestation: ${runner.checks.filter((c) => c.status === 'pass').length} checks passed (${runner.hardware ? 'hardware TEE' : 'local-dev: no hardware quote'})`);
+console.log(`runner attestation: ${runner.checks.filter((c) => c.status === 'pass').length} checks passed (${runner.hardware ? 'hardware TEE, Intel chain verified' : runner.attestation.tee === 'dstack-tdx' && runner.attestation.quote ? 'Intel TDX quote bound to the runner keys; Intel chain checked at registration' : 'local-dev: no hardware quote'})`);
 
 // 1. publish
 // Sealing is randomized, so the exact sealed copy the contract commits to is saved here before publishing: if the

@@ -36,7 +36,7 @@ Projects are screened first by Claude Code and Codex, which check that the repo 
 | NEAR wallet address | *your mainnet account* |
 | Repository link | https://github.com/ztoori/sealed-recipes |
 | Demo post link | *your X post URL* |
-| What did you build? (1976 / 2000 characters) | see below |
+| What did you build? (1983 / 2000 characters) | see below |
 | Website | https://app.sealedrecipes.xyz (live on NEAR testnet; the guided demo is under /demo on the same site) |
 
 Why these tracks:
@@ -59,7 +59,7 @@ Sealed Recipes is a platform to compose and run sealed workflows on NEAR, paid p
 - Prices follow demand inside a creator-set band (EIP-1559 rule, proved with Z3). No shares, tokens or trading.
 11 sample recipes (wallet cleanup, exits, app keys, staking, contract checks, account audits, position caps) show what it runs.
 
-Status: live on NEAR testnet (market.sealedrecipes.testnet, app.sealedrecipes.xyz): no login, sealed quotes, guest payments signed in the browser, real NEAR AI Cloud on real mainnet data, settled on-chain. Runner without a hardware quote yet; Intents in the guided demo only. 114 Rust tests, Z3/TLA+ proofs.
+Status: live on NEAR testnet (market.sealedrecipes.testnet, app.sealedrecipes.xyz): no login, sealed quotes, guest payments signed in the browser, real NEAR AI Cloud on real mainnet data, settled on-chain. Runner in Intel TDX (Phala), DCAP-verified; Intents in the guided demo only. 114 Rust tests, Z3/TLA+ proofs.
 ```
 
 The text above is within the form's 2000-character limit; recount if you edit it.
