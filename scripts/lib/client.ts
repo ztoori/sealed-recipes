@@ -64,7 +64,10 @@ export function freshImplicitAccount() {
  * Each quote comes back sealed to this client's one-time reply key; it is opened and its runner signature is
  * verified here, against the exact message the contract will check, before anything is paid.
  */
-export async function requestQuotes(recipes: string[], inputs: Record<string, unknown>, runner: { enc_pk_hex: string; signing_pk: string }, buyer: string, maxPrice?: bigint) {
+/** `oneAtATime`: ask each recipe after the previous one answered. Every dry run shares the runner's per-host limits on
+ *  outbound calls (core/src/outbound.ts), and a part's max_ms counts time spent waiting there, so recipes asked at the
+ *  same time can push each other's parts over their limits. */
+export async function requestQuotes(recipes: string[], inputs: Record<string, unknown>, runner: { enc_pk_hex: string; signing_pk: string }, buyer: string, maxPrice?: bigint, opts: { oneAtATime?: boolean } = {}) {
   const { seal, open, jobHash, sealedHash, openQuote } = await import('../../core/src/index.js');
   const reply = nacl.box.keyPair();
   const salt = randomBytes(16).toString('hex');
@@ -73,8 +76,11 @@ export async function requestQuotes(recipes: string[], inputs: Record<string, un
   const inputsHash = sealedHash(sealed_job);
   const { contract_id } = await api<{ contract_id: string }>('/api/chain/config');
   // a recipe that is not listed (or refuses) comes back as a failed quote, so one bad entry doesn't sink the rest
-  const quotes = await Promise.all(recipes.map((recipe_id) => api<{ quote: any }>('/api/quotes', { recipe_id, sealed_job, job_hash, buyer, ...(maxPrice !== undefined ? { max_price: maxPrice.toString() } : {}) })
-    .then((r) => r.quote, (e: Error) => ({ recipe_id, ok: false, error: e.message, listing: { ticker: recipe_id } }))));
+  const ask = (recipe_id: string) => api<{ quote: any }>('/api/quotes', { recipe_id, sealed_job, job_hash, buyer, ...(maxPrice !== undefined ? { max_price: maxPrice.toString() } : {}) })
+    .then((r) => r.quote, (e: Error) => ({ recipe_id, ok: false, error: e.message, listing: { ticker: recipe_id } }));
+  const quotes: any[] = [];
+  if (opts.oneAtATime) for (const r of recipes) quotes.push(await ask(r));
+  else quotes.push(...await Promise.all(recipes.map(ask)));
   for (const q of quotes) {
     // a failed dry run's detail may contain the inputs, so the runner seals it to this client
     if (!q.ok && q.sealed_error) { try { q.error = open<{ error: string }>(q.sealed_error, reply.secretKey).error; } catch { /* keep the generic text */ } continue; }

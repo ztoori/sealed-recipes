@@ -8,10 +8,13 @@
  *                                     its own guest key, funded once by the testnet faucet, signs ft_transfer_call to the
  *                                     contract; real runner, real NEAR AI Cloud, real mainnet data (read-only)
  *
- *   npx tsx scripts/agent-buyer.ts [--live] [TICKER,TICKER,…] [policy-json] [--target account.near] [--inputs json] [--account id]
+ *   npx tsx scripts/agent-buyer.ts [--live] [TICKER,TICKER,…] [policy-json] [--contract id] [--wallet id] [--target id] [--inputs json] [--account id]
  *
- * Live options:
- *   --target    the public mainnet account the recipes read (default v2.ref-finance.near)
+ * Live options (the recipes only read public mainnet data):
+ *   --contract  the contract a contract recipe checks (default v2.ref-finance.near)
+ *   --wallet    the account a wallet recipe audits (default social.near: a few tokens, one full-access key; the
+ *               wallet parts have per-run time limits, so an account holding thousands of tokens cannot be quoted)
+ *   --target    one account for every field (sets both of the above)
  *   --inputs    JSON for any other form field, e.g. '{"wallet":"aurora"}'
  *   --account   pay from a named testnet account (its near-cli key in ~/.near-credentials/testnet/) instead of the guest
  *   SRS_URL     another marketplace (default https://app.sealedrecipes.xyz); SRS_AGENT_KEY  where the guest key is kept
@@ -28,7 +31,7 @@ import { open, hashObject, base64, USDC_NEAR, type SealedEnvelope } from '../cor
 
 // ---- arguments: flags anywhere, then the optional shortlist and policy as before ----
 const argv = process.argv.slice(2);
-const VALUE_FLAGS = new Set(['--target', '--inputs', '--account']);
+const VALUE_FLAGS = new Set(['--target', '--contract', '--wallet', '--inputs', '--account']);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 const positional = argv.filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(argv[i - 1]));
 const LIVE = argv.includes('--live');
@@ -47,7 +50,8 @@ const DEFAULT_POLICY = LIVE
 const shortlist = (positional[0] ?? (LIVE ? '' : 'CLNP,SWPR')).split(',').map((t) => t.trim().toUpperCase()).filter(Boolean);
 const policy = JSON.parse(positional[1] ?? DEFAULT_POLICY) as Policy;
 const cap = BigInt(Math.round(policy.maxPriceUsd * 1e6));
-const TARGET = opt('target') ?? 'v2.ref-finance.near';
+const CONTRACT = opt('contract') ?? opt('target') ?? 'v2.ref-finance.near';
+const WALLET = opt('wallet') ?? opt('target') ?? 'social.near';
 const usd = (u: string | number | bigint) => '$' + (Number(u) / 1e6).toFixed(4);
 const say = (s: string) => console.log(`[agent] ${s}`);
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -65,18 +69,19 @@ if (LIVE) say(`buying as ${me.guest ? 'guest ' : ''}${me.id}`);
 const fresh = freshImplicitAccount();
 const demoValues: Record<string, unknown> = { wallet: 'carol.testnet', threshold_usd: 30, target: USDC_NEAR, recipient: fresh.account };
 const given: Record<string, unknown> = JSON.parse(opt('inputs') ?? '{}');
-const valueFor = (f: Field) => given[f.id] ?? (LIVE ? (f.type === 'near.account' ? TARGET : f.default ?? f.options?.[0]) : demoValues[f.id]);
+const valueFor = (f: Field) => given[f.id] ?? (LIVE ? (f.type === 'near.account' ? (/contract/i.test(f.id) ? CONTRACT : WALLET) : f.default ?? f.options?.[0]) : demoValues[f.id]);
 const listed = await api<Listing[]>('/api/listings');
 let listings = listed.filter((l) => !shortlist.length || shortlist.includes(l.ticker));
 if (!listings.length) { say(`none of ${shortlist.join(', ') || 'the recipes'} is listed (listed: ${listed.map((l) => l.ticker).join(', ')})`); process.exit(0); }
 for (const l of listings) { const miss = l.form.filter((f) => f.required && valueFor(f) == null); if (miss.length) say(`skipping ${l.ticker}: no value for ${miss.map((f) => f.id).join(', ')} (pass --inputs)`); }
 listings = listings.filter((l) => l.form.every((f) => !f.required || valueFor(f) != null));
 const inputs = Object.fromEntries([...new Map(listings.flatMap((l) => l.form.map((f) => [f.id, valueFor(f)] as const)))]);
-say(`shortlist ${listings.map((l) => l.ticker).join(', ')}; sealed inputs: ${Object.keys(inputs).join(', ')}${LIVE ? ` (target ${TARGET})` : ''}`);
+say(`shortlist ${listings.map((l) => l.ticker).join(', ')}; sealed inputs: ${Object.entries(inputs).map(([k, v]) => LIVE ? `${k}=${v}` : k).join(', ')}`);
 
 // the agent's budget travels with the request: recipes listed above it are not even asked to quote (demo), and the
 // run msg carries it as max_price, so the contract refuses to charge more (live)
-const job = await requestQuotes(listings.map((l) => l.ticker), inputs, runner.onchain, me.id, cap);
+// live: one recipe at a time, so their dry runs don't queue behind each other at the runner's outbound limits
+const job = await requestQuotes(listings.map((l) => l.ticker), inputs, runner.onchain, me.id, cap, { oneAtATime: LIVE });
 const order: Record<string, number> = { low: 0, medium: 1, high: 2 };
 const priceOf = (q: any) => BigInt(q.price ?? q.listing.price_per_run);
 const why = (q: any) => !q.ok ? 'failed: ' + q.error : priceOf(q) > cap ? `over my price cap ${usd(cap)}` : policy.requirePrivacy && q.listing.privacy !== policy.requirePrivacy ? `privacy ${q.listing.privacy}, I require ${policy.requirePrivacy}` : policy.maxRisk && order[q.listing.risk] > order[policy.maxRisk] ? `risk ${q.listing.risk} above ${policy.maxRisk}` : '';
@@ -177,7 +182,12 @@ async function buyLive(q: any) {
   checks.push(['report signed by the runner key registered on-chain', sigOk]);
   checks.push(['report is for this contract, run and recipe', contractId === mode.contract_id && runId === ticket.run_id && recipeId === q.listing.ticker && outcome === 'ok']);
   checks.push(['sealed result matches the signed output_hash', outputHash === hashObject({ run_id: ticket.run_id, salt: result.salt, output: result.output }) && outputHash === completed.output_hash]);
-  const run = await api<{ status: string; promised?: string }>(`/api/chain/runs/${ticket.run_id}`).catch(() => null);
+  // the server reads final blocks, a few seconds behind the settlement: wait for the run to leave Pending
+  let run: { status: string } | null = null;
+  for (let i = 0; i < 15 && (!run || run.status === 'Pending'); i++) {
+    if (i) await new Promise((ok) => setTimeout(ok, 2000));
+    run = await api<{ status: string }>(`/api/chain/runs/${ticket.run_id}`).catch(() => null);
+  }
   checks.push([`run is ${run?.status ?? 'unknown'} on-chain`, !!run && run.status !== 'Pending']);
   for (const [label, ok] of checks) say(`  ${ok ? '✔' : '✘'} ${label}`);
 
