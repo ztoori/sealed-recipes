@@ -1,7 +1,7 @@
 {
   "srs": "1.0",
   "kind": "release-log",
-  "release": 3,
+  "release": 4,
   "note": "Release 1 (genesis): the parts shipped by the owner before the review process existed. Later releases append records with their automated checks and signed approvals.",
   "records": [
     {
@@ -282,6 +282,19 @@
       "checks_hash": "3151262af44a262f2b79a185939c12ce858e8a95dd045cf2feb928f4698bd110",
       "approvals": [],
       "released_at": "2026-11-12"
+    },
+    {
+      "part": "near.wallet-scanner@1.1.0",
+      "tier": "open",
+      "author": "scanlabs.testnet",
+      "implementation": "runner/src/parts/near-wallet-scanner.ts",
+      "manifest_hash": "3a823ac53781b279d7747438fd642ec4cb6a6be0540cbd76efdbb5594ebd37a1",
+      "source_sha256": "16a062f093a3b75b5e55240b7f4460eb8e477d1a030c301b0295390e3d13e46d",
+      "basis": "automated",
+      "submission": "f2aadd8ddfff",
+      "checks_hash": "256bf411387b4f1018265dd0e692be2e1d3687fc58e6ea0cdc30c1b8d571f3e2",
+      "approvals": [],
+      "released_at": "2026-11-13"
     }
   ]
 }

@@ -63,7 +63,7 @@
     },
     {
       "id": "scan",
-      "part": "near.wallet-scanner@1.0.0",
+      "part": "near.wallet-scanner@1.1.0",
       "inputs": {
         "account": "form.account"
       },

@@ -1454,6 +1454,49 @@
         "max_output_bytes": 16000
       },
       "implementation": "runner/src/parts/report-audit-v1-1-0.ts"
+    },
+    {
+      "id": "near.wallet-scanner@1.1.0",
+      "name": "Wallet Scanner",
+      "category": "source",
+      "author": "scanlabs.testnet",
+      "summary": "Lists the fungible tokens any account holds, from a personal wallet to a DEX with thousands: balances in one FastNEAR call, symbols and prices from 1Click, metadata over RPC only for unpriced tokens, within a time budget. Reports how many tokens it kept.",
+      "inputs": {
+        "account": {
+          "type": "near.account"
+        }
+      },
+      "outputs": {
+        "holdings": {
+          "type": "token.holdings"
+        },
+        "coverage": {
+          "type": "report"
+        }
+      },
+      "params": {},
+      "capabilities": [
+        "net:api.fastnear.com",
+        "net:rpc.mainnet.fastnear.com",
+        "net:1click.chaindefuser.com"
+      ],
+      "fee_per_call": "20000",
+      "disclosure": {
+        "model": {
+          "kind": "none"
+        },
+        "instructions": "open",
+        "harness": "open",
+        "verification": "open",
+        "runtime": "bundled"
+      },
+      "limits": {
+        "max_ms": 8000,
+        "max_http_calls": 40,
+        "max_model_calls": 0,
+        "max_output_bytes": 64000
+      },
+      "implementation": "runner/src/parts/near-wallet-scanner.ts"
     }
   ],
   "disclosure_rules": {

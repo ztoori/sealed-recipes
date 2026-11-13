@@ -58,5 +58,6 @@ export const HANDLERS: Record<string, PartHandler> = {
 export const SANDBOXED: Record<string, { file: string; exportName: string }> = {
   'report.audit@1.0.0': { file: 'runner/src/parts/report-audit.ts', exportName: 'auditReport' },
   'report.audit@1.1.0': { file: 'runner/src/parts/report-audit-v1-1-0.ts', exportName: 'auditReport' },
+  'near.wallet-scanner@1.1.0': { file: 'runner/src/parts/near-wallet-scanner.ts', exportName: 'walletScanner' },
   // <release:sandboxed>
 };
