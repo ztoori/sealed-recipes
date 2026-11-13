@@ -3,6 +3,7 @@ import { verifyRunnerAttestation } from '../../../core/src/attestation';
 import type { Check } from '../../../core/src/nearai';
 import { api, runnerAttestation, short, usePoll } from '../api';
 import { useApp } from '../App';
+import { checkWithIntel } from '../tdx';
 import { demoMs } from '../pace';
 import { Icon } from '../icons';
 import { Seal, Tip } from '../ui';
@@ -27,6 +28,13 @@ export function Trust() {
     const nonce = rand();
     const { attestation, onchain } = await runnerAttestation(nonce);
     setAtt({ checks: verifyRunnerAttestation(attestation, { nonce, signing_pk: onchain.signing_pk, enc_pk_hex: onchain.enc_pk_hex, codehash: onchain.codehash }).checks, a: attestation, onchain });
+    // a hardware quote: check Intel's signature chain in this browser (web/src/tdx.ts), then show the result in place of "not verified here"
+    if (attestation.tee === 'dstack-tdx' && attestation.quote) {
+      const setChain = (status: Check['status'], detail: string) => setAtt((p) => p && p.a === attestation ? { ...p, checks: p.checks.map((c) => (c.id === 'tdx.chain' ? { ...c, label: 'Intel signature chain, checked in this browser (DCAP)', status, detail } : c)) } : p);
+      setChain('skip', 'checking with Intel…');
+      const i = await checkWithIntel(attestation.quote, attestation.report_data);
+      setChain(i.ok ? 'pass' : 'fail', i.ok ? `TCB ${i.status}${i.advisories?.length ? ' · advisories ' + i.advisories.join(', ') : ''}` : i.error ?? 'failed');
+    }
   };
   useEffect(() => { verify(); }, []);
   // demo story, step 6: the ciphertext and the on-chain record for CLNP, then the runner's attestation

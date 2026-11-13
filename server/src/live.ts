@@ -29,6 +29,7 @@ import { FileBlobStore } from './store.js';
 import { TeeRunnerBackend } from './backends.js';
 import { NearChain } from './near.js';
 import { mountDemoProxy } from './demo-proxy.js';
+import { collateralCache } from './tee-collateral.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const env = process.env;
@@ -205,6 +206,9 @@ app.get('/runner/attestation', guard(async (req, res) => {
   const r = await fetch(`${RUNNER}/attestation?nonce=${nonce}`, { signal: AbortSignal.timeout(10_000) });
   res.status(r.status).type('application/json').send(await r.text());
 }));
+/** Intel's collateral for the runner's TDX quote, so browsers can run the DCAP check themselves (server/src/tee-collateral.ts) */
+const teeCollateral = collateralCache(async () => (await backend.attestation(randomBytes(32).toString('hex')) as { quote?: string | null }).quote);
+app.get('/api/tee/collateral', guard(async (_, res) => { res.set('cache-control', 'public, max-age=600'); res.json(await teeCollateral()); }));
 app.get('/api/runner/attestation', guard(async (req, res) => {
   res.json({ attestation: await backend.attestation(String(req.query.nonce ?? '')), onchain: await chain.view('get_runner', { runner_id: RUNNER_ID }) });
 }));
