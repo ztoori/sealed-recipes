@@ -4,7 +4,7 @@
 # Before deploying, put the digest you pushed in `image:` (see scripts/testnet/README.md, "Runner in a TEE").
 services:
   srs-runner:
-    image: ghcr.io/ztoori/srs-runner@sha256:9d654f2245ee8d81121240d77734a296755b3a02ca9a757d098cab3ea2f8d64e
+    image: ghcr.io/ztoori/srs-runner@sha256:09fab955d9ade00307c091aad4496665c3f597731808dba541754a9deb66091d
     environment:
       TEE_MODE: dstack                              # keys from the TEE's key service, hardware quotes
       RUNNER_HOST: 0.0.0.0
