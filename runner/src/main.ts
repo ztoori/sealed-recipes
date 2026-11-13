@@ -31,6 +31,7 @@ import { admitParts } from './admission.js';
 import { loadKeys } from './keys.js';
 import type { ApprovalRequest, ApprovalResult } from './types.js';
 import { outboundFetch, outbound } from '../../core/src/outbound.js';
+import { tokenMatches } from '../../core/src/token.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const env = process.env;
@@ -100,6 +101,18 @@ const admission = await admitParts(ROOT, catalog);
 setAdmission(admission);
 console.log(`[runner] release ${admission.release}: ${admission.admitted.size} parts admitted (${admission.sandboxed.size} sandboxed)${admission.refused.size ? `, ${admission.refused.size} refused: ` + [...admission.refused].map(([id, why]) => `${id} (${why})`).join('; ') : ''}`);
 const keys = await loadKeys(env.TEE_MODE ?? 'local-dev', env.RUNNER_KEYS_PATH ?? resolve(ROOT, '.data/runner-dev-keys.json'), composeHash);
+const HOST = env.RUNNER_HOST ?? '127.0.0.1';
+/**
+ * The job endpoints fail closed: a runner in a TEE, or one listening beyond loopback, does not start without a
+ * RUNNER_TOKEN of at least 32 characters. Only a local-dev runner on 127.0.0.1 may run without one (a developer's
+ * machine), and then it says so.
+ */
+const LOOPBACK = HOST === '127.0.0.1' || HOST === '::1' || HOST === 'localhost';
+if (TOKEN.length < 32 && (keys.tee !== 'local-dev' || !LOOPBACK)) {
+  console.error(`[runner] RUNNER_TOKEN must be set (at least 32 characters) for a ${keys.tee} runner on ${HOST}: refusing to start with open job endpoints`);
+  process.exit(2);
+}
+if (!TOKEN) console.warn('[runner] no RUNNER_TOKEN: job endpoints are open to anything that can reach 127.0.0.1 (local-dev only)');
 
 type Ev = { seq: number; at: number; type: string; data: Record<string, unknown> };
 interface Job { runId: string; recipeId: string; events: Ev[]; listeners: Set<(e: Ev) => void>; approval?: { resolve: (r: ApprovalResult) => void; req: ApprovalRequest; node: string }; done: boolean }
@@ -151,7 +164,7 @@ async function runJob(job: Job, ctx: Ctx, sealedRecipe: SealedEnvelope, sealedIn
     const msg = runReportMessage(CONTRACT_ID, job.runId, job.recipeId, outcome, outputHash, delivered.toString(), partsUsed);
     const signature = base64.enc(nacl.sign.detached(utf8ToBytes(msg), keys.sign.secretKey));
     emit(job, 'signed', { message: msg, signature, signing_pk: keys.signingPk });
-    const rep = await fetch(`${ctx.chain}/report_run`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-runner-token': TOKEN }, body: JSON.stringify({ run_id: job.runId, outcome, parts_used: partsUsed, output_hash: outputHash, delivered: delivered.toString(), signature }) });
+    const rep = await fetch(`${ctx.chain}/report_run`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-runner-token': TOKEN }, redirect: 'error', body: JSON.stringify({ run_id: job.runId, outcome, parts_used: partsUsed, output_hash: outputHash, delivered: delivered.toString(), signature }) });
     const settlement = await rep.json();
     if (!rep.ok) throw new Error('report_run rejected: ' + JSON.stringify(settlement));
     reported = true;
@@ -216,14 +229,14 @@ async function runJob(job: Job, ctx: Ctx, sealedRecipe: SealedEnvelope, sealedIn
       const state_hash = sealedHash(envelope);
       const signature = base64.enc(nacl.sign.detached(utf8ToBytes(stateMessage(job.runId, job.recipeId, localSeq, state_hash)), keys.sign.secretKey));
       // durable write first: the run does not move past this point until the marketplace has stored the checkpoint
-      const st = await fetch(`${ctx.market}/api/internal/checkpoints`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-runner-token': TOKEN }, body: JSON.stringify({ run_id: job.runId, local_seq: localSeq, state_hash, envelope, signature } satisfies CheckpointRecord) });
+      const st = await fetch(`${ctx.market}/api/internal/checkpoints`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-runner-token': TOKEN }, redirect: 'error', body: JSON.stringify({ run_id: job.runId, local_seq: localSeq, state_hash, envelope, signature } satisfies CheckpointRecord) });
       if (!st.ok) throw new Error('checkpoint store failed: ' + (await st.text()));
       emit(job, 'checkpoint', { local_seq: localSeq, state_hash, completed_parts: point.index, mid_part: point.node !== undefined ? `s${point.index + 1}` : null });
       const bill = settleMode === 'checkpoint' ? partsDone : [];
       if (bill.length || Date.now() - lastOnchain >= HEARTBEAT_MS) {
         const seq = onchainSeq + 1;
         const sig = base64.enc(nacl.sign.detached(utf8ToBytes(checkpointMessage(CONTRACT_ID, job.runId, job.recipeId, seq, state_hash, bill)), keys.sign.secretKey));
-        const r = await fetch(`${ctx.chain}/checkpoint_run`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-runner-token': TOKEN }, body: JSON.stringify({ run_id: job.runId, seq, state_hash, parts_done: bill, signature: sig }) });
+        const r = await fetch(`${ctx.chain}/checkpoint_run`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-runner-token': TOKEN }, redirect: 'error', body: JSON.stringify({ run_id: job.runId, seq, state_hash, parts_done: bill, signature: sig }) });
         const out = await r.json();
         if (!r.ok) throw new Error('checkpoint_run rejected: ' + JSON.stringify(out));
         onchainSeq = seq; lastOnchain = Date.now();
@@ -298,7 +311,8 @@ const app = express();
 app.use(express.json({ limit: '2mb' }));
 app.use((_, res, next) => { res.setHeader('access-control-allow-origin', '*'); res.setHeader('access-control-allow-headers', 'content-type'); next(); });
 /** job endpoints are for the marketplace only (attestation and health stay public) */
-const auth: express.RequestHandler = (req, res, next) => { if (TOKEN && req.get('x-runner-token') !== TOKEN) { res.status(401).json({ error: 'runner token required' }); return; } next(); };
+/** checked in constant time (core/src/token.ts); open only for the token-less local-dev case allowed at startup */
+const auth: express.RequestHandler = (req, res, next) => { if (TOKEN && !tokenMatches(req.get('x-runner-token'), TOKEN)) { res.status(401).json({ error: 'runner token required' }); return; } next(); };
 
 app.get('/health', (_, res) => { res.json({ ok: true, runner_id: RUNNER_ID, tee: keys.tee, outbound: outbound.stats() }); });
 app.get('/attestation', async (req, res) => {
@@ -404,7 +418,6 @@ app.use((err: Error, _req: express.Request, res: express.Response, next: express
   next(err);
 });
 
-const HOST = env.RUNNER_HOST ?? '127.0.0.1';
 app.listen(PORT, HOST, () => {
   console.log(`[runner] ${RUNNER_ID} (${keys.tee}) on http://${HOST}:${PORT}`);
   console.log(`[runner] signing ${keys.signingPk}  enc ${keys.encPkHex.slice(0, 16)}…  codehash ${codehash.slice(0, 16)}…`);

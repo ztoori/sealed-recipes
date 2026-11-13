@@ -19,7 +19,8 @@ near contract deploy "$MARKET" use-file "$MW" with-init-call new \
   prepaid-gas '50.0 Tgas' attached-deposit '0 NEAR' network-config "$NETWORK" sign-with-legacy-keychain send
 
 echo "== tUSDC storage for the accounts that hold or receive it"
-for a in "$MARKET" "$TREASURY" "$ROOT_ACCOUNT" "$RUNNER_ID"; do
+# the runner fee is paid to the live runner, the TDX one (not the retired local-dev runner.$ROOT_ACCOUNT)
+for a in "$MARKET" "$TREASURY" "$ROOT_ACCOUNT" "$TEE_RUNNER_ID"; do
   near_call "$TOKEN" storage_deposit "{\"account_id\":\"$a\",\"registration_only\":true}" "$ROOT_ACCOUNT" 0.0125
 done
 

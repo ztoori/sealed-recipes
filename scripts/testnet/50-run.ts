@@ -1,5 +1,5 @@
 /**
- * A real paid run on testnet, end to end:  node --import tsx scripts/testnet/50-run.ts [--recipe CHEK] [--target wrap.near]
+ * A real paid run on testnet, end to end:  node --import tsx scripts/testnet/50-run.ts [--recipe CHEK --ticker CHECK] [--target wrap.near]
  *
  *  1. publishes the recipe if it isn't on the contract yet: sealed here to the registered runner, publish_recipe
  *     signed with the creator's key, then the ciphertext handed to the live marketplace (which checks the on-chain hash);
@@ -27,8 +27,11 @@ const FAUCET = process.env.FAUCET ?? `faucet.${ROOT_ACCOUNT}`;
 const RPC = process.env.NEAR_RPC_URL ?? 'https://rpc.testnet.fastnear.com';
 process.env.SRS_URL ??= 'http://127.0.0.1:8081';
 const SEED = arg('recipe', 'CHEK');
-/** publish a seed recipe under another ticker (a published recipe's parts are fixed; a new part version needs a new listing) */
-const RECIPE = arg('ticker', SEED);
+/**
+ * publish a seed recipe under another ticker (a published recipe's parts are fixed; a new part version needs a new
+ * listing). The CHEK seed is live as CHECK (the CHEK listing belongs to the retired local-dev runner).
+ */
+const RECIPE = arg('ticker', SEED === 'CHEK' ? 'CHECK' : SEED);
 const TARGET = arg('target', 'wrap.near');
 const explorer = (tx: string) => `https://testnet.nearblocks.io/txns/${tx}`;
 const usd = (u: string | bigint) => `${(Number(u) / 1e6).toFixed(4)} tUSDC`;
@@ -52,8 +55,10 @@ const call = async (who: Account, contractId: string, methodName: string, args: 
 };
 const step = (s: string) => console.log(`\n\x1b[1m${s}\x1b[0m`);
 
-const mode = await api<{ mode: string; contract_id: string; payment_token: string; runner_id: string }>('/api/mode');
+const mode = await api<{ mode: string; contract_id: string; payment_token: string; runner_id: string; retired?: string[] }>('/api/mode');
 console.log(`marketplace ${process.env.SRS_URL}: ${mode.contract_id} on ${mode.mode}, payment token ${mode.payment_token}, runner ${mode.runner_id}`);
+// refuse a retired listing before any transaction (an update_sealed on it would cost gas and lead nowhere)
+if ((mode.retired ?? []).includes(RECIPE.toUpperCase())) { console.error(`${RECIPE} is retired on this marketplace; pick a live ticker (e.g. --recipe CHEK --ticker CHECK)`); process.exit(1); }
 const runner = await verifiedRunner();
 console.log(`runner attestation: ${runner.checks.filter((c) => c.status === 'pass').length} checks passed (${runner.hardware ? 'hardware TEE, Intel chain verified' : runner.attestation.tee === 'dstack-tdx' && runner.attestation.quote ? 'Intel TDX quote bound to the runner keys; Intel chain checked at registration' : 'local-dev: no hardware quote'})`);
 
@@ -83,8 +88,12 @@ const fresh = () => {
   writeFileSync(savedPath(sealedHash(sealed)), JSON.stringify(saved), { mode: 0o600 });
   return { recipe, saved, hash: sealedHash(sealed) };
 };
-type OnchainRecipe = { sealed_hash: string; pending_sealed_hash?: string; update_effective_ns?: string };
+type OnchainRecipe = { sealed_hash: string; runner_id: string; pending_sealed_hash?: string; update_effective_ns?: string };
 const onchain = await api<OnchainRecipe>(`/api/chain/recipes/${RECIPE}`).catch(() => null);
+if (onchain && onchain.runner_id !== mode.runner_id) {
+  console.error(`${RECIPE} is assigned to ${onchain.runner_id}, not to this marketplace's runner ${mode.runner_id}: it cannot run here (retired). Publish under a new ticker: --ticker <NEW>`);
+  process.exit(1);
+}
 const listed = (await api<{ ticker: string }[]>('/api/listings')).some((l) => l.ticker === RECIPE);
 if (onchain && listed) console.log(`   yes (sealed_hash ${onchain.sealed_hash.slice(0, 16)}…)`);
 else if (!onchain) {

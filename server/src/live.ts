@@ -13,7 +13,8 @@
  * Env: PORT (8081)  CONTRACT_ID  RUNNER_ID  RUNNER_URL  RUNNER_TOKEN (required)  NEAR_RPC_URL  NEAR_RELAYER_KEY_FILE
  *      NEAR_RELAYER_ACCOUNT  SRS_STORE_DIR (persistent)  NEAR_NETWORK (testnet)
  *      NEAR_FAUCET_KEY_FILE  NEAR_FAUCET_ACCOUNT (optional: enables POST /api/faucet for guest accounts)
- *      SRS_RETIRED_LISTINGS (comma-separated tickers this marketplace no longer shows or quotes, e.g. AUDT)
+ *      SRS_RETIRED_LISTINGS (comma-separated tickers superseded on this runner, e.g. SAFE2; listings of other runners are
+ *      retired without being named)  SRS_RUNNER_TEE (label; default: from the runner's attestation)
  *      FAUCET_NEAR (0.2)  FAUCET_TUSDC (5)  FAUCET_PER_IP_DAY (3)  FAUCET_PER_DAY (30)
  */
 import express from 'express';
@@ -39,12 +40,33 @@ const PORT = Number(env.PORT ?? 8081);
 const NETWORK = env.NEAR_NETWORK ?? 'testnet';
 const CONTRACT_ID = need('CONTRACT_ID');
 const RUNNER_ID = need('RUNNER_ID');
-const RUNNER = need('RUNNER_URL');
+/**
+ * The runner's base URL, checked at startup so a placeholder or a typo fails here and not on every request: http(s),
+ * no <placeholder>, no query or fragment; a trailing slash is dropped. Plain http only to a loopback address (the
+ * token would otherwise cross the network in the clear).
+ */
+function runnerUrl(raw: string): string {
+  let u: URL;
+  try { u = new URL(raw); } catch { console.error(`[live] RUNNER_URL is not a URL: ${raw}`); process.exit(2); }
+  const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname);
+  if (/[<>]/.test(raw) || u.search || u.hash || u.username || u.password || !(u.protocol === 'https:' || (u.protocol === 'http:' && loopback))) {
+    console.error(`[live] RUNNER_URL must be the runner's https base URL (http only on loopback), with no placeholder, query or credentials: ${raw}`);
+    process.exit(2);
+  }
+  return u.href.replace(/\/+$/, '');
+}
+const RUNNER = runnerUrl(need('RUNNER_URL'));
 const RUNNER_TOKEN = need('RUNNER_TOKEN');
 const RPC = env.NEAR_RPC_URL ?? 'https://rpc.testnet.fastnear.com';
 const PAY_TIMEOUT_MS = 5 * 60_000;
-/** superseded listings: still on-chain (the contract has no delisting), but this marketplace stops offering them */
+/**
+ * Listings this marketplace no longer offers (still on-chain: the contract has no delisting). A listing assigned to
+ * another runner than RUNNER_ID is retired without being named (it is sealed to that runner's key, so this runner
+ * could not run it anyway); SRS_RETIRED_LISTINGS names the ones superseded on this same runner (e.g. SAFE2 by SAFE3).
+ */
 const RETIRED = new Set((env.SRS_RETIRED_LISTINGS ?? '').split(',').map((t) => t.trim().toUpperCase()).filter(Boolean));
+const retired = (ticker: string, onchain?: { runner_id: string } | null) => RETIRED.has(String(ticker).toUpperCase()) || (!!onchain && onchain.runner_id !== RUNNER_ID);
+const RETIRED_MSG = 'this recipe was replaced by a newer listing';
 const explorer = (tx: string) => `https://testnet.nearblocks.io/txns/${tx}`;
 
 const chain = new NearChain(RPC, CONTRACT_ID, env.NEAR_RELAYER_KEY_FILE, env.NEAR_RELAYER_ACCOUNT);
@@ -98,34 +120,54 @@ const sealedFor = async (r: RunCtx) => {
   return env;
 };
 
+const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+/**
+ * Relay the runner's event stream for a run until it completes. A dropped connection is reconnected to the same
+ * runner job; the runner replays that job's events on every connection, so each `seq` is relayed once. Only when the
+ * runner no longer has the run (404: it restarted) or stays unreachable is the run reported lost and resumed from its
+ * last checkpoint; a resumed run is a new runner job whose events start again at seq 0.
+ */
 async function followRunner(r: RunCtx) {
+  let next = 0;   // next runner seq to relay for the current runner job
+  let drops = 0;  // reconnects in a row without a new event
   for (;;) {
+    let gone = false;
     try {
       const sse = await backend.events(r.run_id);
-      if (!sse.ok) throw new Error(`events ${sse.status}`);
-      const reader = sse.body!.getReader(); const dec = new TextDecoder(); let buf = '';
-      for (;;) {
-        const { value, done } = await reader.read(); if (done) break;
-        buf += dec.decode(value, { stream: true });
-        for (let i; (i = buf.indexOf('\n\n')) >= 0;) {
-          const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
-          if (!chunk.startsWith('data: ')) continue;
-          const e = JSON.parse(chunk.slice(6)) as { type: string; data: Record<string, unknown> };
-          pushEv(r, 'runner', e.type, e.data);
-          if (e.type === 'completed' || e.type === 'failed') { r.done = true; saveRun(r); await reader.cancel(); return; }
+      if (sse.status === 404) { gone = true; await sse.body?.cancel(); }
+      else {
+        if (!sse.ok) throw new Error(`events ${sse.status}`);
+        const reader = sse.body!.getReader(); const dec = new TextDecoder(); let buf = '';
+        for (;;) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true });
+          for (let i; (i = buf.indexOf('\n\n')) >= 0;) {
+            const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+            if (!chunk.startsWith('data: ')) continue;
+            const e = JSON.parse(chunk.slice(6)) as { seq?: number; type: string; data: Record<string, unknown> };
+            const seq = typeof e.seq === 'number' ? e.seq : next;
+            if (seq < next) continue; // already relayed before the reconnect
+            next = seq + 1; drops = 0;
+            pushEv(r, 'runner', e.type, e.data);
+            if (e.type === 'completed' || e.type === 'failed') { r.done = true; saveRun(r); await reader.cancel(); return; }
+          }
         }
       }
-    } catch { /* stream broke: resume below */ }
-    const st = await chain.view<Run | null>('get_run', { run_id: r.run_id }).catch(() => null);
-    if (r.done || st?.status !== 'Pending') return;
+    } catch { /* stream broke or the runner is unreachable */ }
+    if (r.done) return;
+    const st = await chain.view<Run | null>('get_run', { run_id: r.run_id }).catch(() => undefined);
+    if (st !== undefined && st?.status !== 'Pending') return; // settled, refunded or reclaimed (unknown: keep going)
+    // a dropped connection: the runner job is likely still there, reconnect without alarming the buyer
+    if (!gone && drops < 3) { drops++; await sleep(1000 * drops); continue; }
     pushEv(r, 'market', 'runner_lost', { checkpoint: r.checkpoint?.local_seq ?? null });
     for (let attempt = 0; ; attempt++) {
-      await new Promise((ok) => setTimeout(ok, Math.min(10_000, 1000 + attempt * 1000)));
-      const s = await chain.view<Run | null>('get_run', { run_id: r.run_id }).catch(() => null);
-      if (s?.status !== 'Pending') return;
+      await sleep(Math.min(10_000, 1000 + attempt * 1000));
+      const s = await chain.view<Run | null>('get_run', { run_id: r.run_id }).catch(() => undefined);
+      if (s !== undefined && s?.status !== 'Pending') return;
       try {
         const res = await backend.resume(r.run_id, { recipe_id: r.recipe_id, sealed_recipe: await sealedFor(r), sealed_inputs: r.sealed_inputs, checkpoint: r.checkpoint ?? null, approvals: {} });
-        if (res.ok || res.status === 409) { pushEv(r, 'market', 'resume_requested', { attempt: attempt + 1 }); break; }
+        if (res.ok) { next = 0; drops = 0; pushEv(r, 'market', 'resume_requested', { attempt: attempt + 1 }); break; }
+        if (res.status === 409) { drops = 0; break; } // still executing there: reconnect to that job
       } catch { /* runner still down */ }
     }
   }
@@ -133,6 +175,14 @@ async function followRunner(r: RunCtx) {
 
 /** wait until the contract has the run as Pending (the buyer's ft_transfer_call landed), then start the runner */
 async function watchPayment(r: RunCtx, txHash?: string) {
+  try { await watchPaymentInner(r, txHash); }
+  catch (e) {
+    // never an unhandled rejection (it would stop this server); a paid run stays resumable (POST /api/runs/:id/resume)
+    console.error(`[live] run ${r.run_id}: ${(e as Error).message}`);
+    pushEv(r, 'market', 'failed', { error: `could not start the run: ${(e as Error).message}; it can be resumed while it is Pending on-chain` });
+  }
+}
+async function watchPaymentInner(r: RunCtx, txHash?: string) {
   const t = Date.now();
   if (txHash) {
     try {
@@ -146,12 +196,13 @@ async function watchPayment(r: RunCtx, txHash?: string) {
       pushEv(r, 'chain', 'run_requested', { status: run.status, buyer: run.buyer });
       r.started = true; saveRun(r);
       const res = await backend.start({ run_id: r.run_id, recipe_id: r.recipe_id, sealed_recipe: await sealedFor(r), sealed_inputs: r.sealed_inputs });
-      if (!res.ok) { pushEv(r, 'runner', 'failed', { error: res.error ?? 'runner refused the run' }); return; }
+      // unreachable: the run is paid and Pending, so keep it alive; followRunner resumes it once the runner answers
+      if (!res.ok && !res.unreachable) { pushEv(r, 'runner', 'failed', { error: res.error ?? 'runner refused the run' }); return; }
       void followRunner(r);
       return;
     }
     if (run && run.status !== 'Pending') { pushEv(r, 'chain', 'run_not_pending', { status: run.status }); return; }
-    await new Promise((ok) => setTimeout(ok, 2000));
+    await sleep(2000);
   }
   pushEv(r, 'market', 'payment_timeout', { waited_s: PAY_TIMEOUT_MS / 1000 });
 }
@@ -169,10 +220,21 @@ const guard = (fn: (req: express.Request, res: express.Response) => unknown) => 
 };
 const runnerOnly: express.RequestHandler = (req, res, next) => { if (!tokenMatches(req.get('x-runner-token'), RUNNER_TOKEN)) { res.status(401).json({ error: 'runner token required' }); return; } next(); };
 
+/** what the runner is, from its own attestation when SRS_RUNNER_TEE does not say (cached; unknown while unreachable) */
+let teeLabel: { at: number; label: string } | undefined;
+async function runnerTee(): Promise<string> {
+  if (env.SRS_RUNNER_TEE) return env.SRS_RUNNER_TEE;
+  if (teeLabel && Date.now() - teeLabel.at < 10 * 60_000) return teeLabel.label;
+  const a = await backend.attestation(randomBytes(16).toString('hex')).catch(() => null) as { tee?: string } | null;
+  if (!a?.tee) return 'runner unreachable (TEE unknown)';
+  const label = a.tee === 'dstack-tdx' ? 'Intel TDX (dstack)' : a.tee === 'local-dev' ? 'local-dev runner (no hardware quote)' : a.tee;
+  teeLabel = { at: Date.now(), label };
+  return label;
+}
 app.get('/api/mode', guard(async (_, res) => {
   const cfg = await chain.view<Config>('get_config');
   res.json({ mode: NETWORK, contract_id: CONTRACT_ID, payment_token: cfg.payment_token, runner_id: RUNNER_ID, runner_url: '/runner', relayer: chain.relayerId, rpc_url: RPC, faucet: !!faucet,
-    services: { contract: `${CONTRACT_ID} on ${NETWORK}`, data: 'FastNEAR / NEAR RPC (mainnet, read-only)', ai: 'NEAR AI Cloud', tee: env.SRS_RUNNER_TEE ?? 'local-dev runner (no hardware quote)' } });
+    services: { contract: `${CONTRACT_ID} on ${NETWORK}`, data: 'FastNEAR / NEAR RPC (mainnet, read-only)', ai: 'NEAR AI Cloud', tee: await runnerTee() }, retired: [...RETIRED] });
 }));
 app.get('/api/chain/config', guard(async (_, res) => { res.json({ ...(await chain.view<Config>('get_config')), contract_id: CONTRACT_ID, network: NETWORK }); }));
 app.get('/api/chain/recipes/:id', guard(async (req, res) => { const r = await chain.view<Recipe | null>('get_recipe', { recipe_id: String(req.params.id) }); r ? res.json(r) : res.status(404).json({ error: 'no recipe' }); }));
@@ -204,7 +266,7 @@ app.post('/api/internal/checkpoints', runnerOnly, guard(async (req, res) => {
 app.get('/runner/attestation', guard(async (req, res) => {
   const nonce = String(req.query.nonce ?? '');
   if (!/^[0-9a-f]{16,128}$/i.test(nonce)) throw new BadRequest('nonce must be 16-128 hex characters');
-  const r = await fetch(`${RUNNER}/attestation?nonce=${nonce}`, { signal: AbortSignal.timeout(10_000) });
+  const r = await fetch(`${RUNNER}/attestation?nonce=${nonce}`, { redirect: 'error', signal: AbortSignal.timeout(10_000) });
   res.status(r.status).type('application/json').send(await r.text());
 }));
 /** Intel's collateral for the runner's TDX quote, so browsers can run the DCAP check themselves (server/src/tee-collateral.ts) */
@@ -254,10 +316,11 @@ function recordOf(r: Recipe, q: SplitView | null) {
 app.get('/api/listings', guard(async (_, res) => {
   const out = await Promise.all(Object.values(listings).filter((l) => !RETIRED.has(l.ticker)).map(async (l) => {
     const onchain = await chain.view<Recipe | null>('get_recipe', { recipe_id: l.ticker }).catch(() => null);
+    if (retired(l.ticker, onchain)) return null;
     const split = onchain ? await chain.view<SplitView>('quote_settlement', { recipe_id: l.ticker }).catch(() => null) : null;
     return { ...l, onchain, record: onchain ? recordOf(onchain, split) : null };
   }));
-  res.json(out);
+  res.json(out.filter((l) => l !== null));
 }));
 
 // ---- read-only feeds for the docs pages (Spec, Trust & privacy) and the landing page ----
@@ -294,12 +357,13 @@ app.post('/api/quotes', guard(async (req, res) => {
   if (recent.length >= QUOTES_PER_MINUTE) throw new BadRequest('too many quote requests in the last minute');
   quoteLog.set(ip, [...recent, now]);
   const { recipe_id, sealed_job, job_hash, buyer } = req.body as { recipe_id: string; sealed_job: SealedEnvelope; job_hash: string; buyer: string };
-  if (RETIRED.has(String(recipe_id).toUpperCase())) throw new BadRequest('this recipe was replaced by a newer listing');
+  if (retired(recipe_id)) throw new BadRequest(RETIRED_MSG);
   if (typeof buyer !== 'string' || !/^[a-z0-9._-]{2,64}$/.test(buyer)) throw new BadRequest('buyer account required');
   if (!/^[0-9a-f]{64}$/.test(job_hash ?? '') || sealed_job?.purpose !== 'inputs') throw new BadRequest('expected sealed inputs and their job_hash');
   const l = listings[String(recipe_id)];
   const r = l && await chain.view<Recipe | null>('get_recipe', { recipe_id: l.ticker });
   if (!l || !r) throw new BadRequest('unknown recipe');
+  if (retired(l.ticker, r)) throw new BadRequest(RETIRED_MSG);
   if (!vault.recipes[l.ticker]?.versions.includes(r.sealed_hash)) throw new BadRequest('this marketplace does not hold the current sealed version');
   const q = await backend.quote({ recipe_id: l.ticker, sealed_recipe: store.get(r.sealed_hash), sealed_job, job_hash, buyer });
   res.json({ quote: { recipe_id: l.ticker, ok: !!q.ok, error: q.error, sealed_quote: q.sealed_quote, sealed_error: (q as { sealed_error?: unknown }).sealed_error,
@@ -311,8 +375,11 @@ app.post('/api/quotes', guard(async (req, res) => {
 app.post('/api/runs/prepare', guard(async (req, res) => {
   const { recipe_id, buyer, sealed_inputs, signed_quote: sq, max_price } = req.body as { recipe_id: string; buyer: string; sealed_inputs: SealedEnvelope; signed_quote?: { sealed_hash: string; job_hash: string; price: string; expected: string; promised: string; cover: string; expires_ns: string; signature: string }; max_price?: string };
   if (typeof buyer !== 'string' || !/^[a-z0-9._-]{2,64}$/.test(buyer)) throw new BadRequest('buyer account required');
+  if (typeof recipe_id !== 'string' || retired(recipe_id)) throw new BadRequest(typeof recipe_id === 'string' ? RETIRED_MSG : 'recipe_id required');
   const r = await chain.view<Recipe | null>('get_recipe', { recipe_id }); if (!r) throw new BadRequest('unknown recipe');
-  const runner = await chain.view<{ enc_pk_hex: string }>('get_runner', { runner_id: r.runner_id });
+  // a run is only ever prepared for a listing this marketplace offers and its runner can run
+  if (retired(recipe_id, r)) throw new BadRequest(RETIRED_MSG);
+  const runner = await chain.view<{ enc_pk_hex: string }>('get_runner', { runner_id: RUNNER_ID });
   if (sealed_inputs?.purpose !== 'inputs' || sealed_inputs.to !== runner.enc_pk_hex) throw new BadRequest('inputs must be sealed to the recipe runner');
   const price = sq ? sq.price : r.price_per_run;
   if (max_price !== undefined && BigInt(price) > BigInt(max_price)) throw new BadRequest('price is above your max price');

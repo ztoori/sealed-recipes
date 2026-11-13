@@ -12,6 +12,8 @@ Group=srs
 WorkingDirectory=/opt/srs-live
 EnvironmentFile=/etc/srs/live.env
 EnvironmentFile=/etc/srs/secrets.env
+# the server only needs RUNNER_TOKEN from secrets.env; the AI and 1Click keys are the runner's (CVM secrets)
+UnsetEnvironment=NEAR_AI_API_KEY ONECLICK_API_KEY ONECLICK_JWT
 Environment=NODE_ENV=production
 Environment=PORT=8081
 # RUNNER_ID and RUNNER_URL (the TDX runner on Phala Cloud) come from /etc/srs/live.env

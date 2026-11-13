@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Registers the runner that runs in a TDX CVM (Phala Cloud) on the contract, after checking its attestation
 # (Intel DCAP, fresh nonce, audited code hash: scripts/testnet/tee-identity.ts). A runner's keys can't change once
-# registered, so the TEE runner gets its own identity next to the local-dev one (runner.$ROOT_ACCOUNT).
+# registered, so the TEE runner has its own identity (the retired local-dev one was runner.$ROOT_ACCOUNT).
 # If it is registered already (same keys), records a new audited code release instead.
 #   RUNNER_URL=https://<app-id>-8787.<node>.phala.network ./45-tee-runner.sh    (as the user holding the owner key)
 source "$(dirname "$0")/config.sh"
-: "${TEE_RUNNER_ID:=tee.$ROOT_ACCOUNT}"
 : "${RUNNER_FEE:=30000}"   # 0.03 tUSDC per run to the runner
 : "${RUNNER_URL:?set RUNNER_URL to the public URL of the CVM for port 8787}"
+# the runner fee is paid in tUSDC: the runner account must be registered with the token (a repeat is refunded)
+near_call "$TOKEN" storage_deposit "{\"account_id\":\"$TEE_RUNNER_ID\",\"registration_only\":true}" "$ROOT_ACCOUNT" 0.0125
 id=$(cd "$REPO" && RUNNER_URL="$RUNNER_URL" node --import tsx scripts/testnet/tee-identity.ts)
 echo "TEE runner identity: $id"
 if near_view "$MARKET" get_runner "{\"runner_id\":\"$TEE_RUNNER_ID\"}" 2>/dev/null | grep -q signing_pk; then

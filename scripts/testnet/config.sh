@@ -4,7 +4,8 @@
 : "${MARKET:=market.$ROOT_ACCOUNT}"                 # the Sealed Recipes contract
 : "${TOKEN:=tusdc.$ROOT_ACCOUNT}"                   # Test USD (tUSDC), 6 decimals
 : "${RELAYER:=relayer.$ROOT_ACCOUNT}"               # relays the runner's signed reports
-: "${RUNNER_ID:=runner.$ROOT_ACCOUNT}"              # the runner's on-chain identity
+: "${TEE_RUNNER_ID:=tee.$ROOT_ACCOUNT}"            # the live runner: the TDX one on Phala Cloud (45-tee-runner.sh)
+: "${RUNNER_ID:=runner.$ROOT_ACCOUNT}"              # the retired local-dev runner (40-runner.sh, local setups only)
 : "${TREASURY:=treasury.$ROOT_ACCOUNT}"             # receives the protocol fee
 : "${FAUCET:=faucet.$ROOT_ACCOUNT}"                 # the only account that can mint tUSDC
 : "${PROTOCOL_FEE_BPS:=200}"                        # 2%
