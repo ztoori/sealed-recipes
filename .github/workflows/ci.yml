@@ -1,0 +1,41 @@
+name: CI
+on:
+  push:
+    branches: [main, live]
+  pull_request:
+
+jobs:
+  node:
+    name: Tests, typecheck, end-to-end story
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Pinned code hash matches the runner sources
+        run: |
+          cp AUDITED_CODEHASH /tmp/pinned
+          npm run pin-codehash
+          diff /tmp/pinned AUDITED_CODEHASH
+      - run: npm run test:e2e
+
+  contracts:
+    name: Contract tests (Rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            contracts/sealed-recipes
+            contracts/tusdc
+      - run: cargo test --manifest-path contracts/sealed-recipes/Cargo.toml
+      - run: cargo test --manifest-path contracts/tusdc/Cargo.toml
