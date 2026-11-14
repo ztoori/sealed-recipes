@@ -37,7 +37,7 @@ Projects are screened first by Claude Code and Codex, which check that the repo 
 | Repository link | https://github.com/ztoori/sealed-recipes |
 | Demo post link | *your X post URL* |
 | What did you build? (1998 / 2000 characters) | see below |
-| Website | https://app.sealedrecipes.xyz (live on NEAR testnet; the guided demo is under /demo on the same site) |
+| Website | https://app.sealedrecipes.xyz (live on NEAR testnet; the guided demo film is at https://app.sealedrecipes.xyz/#/demo, and the hands-on sandbox under /demo) |
 
 Why these tracks:
 

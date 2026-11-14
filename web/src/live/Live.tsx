@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, short, usePoll } from '../api';
 import { Icon } from '../icons';
 import { BrandMark } from '../ui';
-import { Ctx, DEMO, accUrl, liveHash, parseLive, type Listing, type LiveRoute, type Mode } from './ctx';
+import { Ctx, accUrl, liveHash, parseLive, type Listing, type LiveRoute, type Mode } from './ctx';
 import { loadGuest, newGuest, type Guest } from './guest';
 import { Landing } from '../pages/Landing';
 import { Docs } from '../pages/Docs';
@@ -18,6 +18,7 @@ import { DemoPages, PracticeBanner } from './DemoPages';
 import { Recipes } from './Recipes';
 import { Quote } from './Quote';
 import { Wallet } from './Wallet';
+import { FilmPage } from './FilmPage';
 
 const MENU: { key: string; label: string; icon: string; route: LiveRoute }[] = [
   { key: 'recipes', label: 'Recipes', icon: 'market', route: { page: 'recipes' } },
@@ -74,7 +75,7 @@ export function Live() {
           <span className="who"><b>{guest ? short(guest.account, 6, 4) : 'Guest'}</b><small>{guest ? 'guest · testnet' : 'no account yet'}</small></span>
           <Icon name="chevron" size={14} className="caret" />
         </button>
-        <a className="story-btn" href={`${DEMO}?story=1`} title="The guided demo, with simulated services"><Icon name="play" size={15} fill />Guided demo</a>
+        <button className="story-btn" aria-current={route.page === 'film' ? 'page' : undefined} onClick={() => go({ page: 'film' })} title="The guided demo: a 2½-minute film"><Icon name="play" size={15} fill />Guided demo</button>
         </>}
       </div>
       <main className={home ? 'home' : undefined}>
@@ -84,6 +85,7 @@ export function Live() {
         {route.page === 'recipes' && <Recipes ticker={route.ticker} />}
         {route.page === 'quote' && <Quote key={route.ticker + (route.run ?? '')} ticker={route.ticker} runId={route.run} />}
         {route.page === 'wallet' && <Wallet />}
+        {route.page === 'film' && <FilmPage />}
       </main>
       {toastMsg && <div key={toastMsg.id} className={'toast' + (toastMsg.err ? ' err' : '')} role="alert"><Icon name={toastMsg.err ? 'alert' : 'check'} size={16} />{toastMsg.msg}</div>}
     </Ctx.Provider>

@@ -5,7 +5,7 @@
  *    the sealed recipes this marketplace holds, the parts registered on the contract);
  *  - backend '/demo' (Compose): the practice composer runs against the demo's simulated services, served by this
  *    site under /demo, because publishing on testnet takes the creator's own key. A banner says so.
- * Links inside these pages are mapped to the live site's routes; the guided story opens /demo/?story=1.
+ * Links inside these pages are mapped to the live site's routes; "Watch the demo" opens the demo film (#/demo).
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { ACCOUNTS, ApiBase, api, setCurrency, setLedgerMode, setScopedBase } from '../api';
@@ -50,7 +50,7 @@ export function DemoPages({ backend, children, banner }: { backend: '' | '/demo'
   };
   const value: AppCtxValue = {
     acting, setActing, route: toDemo(live.route), go, toast: live.toast, mode,
-    story: { run: 0, step: 0, start: () => { location.href = `${DEMO}?story=1`; }, advance: () => {}, stop: () => {} },
+    story: { run: 0, step: 0, start: () => live.go({ page: 'film' }), advance: () => {}, stop: () => {} },
   };
   return (
     <ApiBase.Provider value={backend}>
