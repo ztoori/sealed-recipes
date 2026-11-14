@@ -16,9 +16,9 @@ Sealed Recipes is a marketplace on NEAR where an expert's workflow (a *recipe*) 
 | **Spec** | [SRS-1](docs/SRS-1.md), the open spec for parts and recipes |
 | **Hackathon** | [NEAR Hackathon](https://nearhackathon.com), Nov 1–14, 2026. Tracks: **Privacy & Private AI**, **AI Security & Defense**, **Agent Economy** ([why](#hackathon-tracks)) |
 
-![A signed quote from one sealed recipe](docs/media/03-quote.png)
+![The four seats: users, creators, builders and runners around one market](docs/media/film-seats.png)
 
-**Contents:** [Why](#why) · [Four seats](#four-seats-at-one-table) · [Try it](#try-it) · [How one run plays out](#how-one-run-plays-out) · [Status](#status) · [How it works](#how-it-works) · [Walkthrough](#try-it-in-two-minutes-no-keys-no-network-needed) · [Sample recipes](#the-sample-recipes) · [Formal verification](#formal-verification) · [Tests](#tests) · [What the sealing protects](#what-the-sealing-protects-and-what-it-doesnt) · [Real vs local](#what-is-real-and-what-is-local) · [How NEAR is used](#how-near-is-used) · [Architecture](#architecture) · [Live page](#the-live-page-near-testnet) · [Limitations](#limitations-and-next-steps) · [Hackathon tracks](#hackathon-tracks) · [Disclosures](#disclosures)
+**Contents:** [Why](#why) · [Four seats](#four-seats-at-one-table) · [Try it](#try-it) · [How one run plays out](#how-one-run-plays-out) · [Status](#status) · [Design requirements](#design-requirements-and-where-each-is-built) · [How it works](#how-it-works) · [Sample recipes](#the-sample-recipes) · [Complex workflows](#complex-workflows-durable-runs-partial-settlement-versions) · [Where this sits](#where-this-sits-comparable-offerings-integrations-and-what-only-this-adds) · [Formal verification](#formal-verification) · [The film](#the-film) · [Tests](#tests) · [What the sealing protects](#what-the-sealing-protects-and-what-it-doesnt) · [Real vs local](#what-is-real-and-what-is-local) · [How NEAR is used](#how-near-is-used) · [Architecture](#architecture) · [Repository map](#repository-map) · [The live page](#the-live-page-near-testnet) · [Configuration](#configuration) · [Limitations](#limitations-and-next-steps) · [Hackathon tracks](#hackathon-tracks) · [Disclosures](#disclosures)
 
 ## Why
 
@@ -61,7 +61,7 @@ delivered $28.0249 vs promised $27.8147 → compensation from the guarantee depo
 ✔ story complete
 ```
 
-`npm run demo` opens the same thing as an app at http://127.0.0.1:8080 (press **Play demo**).
+`npm run demo` opens the same thing as an app at http://127.0.0.1:8080 (press **Play demo**). [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) is the step-by-step tour; on Windows use WSL ([docs/SETUP-WSL.md](docs/SETUP-WSL.md)).
 
 **3. Check any claim.** Each row is one command; none needs a key. [AGENTS.md](AGENTS.md) has the full list with expected output.
 
@@ -82,6 +82,10 @@ delivered $28.0249 vs promised $27.8147 → compensation from the guarantee depo
 
 The film walks through these steps; each is a real code path.
 
+| Seal & quote | Run | Result |
+|---|---|---|
+| ![A signed quote](docs/media/film-quote.png) | ![Parts inside the runner](docs/media/film-run.png) | ![One receipt](docs/media/film-result.png) |
+
 | Step | What happens | Code |
 |---|---|---|
 | **The box** | A recipe is encrypted in the creator's browser to the runner's attested key (X25519 + XSalsa20-Poly1305). Only its hash and part list go on-chain | `core/src/seal.ts`, `contracts/sealed-recipes/src/lib.rs` (`publish_recipe`) |
@@ -99,36 +103,23 @@ Details in [What is real, and what is local](#what-is-real-and-what-is-local).
 - **Deployed on NEAR testnet.** The Rust contract runs at [`market.sealedrecipes.testnet`](https://testnet.nearblocks.io/address/market.sealedrecipes.testnet), paid in tUSDC (a test token with no value, [`tusdc.sealedrecipes.testnet`](https://testnet.nearblocks.io/address/tusdc.sealedrecipes.testnet)). Three recipes are live (CHECK, SAFE3, AUDIT3) and have settled real paid runs ([example settlement](https://testnet.nearblocks.io/txns/2WfyAMcTLPSC3u4DXnjB8bDTSxS8kZ98cUNS73RgWH1H)): payment by `ft_transfer_call`, escrow, sealed execution on real mainnet data with NEAR AI Cloud, runner-signed report checked by the contract, per-part payouts.
 - **The runner runs in an Intel TDX confidential VM** (dstack on Phala Cloud, `tee.sealedrecipes.testnet`). Its keys come from the TEE's key service and never leave it; it was registered on the contract only after its TDX quote passed Intel DCAP verification and its code hash matched the audited release (`scripts/testnet/45-tee-runner.sh`). Anyone can check it: `RUNNER_URL=https://sealedrecipes.xyz/runner npx tsx scripts/verify-quote.ts`.
 - **Checked in your browser.** Before your inputs are sent, the page checks that the runner's TDX quote carries its registered keys and your fresh nonce; then it verifies the quote against Intel's root certificate itself (DCAP, `web/src/tdx.ts`), with Intel-signed collateral the marketplace relays and cannot forge. It then checks which image the runner runs: it replays RTMR3 from the Intel-verified quote and checks that the compose hash measured there is the pinned `runner/docker-compose.yml`, image digest included (`web/src/compose.ts`; `npx tsx scripts/verify-compose.ts att.json` does the same offline). The quote page then shows **Intel TDX · verified in this browser** and **image matches the pinned compose**; Docs › Trust & privacy lists every check.
-- **What is not real yet.** The image is checked, but the build is not reproducible: nothing yet proves that the pinned image digest was built from this repository's source, and the code hash the runner reports is its own statement, bound to its keys. NEAR Intents has no testnet, so live payments are direct tUSDC transfers; 1Click is used for real dry quotes only. Wallet connect is not built: buyers pay with a guest key made in the browser.
-- **The guided demo runs end to end locally** with the same code: an in-process mirror of the contract, and 1Click, NEAR AI Cloud, FastNEAR and NEAR RPC as local mocks with the real request and response shapes. Its transaction hashes are simulated, and the app and terminal label them that way.
+- **What is not real yet.** Mainnet is not deployed. The image is checked, but the build is not reproducible: nothing yet proves that the pinned image digest was built from this repository's source, and the code hash the runner reports is its own statement, bound to its keys. NEAR Intents has no testnet, so live payments are direct tUSDC transfers; 1Click is used for real dry quotes only. Wallet connect is not built: buyers pay with a guest key made in the browser. On the live site Compose is a practice composer on simulated services; a creator publishes on testnet with their own key from the command line.
+- **The local demo (`npm run demo`) runs end to end** with the same code: an in-process mirror of the contract, and 1Click, NEAR AI Cloud, FastNEAR and NEAR RPC as local mocks with the real request and response shapes. Its transaction hashes are simulated, and the app and terminal label them that way.
 - **Tested and proved.** 106 TypeScript tests (CI runs them, the typecheck, the end-to-end story and the Rust tests on every push); the contract's 114 Rust tests run on the same vector files as the mirror; its money, pricing, durable-run and version logic is proved with Z3 and TLA+. `npm run live-check` gets real 1Click dry quotes and, with a key, verifies a real TEE-signed NEAR AI Cloud completion.
-
-## What it is
-
-Selling a workflow as a service, run by strangers, needs three things:
-- a no-code spec for building workflows from other people's parts;
-- sealing, so a workflow's method can't be copied while it is on sale;
-- attribution, so every part author is paid in every run.
-
-It uses Intents for payment and for the swaps inside workflows.
-
-Every recipe is unique: a sealed combination of typed, swappable parts ([SRS-1](docs/SRS-1.md)). Buyers judge a recipe by its signed quote, price and track record, never by its method.
-
-**No investment features.** A buyer pays for one run of a service. A creator posts collateral that pays buyers when a run falls short. Nothing is sold that gives anyone a share of profits: there are no recipe shares, dividends, tokens or trading. This keeps the product usable by any wallet in any country, and it is deliberate (see [No investment features](#no-investment-features)).
 
 ## Design requirements, and where each is built
 
-Businesses and agents run on workflows that chain several tools, bots and AI calls. The workflow itself (which parts, in what order, with which thresholds and prompts) is often the real edge. Today it is protected only by NDAs, it is easy to copy, and the people who built the parts are rarely paid when someone else's workflow uses them. Buyers, meanwhile, can't compare workflows on results without seeing how they work.
+Selling a workflow as a service, run by strangers, needs three things: a no-code spec for building workflows from other people's parts; sealing, so the method can't be copied while it is on sale; and attribution, so every part author is paid in every run. The table maps the original brief to the code. Rows marked *local demo* run against stand-ins on your machine; the rest is also live on testnet.
 
 | Requirement (from the brief) | How it is built here |
 |---|---|
 | Specialized builders deploy utility apps and bots | **Parts**: code, specialist agents or data sources, with typed ports, declared network capabilities, a per-call fee, **disclosure of model, instructions, harness and verification**, and **per-run resource limits**, registered on-chain ([standard/parts.json](standard/parts.json)) |
-| A no-code / low-code standard to compose and swap parts | **SRS-1** ([docs/SRS-1.md](docs/SRS-1.md), and Docs › Spec in the app), an open MIT-licensed spec with conformance checks and an adoption path: a typed graph with subtyping, value schemas checked at every port while running, type variables, conditions, fallbacks and skip-on-error, validation, drop-in swap search, and a withdrawal-risk label. **Compose › Recipe** starts a new recipe or reopens one of yours; in the no-code builder you add parts, they wire themselves, and the buyer's form builds itself from what the parts need (a test rebuilds all 10 seed recipes this way). **Compose › Part** builds a part with live SRS-1 conformance checks |
+| A no-code / low-code standard to compose and swap parts | **SRS-1** ([docs/SRS-1.md](docs/SRS-1.md), and Docs › Spec in the app), an open MIT-licensed spec with conformance checks and an adoption path: a typed graph with subtyping, value schemas checked at every port while running, type variables, conditions, fallbacks and skip-on-error, validation, drop-in swap search, and a withdrawal-risk label. **Compose › Recipe** starts a new recipe or reopens one of yours; in the no-code builder you add parts, they wire themselves, and the buyer's form builds itself from what the parts need (a test rebuilds every seed recipe this way). **Compose › Part** builds a part with live SRS-1 conformance checks |
 | Users create recipes without patents or licences | The recipe is **sealed** (X25519 + XSalsa20-Poly1305) to the runner's attested key. Only `sha256(envelope)` goes on-chain. See [What the sealing protects](#what-the-sealing-protects-and-what-it-doesnt) for its limits |
-| A decentralized exchange where recipes are listed, bought and traded | **Signed quotes**: a buyer seals their inputs once and asks a recipe (or several) for a quote from a sealed dry run, then the buyer (or an agent's policy) picks one. Recipes are listed and bought **per run**; what is sold is the service, not an asset, so nothing here is a security (see [No investment features](#no-investment-features)) |
+| A decentralized exchange where recipes are listed, bought and traded | **Signed quotes**: a buyer seals their inputs once and asks a recipe (or several) for a quote from a sealed dry run, then the buyer (or an agent's policy) picks one. Recipes are listed and bought **per run**; what is sold is the service, not an asset (see [No investment features](#no-investment-features)) |
 | Attribution that pays everyone involved | **`report_run`**: an ed25519-signed runner report is verified on-chain and splits the payment in one receipt. It also compares delivery with the signed quote and compensates any shortfall from the recipe's **guarantee deposit** (a performance bond the creator posts) |
-| Deploy on NEAR's privacy platform (TEE) | Runner container for a **dstack Intel TDX CVM** (the NEAR Shade Agent / Phala stack). AI parts call **NEAR AI Cloud** private models and verify their TEE signatures |
-| Pay through NEAR Intents | **1Click** `EXACT_OUTPUT` quote with `customRecipientMsg`, so the solver's delivery *is* the `ft_transfer_call` that opens the run. Swaps inside the workflow use **confidential intents** (`confidentiality: "basic"`) |
+| Deploy on NEAR's privacy platform (TEE) | The runner runs in a **dstack Intel TDX CVM on Phala Cloud** (the stack NEAR's Shade Agents use), verified by each buyer's browser with Intel DCAP. AI parts call **NEAR AI Cloud** private models and verify their TEE signatures |
+| Pay through NEAR Intents (*local demo*: Intents has no testnet, so live runs are paid by a direct `ft_transfer_call`) | **1Click** `EXACT_OUTPUT` quote with `customRecipientMsg`, so the solver's delivery *is* the `ft_transfer_call` that opens the run. Swaps inside the workflow use **confidential intents** (`confidentiality: "basic"`) |
 
 ## How it works
 
@@ -151,20 +142,20 @@ Businesses and agents run on workflows that chain several tools, bots and AI cal
    A buyer or agent can set a **max price**: recipes listed above it aren't even asked to quote, and the contract refuses to charge more.
 
    Each quote is sealed to the buyer's browser, which checks the runner's signature before paying. The signature binds the quote to that buyer, those sealed inputs and that recipe version, and it can be used once. Recipes stay sealed: buyers compare results, not methods.
-4. **The buyer picks a quote and pays** from any chain through NEAR Intents. The signed promise travels with the payment, so the contract can enforce it (it is then public on-chain; a buyer who prefers privacy can choose "No guarantee" and skip the promise and the bond).
+4. **The buyer picks a quote and pays**: on testnet with a direct transfer of the test token, in the local demo from any chain through NEAR Intents. The signed promise travels with the payment, so the contract can enforce it (it is then public on-chain; a buyer who prefers privacy can choose "No guarantee" and skip the promise and the bond).
 5. **The sealed workflow runs.** First the runner re-prices the run: if the wallet changed since the quote, it aborts and refunds instead of letting the deposit pay for an emptied wallet (`npm run attack:drain` shows this). Each part runs under declared limits on time, HTTP calls, model calls and output size; a run that goes over is cancelled and refunded. Part logs, wallet requests and the result leave the runner encrypted to a one-time key in the buyer's browser.
 6. **One settlement** pays the protocol, the runner, every part author used and the creator. A share of the creator's cut that the creator chose (`reserve_bps`) tops up the recipe's guarantee deposit. Delivery is checked against the promise, and any shortfall is paid to the buyer from the deposit, up to the cover in the quote.
 
 ### Market-driven prices
 
 There is no fixed price list. Each recipe's price per run follows demand inside the band its creator set, using the same rule Ethereum uses for its base fee (EIP-1559), applied on-chain:
-- the contract counts paid runs per pricing period (1 hour suggested on mainnet; 2 minutes in the demo);
+- the contract counts paid runs per pricing period (1 hour on the live testnet contract; 2 minutes in the local demo);
 - when a period ends, more runs than the target raise the price by up to 12.5%, fewer lower it by up to 12.5%;
 - the price never leaves the band, and the floor must cover every fee, so any price the market reaches still settles.
 
 Each recipe's price comes from its own demand, and a buyer weighs its signed price against the value it promises. The rule's bounds, direction and monotonicity are proved with Z3 for every input, and the Rust contract and TypeScript mirror reproduce the model's vectors exactly.
 
-![A recipe's market price following its demand](docs/media/07-recipe-clnp.png)
+On the live site each recipe page shows its price, band and this period's runs under **Price**, and Docs › Price & demand lists all three next to a playground that runs the contract's own rule.
 
 ```bash
 npm run test:pricing    # SAFE with 15-second periods: 4 buyers pay in one period (twice the target) -> +12.5%;
@@ -172,75 +163,9 @@ npm run test:pricing    # SAFE with 15-second periods: 4 buyers pay in one perio
                         # excludes SAFE; two idle periods pull it back toward the floor
 ```
 
-## Try it in two minutes (no keys, no network needed)
-
-Requirements: Linux, macOS or WSL, and Node.js 20.6 or newer (22 LTS recommended). Rust is only needed for the contract tests. On Windows, build in WSL ([Building on WSL](#building-on-wsl)).
-
-```bash
-npm install
-npm run demo            # starts runner :8787 + marketplace :8080, seeds the recipes, opens the browser
-```
-
-Then follow these steps. Each one says what you should see.
-
-The app opens on a landing page. Past it, the top menu has four sections: **Recipes** (find one and get a quote), **Compose** (build a recipe from parts with no code, or build a part), **Wallet**, and **Docs** (the SRS-1 spec, Trust & privacy, Landscape, and guides). Every page has its own link (`#/recipes/CLNP`, `#/quote/STAK`, `#/compose/part/…`), so the back button works.
-
-1. **Open http://127.0.0.1:8080.** The landing page explains the idea. **Proceed to recipes** opens **Recipes**: ten listed recipes with a search box and favorites (★). The eleventh, CLNP, is composed and published during the story.
-2. **Click "Play demo"** (top right; on the landing page, **Watch the demo**). Seven chapters play automatically, each with a caption and a speed control. Chapters 1–4 are the loop itself:
-   1. **Compose.** As `chef.testnet`, the creator starts a new recipe and adds five parts one by one. Each wires itself to the previous step's matching output, and the buyer's form (wallet, dust threshold, target asset, fresh address) comes with them. The seal dialog verifies the runner attestation: 6 checks pass, and "Hardware TDX quote" shows as skipped in local mode. The plaintext turns into ciphertext and gets a wax seal. `publish_recipe` returns a transaction hash (simulated in local mode), and a $25 guarantee deposit backs CLNP's quotes.
-   2. **Find it and get a quote.**
-      - As `bob.testnet`, the buyer searches “clean”, opens *Clean up and protect* (CLNP) and presses **Get a quote**.
-      - The quote page asks only CLNP: a fresh address is generated in the browser, the inputs are sealed, and CLNP quotes from a sealed dry run. It expects $28.02 and promises $27.81, with $25.00 covered by the deposit, at a signed price of $0.75.
-      - Bob uses the quote. A 1Click quote shows *0.75188 USDC on Arbitrum → $0.75 delivered to the contract*, with the signed promise in the `customRecipientMsg`.
-   3. **Execute.**
-      - The runner checks the paid run against its on-chain commitments, decrypts, and runs each part, showing its author and fee. Part details carry a *sealed to you* tag.
-      - The AI Spam Shield quarantines two scam airdrops, with its signature verified.
-      - A wallet dialog, decrypted in the browser, asks to approve four `ft_transfer`s. Four confidential swaps then reach `SUCCESS`.
-   4. **Settle.** "Delivered $28.02 against a signed promise of $27.81: promise kept, the deposit is untouched." Below that, a diagram shows $0.75 split between the protocol, the runner, five part authors, **$0.5085 to the creator** and **$0.0565 into CLNP's guarantee deposit** (the creator's 10% reserve), in one transaction.
-
-   Chapters 5–7 explain why it holds together: prices that follow demand, what the marketplace, the chain and your browser can each check, and the three ways in (run a recipe, compose one, build a part).
-3. **Recipes → CLNP.** The track record shows 1 successful run, delivery at 101% of the promise and a guarantee deposit of $25.06: the $25 the creator posted plus the reserve from the run. "Where the price goes" itemizes the split, which sums to exactly $0.75. "Inside" shows what the marketplace can see: the part chain (each part opens its internals) and the sealed on-chain commitment.
-4. **Acting as → chef.testnet, then Wallet.** Income shows the creator's $0.5085, and *Your recipes* lists CLNP with its deposit. As `bob.testnet`, Wallet's *Account* panel reads his on-chain state and points to the recipes that would help: app keys left by dApps (KEYS), and unstaked NEAR waiting to be withdrawn (STAK).
-5. **The four everyday-safety recipes.** Search Recipes for *keys*, *stake*, *contract* or *cap*, then press **Get a quote** and run:
-   - **KEYS** revokes two risky app keys in one `DeleteKey` transaction you approve, then confirms they are gone. It never removes a full-access key; those are listed for review.
-   - **STAK** withdraws 4.2 NEAR from two pools that finished unbonding, skips one still unbonding, and flags a validator that stopped validating.
-   - **CHEK** checks a contract before you sign. Try `near-gift-claim.near` (high risk: reward-bait name, upgradable, no published source) and `v2.ref-finance.near` (low risk: locked, source published).
-   - **TRIM** caps any token at a share of your wallet (use `dana.testnet`, about 48% NEAR): it sells only the excess, privately, into USDC at a fresh address.
-6. **Compose → Recipe** (no code). Start a **New recipe**, or search **Your recipes** (the ones published by the account you act as) and press **Edit**. Add parts from the palette: *Suggested next* lists what fits, each part wires itself, and every input has a plain "comes from" list: an earlier part, the buyer's form, a new question for the buyer, or a fixed value. Click the *Buyer's form* on the canvas to word its questions and set defaults. Select a part to see its settings (sealed), its withdrawal risk, and drop-in alternatives. For example, swap *Allowlist Shield* for *AI Spam Shield Pro* and the recipe turns **high** risk (closed model). *Ready to publish?* lists what is left in plain words. Recipes are private: **Edit** opens the copy sealed to your own wallet key. Changing wiring or settings publishes a new version after the notice period; changing the parts, the buyer's form or the result publishes a new recipe with its own short code.
-7. **Compose → Part** (for developers). Open any part to read its manifest, source and how it was admitted (all parts are public in this demo), or build a new one. SRS-1 conformance, static and security checks run live, and the panel shows the part's **admission tier**. Register the manifest on-chain, then **Submit for review**: the code goes to the queue, signed by your wallet.
-8. **Compose → Review**. The admission queue. Every submission gets automated checks: conformance, a security scan, and a behaviour test in a sandbox, once as a quote and once as a run, showing the hosts it reached and any transaction it asked the buyer to sign. Then it depends on the tier:
-   - **Open** (pure, or reads public NEAR data): admitted on the checks alone, and runs in the sandbox.
-   - **Reviewed** (sends buyer data to a model or a new host): one appointed reviewer approves.
-   - **Signing** (asks the buyer to sign): two independent appointed reviewers approve.
-   Switch "Acting as" to `audit-a` or `audit-b` to review: tick the checklist, approve or request changes. The owner then runs `npm run release:parts -- --yes` to ship admitted parts in a new runner release; the release log is inside the code hash, and the runner refuses any part whose record does not verify.
-9. **Docs** opens on **Spec (SRS-1)**: the full text of [docs/SRS-1.md](docs/SRS-1.md), rendered from the file, next to the live type registry and a conformance count of every part checked in the browser. §9 says how conformance is checked, §10 how others can adopt and extend the spec, and §11 how parts are admitted by tier. A panel lists the three admission tiers with how many parts are in each. **Trust & privacy** shows what the marketplace stores (ciphertext), what the contract stores and what only the runner sees, the runner attestation (re-run with a new nonce), the exact JSON 1Click receives, and the contract's NEP-297 events. The remaining tabs are guides: **Price & demand**, **Compose Recipe**, **Compose Part** and **Runner · TEE**.
-10. **An agent as the buyer** (with the demo running and the story done): `npm run agent`. The agent seals one request for `carol.testnet`, asks the recipes it shortlisted (CLNP and SWPR by default) for quotes, compares them against its policy (confidential only, maximum risk, price cap, approval cap), pays the winner, approves only within its limit, and checks delivery against the promise. No human in the loop.
-    **The same agent on the live marketplace:** `npm run agent -- --live` (or `npm run agent:live`). It makes its own guest key (kept in `.data/agent-guest.json`, so later runs reuse it), gets test tokens from the faucet, verifies the runner's attestation, asks every live recipe, one at a time, for a sealed quote (contract recipes on `v2.ref-finance.near`, wallet recipes on `social.near`; `--contract`, `--wallet` or `--target` change them), picks the cheapest one under its price cap and risk limit, and pays it with `ft_transfer_call` on NEAR testnet. The cap goes into the run as `max_price`, so the contract refuses to charge more. When the run settles, the agent checks the runner-signed report itself: the signature against the runner key registered on-chain, the contract, run and recipe it names, and the output hash against the sealed result (only the buyer gets the salt). It prints the payment and settlement links.
-
-    Latest live run (2026-11-13, `npm run agent -- --live --wallet v2.ref-finance.near`): three signed quotes (CHECK $0.12, SAFE3 $0.15, AUDIT3 $0.20, all on `v2.ref-finance.near`), the price policy picked CHECK; faucet [funding](https://testnet.nearblocks.io/txns/8VmERQ336TrW78gkfJuFzPC2qjGnTiJQxeePprVyuN8V), [payment](https://testnet.nearblocks.io/txns/3K2HRK6huF8ZB6JpSGZqUfDAQJUNaAZoH4BmKyR9whh1), [settlement](https://testnet.nearblocks.io/txns/2uJn331mMrTWHzYUSFJ7GjSC2iy779pU5BrGsaPeoT9A); the agent checked the runner's signature against its on-chain key, the run and recipe, the output hash against the sealed result, and the settled state. The wallet recipes scan Ref's ~1,800 token balances inside their 8-second limit (`near.wallet-scanner@1.1.0`): SAFE3 [settled](https://testnet.nearblocks.io/txns/7ncWHPow8qGahZvsQ67sgdjEynoySyi8zKc8y8ScZfKW) with 10 scam tokens flagged, AUDIT3 [settled](https://testnet.nearblocks.io/txns/2JxidhkeeK8fAvKUiEwnw6ijq3xbmTW9UDCjgnwWy8Bk). Options: `--account <id>` pays from a named testnet account, `--inputs '{"field":"value"}'` sets other fields, and a policy is the second argument, e.g. `npm run agent -- --live CHECK,SAFE3 '{"sort":"price","maxRisk":"low","maxPriceUsd":0.15}'`.
-
-Headless version for CI or AI judges. It exits non-zero if any step fails:
-
-```bash
-npm run test:e2e        # boots everything and runs the 4-step story in the terminal
-```
-
-Expected tail of the output:
-
-```
-  quote SWPR  expects  $37.5416  promises  $36.9785 (deposit $10.0000)  price $0.2000  public       risk low
-  quote CLNP  expects  $28.0249  promises  $27.8147 (deposit $25.0000)  price $0.7500  confidential risk low
-  policy {"requirePrivacy":"confidential","maxRisk":"medium","sort":"net"} → CLNP
-  ...
-     $0.0565  CLNP guarantee deposit     creator's reserve, held as collateral for future quotes
-  payouts + reserve == price ($0.7500): every unit accounted for
-  delivered $28.0249 vs promised $27.8147 → compensation from the guarantee deposit $0.0000
-✔ story complete
-```
-
 ## The sample recipes
 
-Eleven sample recipes for common crypto problems, each a sealed workflow of public parts. They exist to exercise the platform (composing, sealing, quoting, running and settling); Compose › Recipe builds new ones from the same parts.
+Eleven sample recipes for common crypto problems, each a sealed workflow of public parts (26 in the catalog). They exist to exercise the platform (composing, sealing, quoting, running and settling); Compose › Recipe builds new ones from the same parts. All eleven run in the local demo. Three are live on testnet, where the runner is read-only on mainnet: **CHECK** (the CHEK recipe), **SAFE3** (SAFE) and **AUDIT3** (AUDT). The others move funds or ask the buyer to sign, so they stay local until there is a mainnet deployment.
 
 | Recipe | What it does | Parts |
 |---|---|---|
@@ -256,7 +181,7 @@ Eleven sample recipes for common crypto problems, each a sealed workflow of publ
 | **AUDT** Account security audit | read-only: full-access keys that can move everything, app keys to delete, scam tokens and the value at risk, in one sealed report; the owner makes the fixes in their own wallet | access keys, key-risk rules, scanner, AI spam shield, audit report |
 | **TRIM** Concentration cap | sells only the excess of any token above your cap, into a stablecoin at a fresh address | scanner, allowlist shield, trimmer, fresh check, confidential swap |
 
-The four in bold were added with ten new parts. They read the same public NEAR interfaces in production that the local mocks serve: RPC `view_access_key_list`, `view_account` and `validators`; the staking pool's `get_account`, `get_reward_fee_fraction` and `withdraw_all`; NEP-330 `contract_source_metadata`; and FastNEAR `/v1/account/{id}/staking`.
+The five in bold read the same public NEAR interfaces in production that the local mocks serve: RPC `view_access_key_list`, `view_account` and `validators`; the staking pool's `get_account`, `get_reward_fee_fraction` and `withdraw_all`; NEP-330 `contract_source_metadata`; and FastNEAR `/v1/account/{id}/staking`.
 
 ```bash
 npm run test:recipes  # AUDT reports 4 key issues and 2 scam tokens without asking for a signature; KEYS revokes 2 risky keys and confirms on-chain (full-access keys untouched); STAK withdraws 4.2 NEAR from
@@ -289,6 +214,7 @@ Where everything is stored, and who runs what, is in [docs/ARCHITECTURE.md](docs
 ## Where this sits: comparable offerings, integrations, and what only this adds
 
 Workflow engines and agent markets exist, and some overlap with parts of this project:
+- **Phala Cloud (dstack):** confidential VMs on Intel TDX. The live runner runs there.
 - **Chainlink CRE:** triggers, consensus, and confidential workflows in beta, on EVM chains and Solana.
 - **OutLayer:** attested WASM for NEAR.
 - **NEAR AI Cloud and IronClaw:** private inference, and agents with routines.
@@ -317,7 +243,7 @@ Full comparison: [docs/LANDSCAPE.md](docs/LANDSCAPE.md), and **Docs › Landscap
 
 Two more pieces make recipes manageable over time:
 - **Durable storage.** Every sealed version and checkpoint is kept in a content-addressed store (`server/src/store.ts`). A blob's id is the hash committed on-chain, and every read is integrity-checked.
-- **Creator copies.** Each version is also sealed to a key derived from the creator's wallet signature. The creator can reopen any published version from any device (`GET /api/vault/:ticker/creator-copy`, opened with a key re-derived from a wallet signature), and nothing is kept in the browser. The composer has no "load" option in the UI; editing a published recipe as a new version is a planned Wallet feature.
+- **Creator copies.** Each version is also sealed to a key derived from the creator's wallet signature. The creator can reopen any published version from any device (`GET /api/vault/:ticker/creator-copy`, opened with a key re-derived from a wallet signature), and nothing is kept in the browser. In the composer, **Your recipes › Edit** opens that copy.
 
 ## No investment features
 
@@ -377,7 +303,7 @@ The recorder steps the film frame by frame, so the video is identical on any mac
 ## Tests
 
 ```bash
-npm test                # 106 TypeScript tests: any account size for the wallet scanner, the image check against a real CVM attestation, SRS-1 conformance of every part, part admission (tiers, security scan, sandbox, signed release records), all 11 seed recipes rebuilt in the composer, a recipe built from a blank canvas, the web app's state machines; settlement, bond and pricing vectors; quote signatures and expiry;
+npm test                # 106 TypeScript tests: any account size for the wallet scanner, the image check against a real CVM attestation, SRS-1 conformance of every part, part admission (tiers, security scan, sandbox, signed release records), all 11 seed recipes rebuilt in the composer, a recipe built from a blank canvas, the web app's state machines, the film's screenplay and narration clips; settlement, bond and pricing vectors; quote signatures and expiry;
                         # event parity with the contract; SRS-1 typing, swaps, value delivered and withdrawal risk; conditions, alternatives, schemas, type variables, billing privacy;
                         # sealing; per-part resource limits; EIP-191; 1Click shapes; attestation; capability guard; code hash
 npm run test:rust       # 114 Rust tests for the NEAR contract (same vectors, conformance with the proved models,
@@ -386,45 +312,6 @@ npm run typecheck
 npm run live-check      # optional, needs internet: real 1Click dry quotes (confidential with ONECLICK_API_KEY), FastNEAR, NEAR RPC,
                         # and with NEAR_AI_API_KEY a real TEE-signed NEAR AI Cloud completion, verified
 ```
-
-## Building on WSL
-
-On Windows, build and run everything inside WSL (Ubuntu), not in PowerShell. The scripts, the Rust contract build and the Z3/TLA+ tools all expect Linux.
-
-1. **Put the project in the WSL filesystem**, not on `C:`. Under `/mnt/c` npm and cargo are many times slower, and `node_modules` installed on Windows contain Windows binaries that fail in Linux.
-   ```bash
-   git clone https://github.com/ztoori/sealed-recipes.git ~/sealed-recipes
-   # add --depth 1 for just the latest version; the full history (and the tags) stays on GitHub
-   cd ~/sealed-recipes
-   ```
-2. **Install the toolchain** with one script. It is safe to re-run, uses `sudo` only for apt packages, and installs Node with nvm and Z3 in a project virtualenv (`.venv`).
-   ```bash
-   bash scripts/setup-wsl.sh             # Node 22, npm packages, Python + Z3
-   bash scripts/setup-wsl.sh --all       # + Rust, wasm target + cargo-near, Java + tla2tools.jar, ffmpeg + Playwright
-   ```
-   Options: `--with-rust` (contract tests), `--with-wasm` (contract build), `--with-tla` (TLC model check), `--with-media` (re-record the video).
-3. **Check, then build and run**:
-   ```bash
-   npm run doctor          # what is installed, what each npm script needs, how to fix what's missing
-   npm test && npm run verify && npm run test:rust
-   npm run build:wasm      # contract wasm via cargo-near -> contracts/sealed-recipes/target/near/
-   npm run demo            # opens http://127.0.0.1:8080 in your Windows browser
-   ```
-
-**Getting a new version.** Pull it, then reinstall in case dependencies changed:
-```bash
-cd ~/sealed-recipes
-git pull
-npm install
-npm run demo            # rebuilds the web app automatically when its sources changed
-```
-If the browser still shows the old screens, reload with Ctrl+F5.
-
-If `npm` fails with "UNC paths are not supported" or `C:\Windows\scripts\...`, the shell is running Windows npm: WSL adds the Windows PATH, and Linux Node isn't loaded in that terminal yet. Run `source ~/.nvm/nvm.sh` or open a new terminal; `which npm` should show `~/.nvm/...`, not `/mnt/c/...`.
-
-WSL2 forwards `localhost` to Windows by default, so the Windows browser reaches the demo. If yours doesn't (custom `.wslconfig`), start it with `SRS_HOST=0.0.0.0 npm run demo` and open `http://<WSL IP>:8080` (`hostname -I` shows the IP).
-
-The setup script was tested end to end on Ubuntu 24.04: from a fresh clone it installs everything, after which `npm test`, `npm run verify`, `npm run test:e2e` and `npm run test:rust` pass. `npm run build:wasm` couldn't be tested on our build machine, because it can't download the wasm target. If `cargo near` rejects the wasm for unsupported wasm features with a very new Rust, add a `rust-toolchain.toml` with `channel = "1.86"` in `contracts/sealed-recipes` and run it again.
 
 ## What the sealing protects, and what it doesn't
 
@@ -438,13 +325,13 @@ Sealed Recipes protects a workflow **by default, without filing anything**. The 
 | Reverse engineering by probing outputs | **Partly, on any platform** | Every probe costs a paid run. Simple recipes can still be inferred from enough input/output pairs. No privacy technology hides outputs from the buyer who paid for them. A copy has to win buyers on its own quotes and track record |
 | Inferring a recipe's structure from its listing | **Partly** | The parts and types are public, and for simple linear recipes they leave few possible wirings ([SRS-1 §5.3](docs/SRS-1.md#53-what-the-public-data-gives-away)). The edge lives in sealed params, constants and conditions; execution order, node ids and which branch ran stay out of public data |
 | Independent reinvention | **No, on any platform** | The part list is public so authors can be paid. Patents stop reinvention; secrecy does not |
-| Hardware or key compromise | **Depends on the TEE** | Intel TDX side channels, or a leaked or lost runner key (one key seals every recipe today). The local demo has no hardware TEE |
+| Hardware or key compromise | **Depends on the TEE** | Intel TDX side channels, or a leaked or lost runner key (one key seals every recipe today). The live runner is in Intel TDX; the local demo has no hardware TEE |
 | Part authors' source code | **Not in this build; possible on NEAR** | Parts are bundled into the runner image here, so its auditors can read them. NEAR's stack supports closed code: parts sealed to the runner like recipes, OutLayer closed-source WASM in TDX, or a part running as its own attested TEE service |
 | Buyers sharing results, creators leaking their own recipe | **No** | Out of scope for any technical measure |
 
 ## What is real, and what is local
 
-These are kept separate so nothing here needs to be taken on faith. The table is about `npm run demo` (and the guided demo at sealedrecipes.xyz/demo). The live page at sealedrecipes.xyz uses the production path for the contract (NEAR testnet), NEAR AI Cloud, FastNEAR and NEAR RPC (mainnet, read-only), and the same runner code in an Intel TDX confidential VM (`TEE_MODE=dstack`); see [The live page](#the-live-page-near-testnet).
+These are kept separate so nothing here needs to be taken on faith. The table is about `npm run demo` (and the hands-on sandbox at sealedrecipes.xyz/demo). The live page at sealedrecipes.xyz uses the production path for the contract (NEAR testnet), NEAR AI Cloud, FastNEAR and NEAR RPC (mainnet, read-only), and the same runner code in an Intel TDX confidential VM (`TEE_MODE=dstack`); see [The live page](#the-live-page-near-testnet).
 
 | Component | In `npm run demo` | Production path (in this repo) |
 |---|---|---|
@@ -460,17 +347,17 @@ Every transaction hash in local mode comes from the mirror or the mocks, so none
 
 ## How NEAR is used
 
-- **NEAR smart contract** (`contracts/sealed-recipes`):
+- **NEAR smart contract** (`contracts/sealed-recipes`, live at `market.sealedrecipes.testnet`):
   - a part and runner registry, and sealed recipe commitments;
   - pay-per-run escrow, with signed quotes (including their price) checked by `env::ed25519_verify`;
   - market-driven list prices per recipe (an EIP-1559-style rule inside a creator-set band);
   - guarantee deposits (performance bonds) that compensate shortfalls, and an on-chain track record per recipe;
   - one-receipt settlement with NEP-297 events;
-- **NEAR Intents / 1Click**:
+- **NEAR Intents / 1Click** (local demo against a mock with the real shapes, and real dry quotes with `npm run live-check`; Intents has no testnet):
   - Pay-per-run uses `swapType: EXACT_OUTPUT` to the payment token, with `recipient = contract` and `customRecipientMsg = {"action":"run",…,"on_behalf_of":buyer,"quote":{…}}`. The solver's delivery is the `ft_transfer_call` that escrows the run.
   - Swaps inside workflows use `confidentiality: "basic"`. When quoting, recipes price their swaps with `dry: true` 1Click quotes.
   - If a delivered payment fails a business rule, the contract credits `on_behalf_of` instead of bouncing the funds back to the solver.
-- **TEE**: the runner is built for a dstack Intel TDX CVM, the stack NEAR's Shade Agents use. Its attestation binds `sha256(codehash, enc key, nonce, signing key)` into REPORTDATA. The contract pins the runner's signing key and the audited code hash (`AUDITED_CODEHASH`). The same key signs quotes and run reports, so a quote is a promise from attested code.
+- **TEE**: the live runner runs in a dstack Intel TDX CVM on Phala Cloud, the stack NEAR's Shade Agents use. Its attestation binds `sha256(codehash, enc key, nonce, signing key)` into REPORTDATA. The contract pins the runner's signing key and the audited code hash (`AUDITED_CODEHASH`). The same key signs quotes and run reports, so a quote is a promise from attested code.
 - **NEAR AI Cloud**: AI parts use the private inference API. Each verdict is checked against the attested `signing_address`.
 - **NEAR accounts**: a fresh implicit account is generated in the buyer's browser, and its freshness is proven with RPC `view_account → UNKNOWN_ACCOUNT`.
 
@@ -492,59 +379,35 @@ flowchart LR
   C[Creator<br/>SRS-1 composer] -- "sealed recipe, listing, guarantee deposit" --> M
 ```
 
+The diagram shows the full path, with payment through NEAR Intents as in the local demo. On testnet the buyer's own `ft_transfer_call` replaces the 1Click hop, and no recipe swaps.
+
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · threat model: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) · contract interface: [docs/CONTRACT_SPEC.md](docs/CONTRACT_SPEC.md) · spec: [docs/SRS-1.md](docs/SRS-1.md)
 
 ## Repository map
 
 ```
-contracts/sealed-recipes/   Rust NEAR contract + 114 unit tests
-contracts/test-vectors/       settlement and bond vectors shared by Rust and TS; conformance vectors from the proofs
-verification/                 Z3 proofs (settlement, billing, guarantee deposits), TLA+ models (bonds, durable runs, versions), results
+contracts/sealed-recipes/     Rust NEAR contract (near-sdk 5.30) + 114 unit tests
+contracts/tusdc/              the testnet payment token (NEP-141, no value)
+contracts/test-vectors/       settlement and bond vectors shared by Rust and TypeScript; conformance vectors from the proofs
+verification/                 Z3 proofs (settlement, billing, guarantee deposits, pricing), TLA+ models (bonds, durable runs, versions), results
 core/src/                     SRS-1 (parts, disclosure, value delivered), sealing, settlement, ledger mirror, quote hashing, clients, attestation
-runner/                       sealed TEE runner: dry-run quotes, durable execution (checkpoints, resume), resource limits, part admission and the sandbox for open-tier parts, 23 parts
-server/                       marketplace API (quotes, runs, track records, part submissions and reviews) and local mocks of external services
-web/                          React UI: Recipes (search, favorites, Get a quote), Compose (Recipe, Part), Wallet, Documentation (Spec, Trust & privacy, Landscape), story mode, the demo film
+runner/                       the sealed runner: dry-run quotes, durable execution (checkpoints, resume), resource limits, part admission, the sandbox for open-tier parts, 26 parts; Dockerfile and compose file for the TDX CVM
+server/src/main.ts            local marketplace: API, in-process contract mirror, mocks of outside services
+server/src/live.ts            testnet marketplace: the live site's API, faucet, relayer, Intel collateral relay
+web/src/                      React app. pages/: Landing, Recipes, Compose, Wallet, Docs. live/: the testnet site. components/DemoFilm.tsx: the film
 standard/parts.json           SRS-1 part catalog (ports, capabilities, fees, disclosure, limits)
 standard/reviews.json         release log: how every part was admitted (tier, hashes, signed approvals); inside the code hash
 standard/reviewers.json       the owner-appointed reviewers and their keys; inside the code hash
-seed/recipes/                 plaintext of the demo recipes (in the app they only ever travel sealed)
-fixtures/                     fictional wallets, frozen 1Click token sample
-scripts/                      demo launcher, seed, story CLI, agent buyer, release:parts, live-check, verify-quote, film narration and recorder
-docs/                         SRS-1, architecture, threat model, contract spec and events, submission kit, media
-AGENTS.md                     for AI agents and reviewers: setup, every feature with its command and expected output, where things live
+seed/recipes/                 plaintext of the sample recipes (in the app they only ever travel sealed)
+fixtures/                     fictional wallets and chain state, a frozen 1Click token sample, a real TDX attestation for tests
+scripts/                      demo launcher, gateway, seed, story CLI, agent buyer, attack and crash tests, live-check, verify-quote, film narration and recorder
+scripts/testnet/              ordered deployment scripts for the contracts, parts, runner and listings
+deploy/                       systemd units and example settings for the live server and the demo sandbox
+tests/                        106 TypeScript tests
+docs/                         SRS-1, architecture, threat model, contract spec and events, landscape, walkthrough, hosting, WSL setup, submission kit, media
+AGENTS.md                     for AI agents and reviewers: setup, every feature with its command and expected output
 SECURITY.md, CONTRIBUTING.md  how to report a problem; how to set up, test and change the code
 ```
-
-## Hosting the public demo
-
-`npm run demo` is for one person on their own machine. A shared server needs `npm run gateway` (`scripts/gateway.mjs`) instead:
-
-- **A private sandbox per visitor.** Demo accounts sign with keys anyone can derive (it is a demo wallet), and anyone can read a creator copy in the demo. On one shared market, a visitor could act as any account or open another visitor's recipe. The gateway gives each visitor their own marketplace (contract mirror, market, part reviews, sealed-recipe store), keyed by an HttpOnly cookie, so nothing one visitor does reaches anyone else. Sandboxes are deleted after 10 idle minutes; warm spares mean a new visitor doesn't wait.
-- **One shared runner.** All sandboxes use one runner process. Each request names its marketplace; the runner accepts only local marketplaces on the gateway's ports and keeps their runs apart.
-- **No dev endpoints.** Sandboxes run with `SRS_PUBLIC=1`, which turns off the endpoints the test suites use to crash the runner or make the solver fail.
-- **Local only.** The gateway and every sandbox listen on 127.0.0.1; put Cloudflare Tunnel (or another reverse proxy) in front. Attestation reaches browsers through `/runner/attestation` on the same origin.
-
-**Pre-compiled.** `npm run build` also bundles the marketplace, the runner and the seeding script into plain JavaScript (`scripts/build-node.mjs`, `*.bundle.mjs` next to each entry, gitignored); the gateway uses them when they are newer than the sources and falls back to TypeScript through tsx otherwise. Measured with 10 sandboxes starting at once: ready in 3.6 s instead of 5.9 s, 584 MB instead of 753 MB. `npm run demo` and the tests still run the TypeScript.
-
-**Capacity.** Measured on a 2-CPU, 4 GB machine: 20 browsing visitors at once used about 830 MB in total (API p99 under 30 ms, no errors); 10 visitors running the full story at the same moment all passed. A sandbox's processes show about 100 MB RSS, but much of it is shared code, so each extra visitor costs about 40–45 MB of real memory (pre-compiled), plus one shared runner (~140 MB). Start-up is CPU-bound: when many visitors arrive in the same second, raise `SANDBOX_SPARE`.
-
-**Traffic and performance.** `curl -s http://127.0.0.1:8080/gateway/metrics` (on the server only; it answers 404 through the tunnel) shows requests, latency percentiles, visitors, boot times and the memory and swap of every process; the gateway logs a one-line summary every minute (`journalctl -u srs-demo`). `npm run loadtest -- --visitors 20 --mode browse` (or `--mode story`) simulates visitors and prints what they experienced next to the server's peak memory.
-
-`deploy/srs-demo.service` runs it under systemd from a read-only checkout; `deploy/cloudflared-config.example.yml` shows the tunnel side.
-
-None of this makes the demo wallet a real wallet. Real signatures and a real chain are on the live page, below.
-
-## Calls to outside services
-
-Every call our processes make to a service outside the machine (FastNEAR, NEAR RPC, 1Click, NEAR AI Cloud, NVIDIA attestation) goes through one guard, `core/src/outbound.ts`, so a busy demo or a bug can't get us rate-limited or blocked:
-
-- per service, a rate limit and a cap on calls in flight;
-- "too many requests" (429) pauses that service for its `Retry-After` and the call is retried (a rejected request was never executed);
-- network errors and 502/503/504 are retried, with backoff, only for requests that are safe to repeat: reads, NEAR RPC queries (never a transaction broadcast) and 1Click quotes (no funds move);
-- repeated lookups (FastNEAR account data, the 1Click token list) are cached briefly, and identical lookups in flight share one request;
-- a call that would wait too long fails fast instead of piling up.
-
-Limits are per process and tunable without a code change: `SRS_OUTBOUND='{"api.fastnear.com":{"rps":20}}'`. The runner's `/health` shows the counts per service. Calls to this machine (the demo's mocks) are not limited.
 
 ## What happens to the accounts you enter
 
@@ -552,9 +415,9 @@ Inputs are sealed in the buyer's browser to the runner, and anything the runner 
 
 ## The live page (NEAR testnet)
 
-Running at **https://sealedrecipes.xyz**, against [`market.sealedrecipes.testnet`](https://testnet.nearblocks.io/address/market.sealedrecipes.testnet). `server/src/live.ts` serves `web/dist/live.html` (built by `npm run build`; same look and layout as the guided demo). It also serves the guided demo under `/demo` (`server/src/demo-proxy.ts`): requests there go to the demo gateway on the same machine (`SRS_DEMO_GATEWAY`, default `http://127.0.0.1:8080`), so one address serves both. The gateway creates a visitor's sandbox on their first demo page view only; the live pages never create one. Inside the live site, **Docs** show the demo's documentation pages on live data (the live recipes' films, the ciphertext this marketplace holds, the on-chain record, the real runner's attestation), and **Compose** shows the demo's composer as a clearly labelled practice composer running on the demo's simulated services, because publishing on testnet takes the creator's own key (`web/src/live/DemoPages.tsx`). **Guided demo** plays the demo film (`#/demo`); the sandbox itself stays at `/demo`. The deployment steps are in [scripts/testnet/README.md](scripts/testnet/README.md). Nobody has to log in:
+Running at **https://sealedrecipes.xyz**, against [`market.sealedrecipes.testnet`](https://testnet.nearblocks.io/address/market.sealedrecipes.testnet). `server/src/live.ts` serves `web/dist/live.html` (built by `npm run build`; same look and layout as the local demo). It also serves the hands-on sandbox under `/demo` (`server/src/demo-proxy.ts`): requests there go to the demo gateway on the same machine (`SRS_DEMO_GATEWAY`, default `http://127.0.0.1:8080`), so one address serves both. The gateway creates a visitor's sandbox on their first demo page view only; the live pages never create one. Inside the live site, **Docs** show the same documentation pages on live data (the live recipes' films, the ciphertext this marketplace holds, the on-chain record, the real runner's attestation), and **Compose** shows the demo's composer as a clearly labelled practice composer running on the demo's simulated services, because publishing on testnet takes the creator's own key (`web/src/live/DemoPages.tsx`). **Guided demo** plays the film (`#/demo`); the sandbox itself stays at `/demo`. `/llms.txt` is a plain-text summary of the site and its API for AI agents (`web/public/llms.txt`). The deployment steps are in [scripts/testnet/README.md](scripts/testnet/README.md). Nobody has to log in:
 
-- **Accounts to look at** (CHECK, SAFE3, AUDIT3 and other read-only recipes) are typed in like on a block explorer: any public NEAR mainnet account. They are sealed in the browser, as above.
+- **Accounts to look at** (CHECK, SAFE3 and AUDIT3) are typed in like on a block explorer: any public NEAR mainnet account. They are sealed in the browser, as above.
 - **Paying for a run** uses a *guest account*: an ed25519 key made in the browser, whose NEAR implicit account id is the public key. `POST /api/faucet` funds it once with a little testnet NEAR for gas and some tUSDC (test token, no value), limited per guest, per visitor per day and per day in total. The key stays in the browser (it can be downloaded as a near-cli key file) and signs the buyer's own `ft_transfer_call`.
 - **Publishing a recipe** is the only step that needs a named testnet account: the creator signs `publish_recipe` with their own key (`scripts/testnet/50-run.ts` shows how).
 - **Read-only on mainnet.** The live runner runs with `SRS_READ_ONLY=1`: it refuses recipes that ask the buyer to sign anything on mainnet. Listings are tied to one runner's key, so moving to the TDX runner meant publishing them again (CHECK, SAFE2, AUDIT2, the last with report.audit 1.1.0), and a published recipe's parts are fixed, so wallet scanner 1.1.0 meant SAFE3 and AUDIT3; the earlier listings (CHEK, SAFE, AUDT, AUDIT, SAFE2, AUDIT2) stay on-chain (the contract has no delisting); the marketplace neither shows, quotes nor sells them (listings of the retired runner automatically, SAFE2 and AUDIT2 through `SRS_RETIRED_LISTINGS`).
@@ -565,7 +428,7 @@ The faucet keeps which guest accounts it funded and per-day counts of a hash of 
 
 ## Configuration
 
-Copy `.env.example` to `.env` only if you want the live paths. Never commit keys.
+Nothing needs configuring for the local demo or the tests. Copy `.env.example` to `.env` only for the optional live paths below. The live server's own settings (contract, RPC, faucet limits, runner URL and token, retired listings) are in [deploy/live.env.example](deploy/live.env.example) and [scripts/testnet/README.md](scripts/testnet/README.md); the demo gateway's are in [docs/HOSTING.md](docs/HOSTING.md). Never commit keys.
 
 | Variable | Used by | Purpose |
 |---|---|---|
@@ -582,19 +445,19 @@ Copy `.env.example` to `.env` only if you want the live paths. Never commit keys
 
 ## Limitations and next steps
 
-- **Durable storage is in-memory in the demo.** The vault and checkpoint store would be a database or IPFS in production, keyed by `sealed_hash` and run id. The runner and the contract already behave as if it were durable.
+- **Storage is local files.** Sealed versions and checkpoints are kept in a content-addressed store on the server's disk (`server/src/store.ts`), keyed by the hashes committed on-chain. In production it would be IPFS or object storage behind the same interface.
 - **One runner.** Runners are approved by the contract owner. A permissionless set of staked runners, and recipes sealed to several of them, are next.
 - **No triggers or schedules yet.** A run starts when a buyer pays. A workflow can wait inside a run (`time.wait`), but nothing starts a run on a timer or an on-chain event.
 - **Skipped for the hackathon, required before mainnet: proof of account ownership for wallet recipes.** SAFE3 and AUDIT3 accept any public NEAR account, like a block explorer: they read only public data and nothing can be moved, so anyone who knows an account's name can scan it. Before going live, wallet recipes should require the buyer to prove they control the account being checked: a free NEP-413 message signed by a full-access key of that account, sealed with the inputs and verified inside the runner (signature, and the key checked against mainnet RPC), with a one-time nonce bound to the quote. It needs a mainnet wallet connection on the quote page, a new form-field type ("an account you own"), new listings (published forms are fixed) and a runner release. It was left out because judges would need a mainnet wallet holding an account of their own, and the public showcase accounts could no longer be scanned. CHECK (contracts you are about to use) stays open either way.
-- **Testnet only, one TDX runner.** The contract is live on NEAR testnet; mainnet is not deployed (no real funds are used anywhere). One runner, in an Intel TDX CVM on Phala Cloud, serves every listing; browsers verify its quote with Intel DCAP and check the compose hash measured into RTMR3 against the pinned compose file (the image digest); the guided demo's runner is the `local-dev` build.
-- **No NEAR Intents in live runs.** NEAR Intents has no testnet, so live runs are paid in tUSDC directly; the Intents payment path runs in the guided demo against the 1Click mock, and `live-check` gets real dry quotes.
+- **Testnet only, one TDX runner.** The contract is live on NEAR testnet; mainnet is not deployed (no real funds are used anywhere). One runner, in an Intel TDX CVM on Phala Cloud, serves every listing; browsers verify its quote with Intel DCAP and check the compose hash measured into RTMR3 against the pinned compose file (the image digest); the local demo's runner is the `local-dev` build.
+- **No NEAR Intents in live runs.** NEAR Intents has no testnet, so live runs are paid in tUSDC directly; the Intents payment path runs in the local demo against the 1Click mock, and `live-check` gets real dry quotes.
 - **No wallet connect.** Live buyers pay with a guest key made in the browser; recipes are published with the creator's own key from the command line. The relayer signs with a function-call key limited to `report_run` and `checkpoint_run` on `market.sealedrecipes.testnet`, with a 3 NEAR gas allowance; the contract's own key is not on the server. The faucet keeps a full-access key, because NEAR transfers and storage deposits need one, and holds a small balance that is topped up by hand.
 - **Part payouts on testnet** go to the account that registered the parts (the team), since the catalog's parts were all registered by it.
 - **The runner is trusted to measure delivery.** Guarantee deposits pay out on the runner's signed `delivered` value. That is sound only as far as the runner is attested; on-chain DCAP verification of the runner is the next step.
 - **Quotes cost compute.** Quote requests are capped at 12 per minute per client. A small quote fee would be the on-chain version.
 - **Part admission is partly permissioned.** Open-tier parts are admitted on automated checks and sandboxed; parts that send data somewhere new or ask buyers to sign need owner-appointed reviewers (SRS-1 §11). The release log makes every decision auditable. Next: a multisig or DAO as owner, reviewer stakes, several runners with their own releases, reproducible builds. The sandbox is a Node process with the permission model, not yet WASM with fuel metering.
 - **Supplier risk.** Bundled parts can't be switched off by their author, but remote and closed-model parts can. SRS-1 labels this risk; fallback parts, notice periods and supplier bonds are planned.
-- **Thin markets.** With 11 recipes, each price moves with its own demand only.
+- **Thin markets.** With three live recipes and few buyers, prices mostly rest on their floor, and each moves with its own demand only.
 - **Demand can be faked, at a cost.** A creator can pay for their own runs to push the price up. Each fake run costs the protocol, runner and part fees, and the price rises at most 12.5% a period while buyers simply pick another recipe or set a max price. Counting only quoted runs from distinct buyers would make it harder.
 - **Unquoted payments can miss a price change.** A payment without a quote is charged the list price when it arrives; if that rose since the payment was quoted, the payment is credited back to the buyer (never overcharged). Paying with a signed quote locks the price.
 - **Spam.** `register_part` and `publish_recipe` are payable: the caller attaches NEAR for the bytes stored (the rest is refunded). Versions and hashes have size limits; names and part lists don't (SRS-1 §12), they just cost more storage. Run records and used quotes are created by `ft_on_transfer`, which can't carry NEAR, so their storage is paid from the contract's balance; a minimum protocol fee sized to cover it, or pruning settled runs, is next.
@@ -614,7 +477,7 @@ One submission, three tracks. What fits each, and the command or page that shows
 
 - **Built during:** the initial build was written on 2026-10-31, after the hackathon announcement. Tag `baseline-2026-10-31` marks that state; everything after it was built during the hackathon window (`git diff baseline-2026-10-31..main`). The `live-N` tags mark each deployment of the live page.
 - **AI-generated code:** most of this code was written with an AI coding assistant (Claude) working from the team's written brief, and was reviewed and tested by the team.
-- **Libraries:** near-sdk (Rust), tweetnacl, @noble/hashes, @noble/curves, bs58, express, React, @xyflow/react, Vite, tsx, @phala/dcap-qvl, @phala/dstack-sdk (runner container only), and the Archivo and Newsreader fonts (OFL). The film's narration is the Piper text-to-speech voice `en_US-libritts-high`, speaker p7665 ([rhasspy/piper](https://github.com/rhasspy/piper)), trained on [LibriTTS](https://www.openslr.org/60/) by Heiga Zen, Viet Dang, Rob Clark, Yu Zhang, Ron J. Weiss, Ye Jia, Zhifeng Chen and Yonghui Wu (2019), licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); the film page shows the same credit under the player. No templates or boilerplate were used beyond the cargo-near contract layout.
+- **Libraries:** near-sdk (Rust), tweetnacl, @noble/hashes, @noble/curves, bs58, near-api-js, express, marked, React, @xyflow/react, Vite, tsx, @phala/dcap-qvl, @phala/dstack-sdk (runner container only), and the Archivo and Newsreader fonts (OFL). The film's narration is the Piper text-to-speech voice `en_US-libritts-high`, speaker p7665 ([rhasspy/piper](https://github.com/rhasspy/piper)), trained on [LibriTTS](https://www.openslr.org/60/) by Heiga Zen, Viet Dang, Rob Clark, Yu Zhang, Ron J. Weiss, Ye Jia, Zhifeng Chen and Yonghui Wu (2019), licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); the film page shows the same credit under the player. No templates or boilerplate were used beyond the cargo-near contract layout.
 - **Pre-hackathon code:** none beyond the baseline tag above.
 - No existing product on another chain. No other hackathon submission by the same team.
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Icon } from '../icons';
 import { Seal } from '../ui';
 
-/** Landing-page pieces shared by the guided demo (pages/Landing.tsx) and the live page (live/Home.tsx). */
+/** Landing-page pieces used by pages/Landing.tsx, which both the local demo and the live site show. */
 
 /**
  * A first-time visitor needs to know the story continues. One cue floats at the bottom and always names the next

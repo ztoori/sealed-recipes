@@ -150,7 +150,19 @@ export class FilmVoice {
   private clip(f: string) {
     const a = new Audio(this.base + f); a.preload = 'auto';
     a.onplaying = () => { this.speaking = true; };
-    a.onended = a.onpause = a.onerror = () => { if (a === this.current || !this.current) this.speaking = false; };
+    const quiet = () => { if (a === this.current || !this.current) this.speaking = false; };
+    a.onended = a.onpause = quiet;
+    // A clip that fails to load is asked for once more under a fresh address. A browser that met the clip's address
+    // before the clip was deployed keeps that "not found" answer for hours (the CDN gives it a cache lifetime), and
+    // would otherwise stay silent on a line whose clip is there.
+    let again = false;
+    a.onerror = () => {
+      quiet();
+      if (again) return;
+      again = true;
+      a.src = `${this.base}${f}?again=${Date.now().toString(36)}`; a.muted = this.muted; a.load();
+      if (a === this.current) void a.play().catch(() => {});
+    };
     return a;
   }
   setMuted(m: boolean) { this.muted = m; this.clips.forEach((a) => { a.muted = m; }); }

@@ -18,7 +18,7 @@ npm run doctor       # optional: lists what is installed and what each script ne
 
 Nothing below needs a key, an account or the network unless its row says so. There is no data to seed by hand: `npm run demo` and every `test:*` script start their own runner and marketplace and seed the sample recipes (`scripts/seed.ts`). State lives in `.data/` (gitignored); delete it to start clean.
 
-Optional toolchains: Rust (`npm run test:rust`), Python with `z3-solver` (`npm run verify`), Java with `tla2tools.jar` (`npm run verify:tla`), ffmpeg and Playwright (`npm run record:film`). On Ubuntu or WSL, `bash scripts/setup-wsl.sh --all` installs all of them.
+Optional toolchains: Rust (`npm run test:rust`), Python with `z3-solver` (`npm run verify`), Java with `tla2tools.jar` (`npm run verify:tla`), ffmpeg and Playwright (`npm run record:film`). On Ubuntu or WSL, `bash scripts/setup-wsl.sh --all` installs all of them ([docs/SETUP-WSL.md](docs/SETUP-WSL.md)). The step-by-step tour of the app is [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).
 
 ## Verify in five minutes
 
