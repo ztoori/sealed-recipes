@@ -46,7 +46,7 @@ Why these tracks (lead with Privacy & Private AI if a single one has to be named
 | **AI Security & Defense** | The live recipes are safety checks (CHECK rates a contract before you sign, SAFE3 flags scam tokens, AUDIT3 audits keys); agents buy under a policy with a contract-enforced price cap; the relayer uses a function-call key limited to two methods; an attack demo shows a drained wallet can't drain the deposit; everything rests on TEE attestation | The buying agent pays from a guest key on its own implicit account, not a scoped function-call key |
 
 ```text
-Every week there is a new app, feature or agent, each with rules nobody reads. Most people learn the hard way: money lost, a scam, a fine. A few do the reading and turn it into a workflow across many tools and documents: a recipe. It is their edge, and they can't sell it. Paywalls, copyright and licences leak; one copy and the edge is gone.
+Every week there is a new app, feature or agent, each with rules nobody reads. Most people learn the hard way: money lost, a scam, a fine. A few do the reading and turn it into a workflow across many tools and documents: a recipe. It is their edge, and hard to sell: copyright covers the wording, not the method, and paywalls and licenses don't stop copies. One copy, and it's gone.
 
 Sealed Recipes is a marketplace on NEAR that sells the run, never the recipe.
 - Users (people or AI agents) pick a recipe, get a price signed by the runner from a sealed dry run, and pay per run into escrow. A failed run is refunded.

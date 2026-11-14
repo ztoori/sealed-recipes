@@ -51,7 +51,7 @@ Every week there is a new app, a new feature, a new agent that promises to do it
 
 A few people do the reading. They work out which tools to trust, in what order, and what to check, across dozens of documents. That workflow is a **recipe**, and it is their edge.
 
-Selling it is the hard part. Paywalls, copyright and licences all leak. One copy gets out and the edge is gone.
+Selling it is the hard part. A paywall doesn't stop the first buyer from passing it on, copyright covers the wording but not the method, and a license is only as good as your willingness to sue. One copy gets out and the edge is gone.
 
 Sealed Recipes sells the *run*, never the recipe. The recipe is encrypted to a runner inside confidential hardware, so nobody can read it: not the buyer, not the marketplace, not us.
 
@@ -140,7 +140,7 @@ Selling a workflow as a service, run by strangers, needs three things: a no-code
 |---|---|
 | Specialized builders deploy utility apps and bots | **Parts**: code, specialist agents or data sources, with typed ports, declared network capabilities, a per-call fee, **disclosure of model, instructions, harness and verification**, and **per-run resource limits**, registered on-chain ([standard/parts.json](standard/parts.json)) |
 | A no-code / low-code standard to compose and swap parts | **SRS-1** ([docs/SRS-1.md](docs/SRS-1.md), and Docs › Spec in the app), an open MIT-licensed spec with conformance checks and an adoption path: a typed graph with subtyping, value schemas checked at every port while running, type variables, conditions, fallbacks and skip-on-error, validation, drop-in swap search, and a withdrawal-risk label. **Compose › Recipe** starts a new recipe or reopens one of yours; in the no-code builder you add parts, they wire themselves, and the buyer's form builds itself from what the parts need (a test rebuilds every seed recipe this way). **Compose › Part** builds a part with live SRS-1 conformance checks |
-| Users create recipes without patents or licences | The recipe is **sealed** (X25519 + XSalsa20-Poly1305) to the runner's attested key. Only `sha256(envelope)` goes on-chain. See [What the sealing protects](#what-the-sealing-protects-and-what-it-doesnt) for its limits |
+| Users create recipes without patents or licenses | The recipe is **sealed** (X25519 + XSalsa20-Poly1305) to the runner's attested key. Only `sha256(envelope)` goes on-chain. See [What the sealing protects](#what-the-sealing-protects-and-what-it-doesnt) for its limits |
 | A decentralized exchange where recipes are listed, bought and traded | **Signed quotes**: a buyer seals their inputs once and asks a recipe (or several) for a quote from a sealed dry run, then the buyer (or an agent's policy) picks one. Recipes are listed and bought **per run**; what is sold is the service, not an asset (see [No investment features](#no-investment-features)) |
 | Attribution that pays everyone involved | **`report_run`**: an ed25519-signed runner report is verified on-chain and splits the payment in one receipt. It also compares delivery with the signed quote and compensates any shortfall from the recipe's **guarantee deposit** (a performance bond the creator posts) |
 | Deploy on NEAR's privacy platform (TEE) | The runner runs in a **dstack Intel TDX CVM on Phala Cloud** (the stack NEAR's Shade Agents use), verified by each buyer's browser with Intel DCAP. AI parts call **NEAR AI Cloud** private models and verify their TEE signatures |
@@ -331,7 +331,7 @@ Sealed Recipes protects a workflow **by default, without filing anything**. The 
 |---|---|---|
 | Copying or pirating the recipe | **Yes** | It is never distributed. Only attested runner code can decrypt it |
 | Leaks through partners who run it | **Yes** | There are no licensees holding copies. Runs go through the sealed runner |
-| Getting paid without enforcing licences | **Yes** | Access is metered per run, and every part author is paid in the run's settlement |
+| Getting paid without enforcing licenses | **Yes** | Access is metered per run, and every part author is paid in the run's settlement |
 | Reverse engineering by probing outputs | **Partly, on any platform** | Every probe costs a paid run. Simple recipes can still be inferred from enough input/output pairs. No privacy technology hides outputs from the buyer who paid for them. A copy has to win buyers on its own quotes and track record |
 | Inferring a recipe's structure from its listing | **Partly** | The parts and types are public, and for simple linear recipes they leave few possible wirings ([SRS-1 §5.3](docs/SRS-1.md#53-what-the-public-data-gives-away)). The edge lives in sealed params, constants and conditions; execution order, node ids and which branch ran stay out of public data |
 | Independent reinvention | **No, on any platform** | The part list is public so authors can be paid. Patents stop reinvention; secrecy does not |

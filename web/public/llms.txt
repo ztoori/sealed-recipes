@@ -7,7 +7,7 @@ Source, tests and full documentation: https://github.com/ztoori/sealed-recipes (
 ## Why it exists
 
 - New apps, features and agents arrive faster than anyone can read their rules. Most people skip the reading and learn the hard way.
-- A few people do the reading and turn it into a workflow across many tools and documents: a recipe. It is their edge, and it is hard to sell: paywalls, copyright and licences all leak, and one copy is enough.
+- A few people do the reading and turn it into a workflow across many tools and documents: a recipe. It is their edge, and it is hard to sell: a paywall doesn't stop the first buyer from passing it on, copyright covers the wording but not the method, and a license is only as good as your willingness to sue. One copy is enough.
 - Here the recipe is sealed to an attested runner. It is sold one run at a time and never handed over.
 
 ## Who it is for
