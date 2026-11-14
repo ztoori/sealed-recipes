@@ -115,13 +115,13 @@ const LATER_BEATS: Beat[] = [
   { id: 'b18', at: 90.2, text: 'The result is locked to your browser. Only you can open it.', cue: 'unlock' },
   { id: 'b19', at: 96.4, text: 'And one receipt pays everyone: builders, runner, creator.', cue: 'register' },
   { id: 'b20', at: 101.6, text: 'Every cent accounted for, on-chain.' },
-  { id: 'b21', at: 106.4, text: 'Don’t take our word for it. Every claim checks out, live.', cue: 'success' },
+  { id: 'b21', at: 106.4, text: 'Don’t take our word for it. Check every claim yourself.', cue: 'success' },
   { id: 'b22', at: 112.2, text: 'AI agents can also read the listings, check the hardware, and seal their inputs.', cue: 'glitch' },
   { id: 'b23', at: 123.4, text: 'This one asks three recipes for signed quotes. Its own rules pick one.', cue: 'ticks' },
   { id: 'b24', at: 130.4, text: 'It pays, and checks every signature before it trusts the answer.', cue: 'coin' },
   { id: 'b25', at: 137.0, text: 'No account to create: your own key pays, and nothing moves without its owner’s signature.' },
   { id: 'b26', at: 143.2, text: 'Your data stays yours. Their method stays theirs. And everyone gets paid.', cue: 'resolve' },
-  { id: 'b27', at: 148.6, text: 'Try a recipe, live on NEAR testnet.' },
+  { id: 'b27', at: 148.6, text: 'Try a recipe on NEAR testnet.' },
 ];
 
 export interface Cut {

@@ -66,9 +66,9 @@ export interface FilmData {
 }
 export const FALLBACK: FilmData = {
   recipes: [
-    { ticker: 'CHECK', name: 'Contract check before you sign', price: 0.12, runs: 8, risk: 'low', kind: 'report' },
-    { ticker: 'SAFE3', name: 'Wallet scam scan', price: 0.15, runs: 5, risk: 'low', kind: 'report' },
-    { ticker: 'AUDIT3', name: 'Account security audit', price: 0.2, runs: 4, risk: 'low', kind: 'report' },
+    { ticker: 'CHECK', name: 'Contract check before you sign', price: 0.12, runs: 11, risk: 'low', kind: 'report' },
+    { ticker: 'SAFE3', name: 'Wallet scam scan', price: 0.15, runs: 2, risk: 'low', kind: 'report' },
+    { ticker: 'AUDIT3', name: 'Account security audit', price: 0.2, runs: 2, risk: 'low', kind: 'report' },
   ],
   split: { price: 0.12, parts: 0.045, runner: 0.03, protocol: 0.0024, creator: 0.0426, reserve: 0 },
 };
@@ -710,7 +710,7 @@ function ActEnd({ t: now, tag }: { t: number; tag?: boolean }) {
       <div className="df-end-mark" style={pop(prog(t, 148.2, 0.7))}><BrandMark size={74} /></div>
       {lines.map((l, i) => <div key={l} className="df-end-line" style={rise(prog(t, 148.6 + i * 1.3, 0.6), 12)}>{l}</div>)}
       <div className="df-end-who" style={rise(prog(t, 151.6, 0.6), 8)}>creators · builders · runners, in one receipt</div>
-      <div className="df-end-try" style={rise(prog(t, 153.8, 0.6), 10)}>Try a recipe, live on NEAR testnet<span>sealedrecipes.xyz{tag && ' · built at NEAR HACKATHON'}</span></div>
+      <div className="df-end-try" style={rise(prog(t, 153.8, 0.6), 10)}>Try a recipe on NEAR testnet<span>sealedrecipes.xyz{tag && ' · built at NEAR HACKATHON'}</span></div>
     </div>
   );
 }
