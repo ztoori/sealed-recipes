@@ -78,7 +78,7 @@ const HUE: Record<string, number> = { toomuch: 355, edge: 38, market: 160, story
 /** "The box" starts here on the shared timeline; the opening's scenes are gone a second later */
 const BOX_AT = 20;
 
-export function DemoFilm({ data = FALLBACK, cut = 'full', bare = false, onTry, onBrowse, onSpec, voiceBase = './assets/film/' }: { data?: FilmData; cut?: CutId; /** the picture only, filling its container: no controls or overlays (for recording) */ bare?: boolean; onTry: (ticker: string) => void; onBrowse: () => void; onSpec: () => void; voiceBase?: string }) {
+export function DemoFilm({ data = FALLBACK, cut = 'full', bare = false, onTry, onBrowse, onSpec, voiceBase = './assets/film/', tryLabel = 'Try CHECK live' }: { data?: FilmData; cut?: CutId; /** the picture only, filling its container: no controls or overlays (for recording) */ bare?: boolean; onTry: (ticker: string) => void; onBrowse: () => void; onSpec: () => void; voiceBase?: string; /** the end card's first button */ tryLabel?: string }) {
   const { beats: BEATS, chapters: CHAPTERS, end: END, shift, beatAt } = CUTS[cut];
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -206,7 +206,7 @@ export function DemoFilm({ data = FALLBACK, cut = 'full', bare = false, onTry, o
         {!bare && !playing && !ended && t >= 0.05 && <button className="film-bigplay" aria-label="Play" onClick={toggle}><Icon name="play" size={26} /></button>}
         {!bare && ended && (
           <div className="df-endcard">
-            <button className="btn primary lg" onClick={() => onTry('CHECK')}><Icon name="receipt" size={16} />Try CHECK live</button>
+            <button className="btn primary lg" onClick={() => onTry('CHECK')}><Icon name="receipt" size={16} />{tryLabel}</button>
             <button className="btn ghost" onClick={onBrowse}><Icon name="market" size={15} />See all recipes</button>
             <button className="btn ghost" onClick={onSpec}><Icon name="docs" size={15} />Read the SRS-1 spec</button>
             <button className="btn ghost" onClick={toggle}><Icon name="refresh" size={14} />Watch again</button>

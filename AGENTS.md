@@ -61,7 +61,7 @@ Run these in order. Each exits non-zero on failure.
 | Feature | Command | What you should see |
 |---|---|---|
 | Whole loop: compose, seal, signed quote, payment, sealed run, one settlement | `npm run test:e2e` | two quotes (SWPR, CLNP), a policy picks CLNP, payouts sum to the price, `✔ story complete` |
-| The app | `npm run demo` | http://127.0.0.1:8080 opens; press **Play demo** for the guided story |
+| The app | `npm run demo` | http://127.0.0.1:8080 opens; press **Guided demo** for the narrated film, and **Take the hands-on tour** under it for the click-through story |
 | Sample recipes that read keys, staking, contracts, balances | `npm run test:recipes` | AUDT, KEYS, STAK, CHEK and TRIM each report their result |
 | Privacy: inputs never appear in the clear | `npm run test:privacy` | 11 checks pass |
 | Durable runs: the runner is killed twice mid-run | `npm run test:durable` | resumes, deposits once, settles once |

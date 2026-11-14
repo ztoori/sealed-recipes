@@ -44,6 +44,7 @@ export function DemoPages({ backend, children, banner }: { backend: '' | '/demo'
 
   const go = (r: Route) => {
     if (r.page === 'compose' || r.page === 'docs' || r.page === 'home') { live.go(r as LiveRoute); return; }
+    if (r.page === 'film') { live.go({ page: 'film' }); return; }
     // recipes, quotes and wallets of the practice composer live in the demo; on live data they are the live pages
     if (backend) { location.href = DEMO + routeHash(r); return; }
     live.go(r.page === 'quote' ? { page: 'quote', ticker: r.ticker } : r.page === 'recipes' ? { page: 'recipes', ticker: r.ticker } : { page: 'wallet' });

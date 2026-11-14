@@ -7,6 +7,7 @@ import { Compose } from './pages/Compose';
 import { Wallet } from './pages/Wallet';
 import { Docs } from './pages/Docs';
 import { Landing } from './pages/Landing';
+import { Film } from './pages/Film';
 import { Icon, ROLE_ICON } from './icons';
 import { BrandMark } from './ui';
 
@@ -15,7 +16,8 @@ import { demoMs } from './pace';
 import { storyReducer, STORY_LAST, type StoryStep } from './story-machine';
 export type { StoryStep } from './story-machine';
 
-export interface Story { run: number; step: StoryStep; start: () => void; advance: (from: StoryStep) => void; stop: () => void }
+/** start: the guided demo (the film, #/demo); tour: the hands-on tour, which drives this app through the loop with captions */
+export interface Story { run: number; step: StoryStep; start: () => void; tour?: () => void; advance: (from: StoryStep) => void; stop: () => void }
 
 interface Ctx {
   acting: string; setActing: (a: string) => void;
@@ -36,7 +38,7 @@ export function useStoryOnce() {
   return (key: string) => { const k = `${story.run}:${key}`; if (done.current.has(k)) return false; done.current.add(k); return true; };
 }
 
-/** the demo, in seven chapters: the loop itself (1–4), then why it holds together (5–7) */
+/** the hands-on tour, in seven chapters: the loop itself (1–4), then why it holds together (5–7) */
 const STEPS: Record<number, { kicker: string; icon: string; title: string; body: string }> = {
   1: { kicker: 'Compose', icon: 'compose', title: 'Build it, with no code', body: 'A creator snaps five parts together and the types do the wiring. Her prompt and thresholds stay sealed. The recipe is encrypted in her browser and backed by a $25 guarantee.' },
   2: { kicker: 'Quote', icon: 'receipt', title: 'Ask before you pay', body: 'Bob opens Clean up and protect, seals his answers once and gets a signed quote from a private dry run. He pays from Arbitrum through NEAR Intents.' },
@@ -74,7 +76,7 @@ export function App() {
   }, []);
   useEffect(() => { const on = () => setRoute(parseRoute(location.hash)); addEventListener('popstate', on); addEventListener('hashchange', on); return () => { removeEventListener('popstate', on); removeEventListener('hashchange', on); }; }, []);
 
-  const storyApi: Story = { ...story, start: () => dispatch({ type: 'start' }), advance: (from) => dispatch({ type: 'advance', from }), stop: () => dispatch({ type: 'stop' }) };
+  const storyApi: Story = { ...story, start: () => go({ page: 'film' }), tour: () => dispatch({ type: 'start' }), advance: (from) => dispatch({ type: 'advance', from }), stop: () => dispatch({ type: 'stop' }) };
   // entering a step sets the scene; the pages run the step itself
   useEffect(() => {
     if (story.step === 1) { setActing('chef.testnet'); go({ page: 'compose', sub: 'recipe' }); }
@@ -116,13 +118,14 @@ export function App() {
             {ACCOUNTS.map((a) => <option key={a.id} value={a.id}>{a.id} ({a.role})</option>)}
           </select>
         </label>
-        <button className="story-btn" aria-label={playing ? `Story chapter ${story.step} of ${STORY_LAST}` : 'Play the demo story'} disabled={playing} onClick={() => dispatch({ type: 'start' })}>
-          <Icon name="play" size={15} fill />{playing ? `Chapter ${story.step}/${STORY_LAST}` : 'Play demo'}
+        <button className="story-btn" aria-current={route.page === 'film' ? 'page' : undefined} aria-label={playing ? `Hands-on tour, chapter ${story.step} of ${STORY_LAST}` : 'Guided demo'} title={playing ? undefined : 'The guided demo: a film, under three minutes'} disabled={playing} onClick={() => go({ page: 'film' })}>
+          <Icon name="play" size={15} fill />{playing ? `Chapter ${story.step}/${STORY_LAST}` : 'Guided demo'}
         </button>
         </>}
       </div>
       <main className={route.page === 'home' ? 'home' : undefined}>
         {route.page === 'home' && <Landing />}
+        {route.page === 'film' && <Film />}
         {route.page === 'recipes' && <Recipes ticker={route.ticker} />}
         {route.page === 'quote' && <Quote key={route.ticker} ticker={route.ticker} />}
         {route.page === 'compose' && <Compose sub={route.sub} part={route.part} />}

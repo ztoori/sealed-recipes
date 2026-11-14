@@ -1522,3 +1522,7 @@ button.acting { color: inherit; font: inherit; text-align: left; }
 .df-today dt { font-size: 11.5px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .df-today dd { margin: 4px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
 @media (max-width: 760px) { .df-seats-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } .df-today { grid-template-columns: 1fr; } }
+/* the local demo's film page: the hands-on tour under the notes */
+.df-tour { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; width: 100%; max-width: max(300px, calc((100dvh - 230px) * 960 / 540)); margin: 4px auto 8px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; }
+.df-tour > div { flex: 1 1 320px; display: grid; gap: 3px; font-size: 13.5px; color: var(--ink-2); }
+.df-tour b { color: var(--ink); font-weight: 600; }

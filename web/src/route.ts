@@ -1,9 +1,10 @@
 /**
  * Navigation as one explicit state, mirrored in the URL hash so every page can be linked and the back button works.
- *   #/ (landing)   #/recipes[/TICKER]   #/quote/TICKER   #/compose/recipe   #/compose/part[/PART_ID]   #/compose/review[/SUBMISSION_ID]   #/wallet   #/docs/spec|landscape|trust|pricing|compose-recipe|compose-part|runner (#/docs/standard still opens the spec)
+ *   #/ (landing)   #/demo (the guided demo film)   #/recipes[/TICKER]   #/quote/TICKER   #/compose/recipe   #/compose/part[/PART_ID]   #/compose/review[/SUBMISSION_ID]   #/wallet   #/docs/spec|landscape|trust|pricing|compose-recipe|compose-part|runner (#/docs/standard still opens the spec)
  */
 export type Route =
   | { page: 'home' }
+  | { page: 'film' }
   | { page: 'recipes'; ticker?: string }
   | { page: 'quote'; ticker: string }
   | { page: 'compose'; sub: 'recipe' | 'part' | 'review'; part?: string }
@@ -18,6 +19,7 @@ export function parseRoute(hash: string): Route {
   const b = rest.join('/');
   switch (page) {
     case '': return { page: 'home' };
+    case 'demo': case 'film': return { page: 'film' };
     case 'quote': return a ? { page: 'quote', ticker: a.toUpperCase() } : { page: 'recipes' };
     case 'compose': return a === 'part' || a === 'review' ? { page: 'compose', sub: a, ...(b ? { part: b } : {}) } : { page: 'compose', sub: 'recipe' };
     case 'wallet': return { page: 'wallet' };
@@ -29,6 +31,7 @@ export function parseRoute(hash: string): Route {
 export function routeHash(r: Route): string {
   switch (r.page) {
     case 'home': return '#/';
+    case 'film': return '#/demo';
     case 'recipes': return r.ticker ? `#/recipes/${r.ticker}` : '#/recipes';
     case 'quote': return `#/quote/${r.ticker}`;
     case 'compose': return r.sub === 'recipe' ? '#/compose/recipe' : `#/compose/${r.sub}${r.part ? '/' + encodeURIComponent(r.part) : ''}`;
@@ -38,4 +41,4 @@ export function routeHash(r: Route): string {
 }
 
 /** which top-level menu item a route belongs to (Get a quote lives under Recipes) */
-export const section = (r: Route): 'home' | 'recipes' | 'compose' | 'wallet' | 'docs' => (r.page === 'quote' ? 'recipes' : r.page);
+export const section = (r: Route): 'home' | 'recipes' | 'compose' | 'wallet' | 'docs' => (r.page === 'quote' ? 'recipes' : r.page === 'film' ? 'home' : r.page);

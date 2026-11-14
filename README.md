@@ -86,7 +86,7 @@ delivered $28.0249 vs promised $27.8147 → compensation from the guarantee depo
 ✔ story complete
 ```
 
-`npm run demo` opens the same thing as an app at http://127.0.0.1:8080 (press **Play demo**). [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) is the step-by-step tour; on Windows use WSL ([docs/SETUP-WSL.md](docs/SETUP-WSL.md)). For the proofs and the contract tests too, `bash scripts/setup.sh --all` installs everything in one run on Linux, macOS or WSL; it uses sudo only for missing system packages and says so first ([AGENTS.md](AGENTS.md#setup)). Or skip installing: open the repo in a GitHub Codespace, which runs that script for you.
+`npm run demo` opens the same thing as an app at http://127.0.0.1:8080 (press **Guided demo** for the narrated film, then **Take the hands-on tour** under it to click through a real run). [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) is the step-by-step tour; on Windows use WSL ([docs/SETUP-WSL.md](docs/SETUP-WSL.md)). For the proofs and the contract tests too, `bash scripts/setup.sh --all` installs everything in one run on Linux, macOS or WSL; it uses sudo only for missing system packages and says so first ([AGENTS.md](AGENTS.md#setup)). Or skip installing: open the repo in a GitHub Codespace, which runs that script for you.
 
 **3. Check any claim.** Each row is one command; none needs a key. [AGENTS.md](AGENTS.md) has the full list with expected output.
 
