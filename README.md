@@ -18,7 +18,31 @@ Sealed Recipes is a marketplace on NEAR where an expert's workflow (a *recipe*) 
 
 ![The four seats: users, creators, builders and runners around one market](docs/media/film-seats.png)
 
-**Contents:** [Why](#why) · [Four seats](#four-seats-at-one-table) · [Try it](#try-it) · [How one run plays out](#how-one-run-plays-out) · [Status](#status) · [Design requirements](#design-requirements-and-where-each-is-built) · [How it works](#how-it-works) · [Sample recipes](#the-sample-recipes) · [Complex workflows](#complex-workflows-durable-runs-partial-settlement-versions) · [Where this sits](#where-this-sits-comparable-offerings-integrations-and-what-only-this-adds) · [Formal verification](#formal-verification) · [Tests](#tests) · [What the sealing protects](#what-the-sealing-protects-and-what-it-doesnt) · [Real vs local](#what-is-real-and-what-is-local) · [How NEAR is used](#how-near-is-used) · [Architecture](#architecture) · [Configuration](#configuration) · [Hackathon tracks](#hackathon-tracks) · [Disclosures](#disclosures)
+## Contents
+
+- [Why](#why)
+- [Four seats](#four-seats-at-one-table)
+- [Try it](#try-it)
+- [How one run plays out](#how-one-run-plays-out)
+- [Status](#status)
+- [Design requirements](#design-requirements-and-where-each-is-built)
+- [How it works](#how-it-works)
+  - [Market-driven prices](#market-driven-prices)
+- [Sample recipes](#the-sample-recipes)
+- [Complex workflows](#complex-workflows-durable-runs-partial-settlement-versions)
+- [Where this sits](#where-this-sits-comparable-offerings-integrations-and-what-only-this-adds)
+- [No investment features](#no-investment-features)
+- [Formal verification](#formal-verification)
+- [Tests](#tests)
+- [What the sealing protects](#what-the-sealing-protects-and-what-it-doesnt)
+- [Real vs local](#what-is-real-and-what-is-local)
+- [How NEAR is used](#how-near-is-used)
+- [Architecture](#architecture)
+- [What happens to the accounts you enter](#what-happens-to-the-accounts-you-enter)
+- [Configuration](#configuration)
+- [Hackathon tracks](#hackathon-tracks)
+- [Disclosures](#disclosures)
+- [License](#license)
 
 ## Why
 
