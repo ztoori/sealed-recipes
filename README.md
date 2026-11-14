@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/ztoori/sealed-recipes/actions/workflows/ci.yml/badge.svg)](https://github.com/ztoori/sealed-recipes/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/ztoori/sealed-recipes)
 
 **Your data stays yours. Their method stays theirs. Everyone gets paid.**
 
@@ -11,7 +12,7 @@ Sealed Recipes is a marketplace on NEAR where an expert's workflow (a *recipe*) 
 |---|---|
 | **Live (NEAR testnet)** | https://sealedrecipes.xyz · contract [`market.sealedrecipes.testnet`](https://testnet.nearblocks.io/address/market.sealedrecipes.testnet) |
 | **Film (2:57)** | https://sealedrecipes.xyz/#/demo · file: [docs/media/demo.mp4](docs/media/demo.mp4) · X cut (2:15): [docs/media/demo-x.mp4](docs/media/demo-x.mp4) |
-| **Run it locally** | `npm ci && npm run test:e2e` (Node 20.6+, no keys, no network, no sudo) |
+| **Run it locally** | `npm ci && npm run test:e2e` (Node 20.6+, no keys, no network, no sudo) · or nothing to install: [open in Codespaces](https://codespaces.new/ztoori/sealed-recipes) (ready in a few minutes, every command works) |
 | **For AI agents and reviewers** | [AGENTS.md](AGENTS.md): every feature with the command that proves it · [llms.txt](web/public/llms.txt) |
 | **Spec** | [SRS-1](docs/SRS-1.md), the open spec for parts and recipes |
 | **Hackathon** | [NEAR Hackathon](https://nearhackathon.com), Nov 1–14, 2026. Tracks: **Privacy & Private AI**, **AI Security & Defense** ([why](#hackathon-tracks)) |

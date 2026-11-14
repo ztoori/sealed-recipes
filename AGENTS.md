@@ -10,7 +10,7 @@ Keywords: NEAR, TEE, Intel TDX, dstack, Phala Cloud, remote attestation, DCAP, N
 
 ## Setup
 
-**Quickest, nothing to install: open it in a dev container.** On GitHub, **Code → Codespaces → Create codespace**, or in VS Code with Docker, **Reopen in Container**. It runs the setup script below for you (`.devcontainer/devcontainer.json`), and then every command on this page works.
+**Quickest, nothing to install: open it in a dev container.** One click: [https://codespaces.new/ztoori/sealed-recipes](https://codespaces.new/ztoori/sealed-recipes) (or on GitHub, **Code → Codespaces → Create codespace**), or in VS Code with Docker, **Reopen in Container**. It runs the setup script below for you (`.devcontainer/devcontainer.json`), and then every command on this page works.
 
 **On your machine you need Node.js 20.6 or newer** (22 recommended) on Linux, macOS or WSL. That is all the five-minute checks and the demo need: no keys, no `.env`, no sudo.
 
