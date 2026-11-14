@@ -75,7 +75,7 @@ export function Live() {
           <span className="who"><b>{guest ? short(guest.account, 6, 4) : 'Guest'}</b><small>{guest ? 'guest · testnet' : 'no account yet'}</small></span>
           <Icon name="chevron" size={14} className="caret" />
         </button>
-        <button className="story-btn" aria-current={route.page === 'film' ? 'page' : undefined} onClick={() => go({ page: 'film' })} title="The guided demo: a 2½-minute film"><Icon name="play" size={15} fill />Guided demo</button>
+        <button className="story-btn" aria-current={route.page === 'film' ? 'page' : undefined} onClick={() => go({ page: 'film' })} title="The guided demo: a film, under three minutes"><Icon name="play" size={15} fill />Guided demo</button>
         </>}
       </div>
       <main className={home ? 'home' : undefined}>

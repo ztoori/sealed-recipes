@@ -622,6 +622,8 @@ if (existsSync(join(WEB, 'live.html'))) {
     res.sendFile(join(WEB, 'live.html'));
   });
   app.use('/assets', express.static(join(WEB, 'assets'), { immutable: true, maxAge: '30d', index: false }));
+  // a plain-text summary of the site and its API, for AI agents and anything else that does not run the page's JavaScript
+  app.get('/llms.txt', (_, res) => { res.set({ 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' }); res.type('text/plain').sendFile(join(WEB, 'llms.txt')); });
 } else console.warn('[live] web/dist/live.html is missing: run npm run build to serve the page');
 
 app.get('/healthz', (_, res) => res.json({ ok: true, mode: NETWORK, runs: runs.size, listings: Object.keys(listings).length }));

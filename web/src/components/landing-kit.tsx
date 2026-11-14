@@ -30,7 +30,7 @@ export function NextCue({ steps }: { steps: [string, string][] }) {
   );
 }
 
-/** The market in one picture: parts flow to creators, recipes flow to buyers, and one receipt pays everyone. */
+/** The market in one picture: parts flow to creators, recipes flow to users, runners host the runs in the middle, and one receipt pays everyone. */
 export function Loop() {
   return (
     <div className="lp-loop" aria-hidden>
@@ -48,8 +48,8 @@ export function Loop() {
       <span className="lp-arc-lbl l">one receipt pays all</span>
       <div className="lp-node build" style={{ left: '14%', top: '20%' }}><span className="ring"><Icon name="box" size={22} /></span><b>Builders</b><small>make parts</small></div>
       <div className="lp-node sell" style={{ left: '86%', top: '20%' }}><span className="ring"><Icon name="compose" size={22} /></span><b>Creators</b><small>seal recipes</small></div>
-      <div className="lp-node buy" style={{ left: '50%', top: '86%' }}><span className="ring"><Icon name="user" size={22} /></span><b>Buyers</b><small>people or agents</small></div>
-      <div className="lp-core"><Seal ticker="RUN" kind="swap.receipts" size={132} /></div>
+      <div className="lp-node buy" style={{ left: '50%', top: '86%' }}><span className="ring"><Icon name="user" size={22} /></span><b>Users</b><small>people or agents</small></div>
+      <div className="lp-core"><Seal ticker="RUN" kind="swap.receipts" size={132} /><span className="lp-core-lbl"><Icon name="cpu" size={12} />Runners · sealed hardware</span></div>
     </div>
   );
 }

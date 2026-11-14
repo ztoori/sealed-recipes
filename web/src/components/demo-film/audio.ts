@@ -8,7 +8,7 @@
 import type { Cue } from './script';
 
 export class FilmAudio {
-  private ctx?: AudioContext;
+  private ctx?: BaseAudioContext;
   private master!: GainNode;
   private fx!: GainNode;
   private noise?: AudioBuffer;
@@ -17,15 +17,16 @@ export class FilmAudio {
   /** call from the play button's click (a user gesture), so the browser lets sound start */
   async start() {
     if (!this.ctx) this.build();
-    if (this.ctx!.state !== 'running') await this.ctx!.resume().catch(() => {});
+    if (this.ctx!.state !== 'running') await (this.ctx as AudioContext).resume().catch(() => {});
   }
   /** pause: everything stops where it is */
-  stop() { void this.ctx?.suspend().catch(() => {}); }
+  stop() { void (this.ctx as AudioContext | undefined)?.suspend().catch(() => {}); }
   setMuted(m: boolean) { this.muted = m; if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.9, this.ctx.currentTime, 0.05); }
 
-  private build() {
+  /** `into`: an offline context to render into (renderEffects below); without it, the speakers */
+  build(into?: BaseAudioContext) {
     const Ctx = (window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext);
-    const c = (this.ctx = new Ctx());
+    const c = (this.ctx = into ?? new Ctx());
     this.master = c.createGain(); this.master.gain.value = this.muted ? 0 : 0.9; this.master.connect(c.destination);
     // a gentle limiter, so stacked effects never clip
     const comp = c.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 6; comp.connect(this.master);
@@ -57,10 +58,10 @@ export class FilmAudio {
   }
   private chime(t: number, base = 880, peak = 0.06) { [1, 1.5, 2, 3].forEach((k, i) => this.tone(t + i * 0.012, base * k, 1.4 - i * 0.25, peak / (i + 1))); }
 
-  /** an effect, now */
-  cue(name: Cue) {
-    const c = this.ctx; if (!c || c.state !== 'running') return;
-    const t = c.currentTime + 0.02;
+  /** an effect, now; or at `at` seconds on the context's clock (offline rendering) */
+  cue(name: Cue, at?: number) {
+    const c = this.ctx; if (!c || (at === undefined && c.state !== 'running')) return;
+    const t = at ?? c.currentTime + 0.02;
     switch (name) {
       case 'heartbeat': this.thump(t, 0.45, 50); this.thump(t + 0.24, 0.3, 46); break;
       case 'deny': this.tone(t, 70, 0.28, 0.1, 'sawtooth', 60); this.tone(t + 0.42, 66, 0.34, 0.1, 'sawtooth', 52); break;
@@ -84,7 +85,26 @@ export class FilmAudio {
     }
   }
 
-  dispose() { this.stop(); void this.ctx?.close().catch(() => {}); this.ctx = undefined; }
+  dispose() { this.stop(); void (this.ctx as AudioContext | undefined)?.close?.().catch(() => {}); this.ctx = undefined; }
+}
+
+/**
+ * The film's effects as one sound file, for a recording (scripts/record-film.mjs): the same instruments, rendered
+ * offline at the given real-time positions. Returns a 16-bit mono WAV, base64-encoded.
+ */
+export async function renderEffects(cues: { name: Cue; at: number }[], seconds: number, rate = 44100): Promise<string> {
+  const ctx = new OfflineAudioContext(1, Math.ceil(seconds * rate), rate);
+  const a = new FilmAudio(); a.build(ctx);
+  for (const c of cues) a.cue(c.name, c.at + 0.02);
+  const pcm = (await ctx.startRendering()).getChannelData(0);
+  const wav = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+  const str = (o: number, x: string) => { for (let i = 0; i < x.length; i++) wav.setUint8(o + i, x.charCodeAt(i)); };
+  str(0, 'RIFF'); wav.setUint32(4, 36 + pcm.length * 2, true); str(8, 'WAVEfmt '); wav.setUint32(16, 16, true); wav.setUint16(20, 1, true); wav.setUint16(22, 1, true);
+  wav.setUint32(24, rate, true); wav.setUint32(28, rate * 2, true); wav.setUint16(32, 2, true); wav.setUint16(34, 16, true); str(36, 'data'); wav.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) wav.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 32767, true);
+  const bytes = new Uint8Array(wav.buffer); let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
 }
 
 /**
@@ -93,7 +113,7 @@ export class FilmAudio {
  */
 export class FilmVoice {
   private clips = new Map<string, HTMLAudioElement>();
-  private files: Record<string, string> | null | undefined;
+  private clipFiles: Record<string, string> | null | undefined;
   /** the voice's credit line from voice.json (a CC BY voice must be credited where it is used) */
   credit = '';
   private current?: HTMLAudioElement;
@@ -103,18 +123,20 @@ export class FilmVoice {
   constructor(private base: string) {}
 
   async load() {
-    if (this.files !== undefined) return;
-    this.files = null;
+    if (this.clipFiles !== undefined) return;
+    this.clipFiles = null;
     try {
       const r = await fetch(`${this.base}voice.json`, { cache: 'no-cache' });
-      if (r.ok) { const j = (await r.json()) as { clips: Record<string, string>; credit?: string }; this.files = j.clips ?? null; this.credit = j.credit ?? ''; }
+      if (r.ok) { const j = (await r.json()) as { clips: Record<string, string>; credit?: string }; this.clipFiles = j.clips ?? null; this.credit = j.credit ?? ''; }
     } catch { /* captions only */ }
   }
-  get available() { return !!this.files; }
+  get available() { return !!this.clipFiles; }
+  /** clip file per line id, and where they are served from (for the recorder) */
+  files() { return { base: this.base, clips: this.clipFiles ?? {} }; }
   /** speak a beat's line, starting `offset` seconds into it (after a seek) */
   play(id: string, offset: number, rate: number) {
     this.pause();
-    const f = this.files?.[id]; if (!f) return;
+    const f = this.clipFiles?.[id]; if (!f) return;
     let a = this.clips.get(id);
     if (!a) { a = this.clip(f); this.clips.set(id, a); }
     a.muted = this.muted; a.playbackRate = rate;
@@ -133,5 +155,5 @@ export class FilmVoice {
   }
   setMuted(m: boolean) { this.muted = m; this.clips.forEach((a) => { a.muted = m; }); }
   /** load the next clips ahead of time */
-  warm(ids: string[]) { for (const id of ids) { const f = this.files?.[id]; if (f && !this.clips.has(id)) this.clips.set(id, this.clip(f)); } }
+  warm(ids: string[]) { for (const id of ids) { const f = this.clipFiles?.[id]; if (f && !this.clips.has(id)) this.clips.set(id, this.clip(f)); } }
 }

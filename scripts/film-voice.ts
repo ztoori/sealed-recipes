@@ -1,31 +1,40 @@
 /**
- * Narration for the guided demo film (web/src/components/DemoFilm.tsx): one small MP3 per spoken line, plus
+ * Narration for the guided demo film (web/src/components/DemoFilm.tsx), both cuts: one small MP3 per spoken line, plus
  * web/public/assets/film/voice.json, which the film reads to know they exist. Without them the film still plays,
  * with captions and its built-in score.
  *
  *   npx tsx scripts/film-voice.ts                 text-to-speech with Piper (offline, open source)
  *   npx tsx scripts/film-voice.ts --from DIR      your own recordings: DIR/b01.wav (or .mp3, .m4a) … one per line
  *   npx tsx scripts/film-voice.ts --script        print the lines with their ids and time windows (to record them)
+ *   npx tsx scripts/film-voice.ts --check         check the clips in the repo against the screenplay (no Piper needed)
  *
  * Piper: pip install piper-tts && mkdir -p ~/.piper && cd ~/.piper && python3 -m piper.download_voices en_US-libritts-high
  *        The default voice, en_US-libritts-high, is trained on LibriTTS (CC BY 4.0), so the film credits it on its page
  *        and the README credits it too. It has 904 speakers: FILM_SPEAKER picks one by number (default 856, LibriTTS speaker p7665). Another Piper voice:
  *        FILM_VOICE=… FILM_VOICE_CREDIT='…' (check its MODEL_CARD for the dataset's licence and credit it).
- * Needs ffmpeg. Each clip is mono MP3 at 40 kb/s, normalised, with the silence trimmed: about 400 KB in all.
+ * Needs ffmpeg. Each clip is mono MP3 at 40 kb/s, normalised, with the silence trimmed: about 600 KB in all.
  * File names carry a hash of the line, so a changed line gets a new file and browsers never play a stale one.
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BEATS, END } from '../web/src/components/demo-film/script.js';
+import { CUTS, type Beat } from '../web/src/components/demo-film/script.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const OUT = join(root, 'web/public/assets/film');
 const arg = (k: string) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : undefined; };
-const window = (i: number) => (BEATS[i + 1]?.at ?? END) - BEATS[i].at;
+// every line of both cuts (the full film and the X cut share most of them), each with the shortest time it gets
+const slots = new Map<string, { beat: Beat; window: number }>();
+for (const c of Object.values(CUTS)) c.beats.forEach((b, i) => {
+  const w = (c.beats[i + 1]?.at ?? c.end) - b.at, had = slots.get(b.id);
+  if (had && had.beat.text !== b.text) throw new Error(`${b.id} has two different lines`);
+  slots.set(b.id, { beat: b, window: Math.min(w, had?.window ?? Infinity) });
+});
+const BEATS = [...slots.values()].map((s) => s.beat);
+const window = (i: number) => slots.get(BEATS[i].id)!.window;
 /** what the voice should say: the caption, with typographic marks a speech engine reads cleanly */
 const spoken = (s: string) => s.replace(/[’‘]/g, "'").replace(/…/g, '...').replace(/ · /g, ', ').replace(/ — /g, ', ');
 
@@ -35,6 +44,21 @@ if (process.argv.includes('--script')) {
 }
 
 const run = (cmd: string, args: string[]) => execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+
+// --check: measure the clips already in web/public/assets/film/ against the screenplay; exits 1 if a line is missing or too long
+if (process.argv.includes('--check')) {
+  const have = JSON.parse(readFileSync(join(OUT, 'voice.json'), 'utf8')) as { clips: Record<string, string> };
+  let bad = 0;
+  BEATS.forEach((b, i) => {
+    const f = have.clips[b.id];
+    if (!f || !existsSync(join(OUT, f))) { console.log(`${b.id}  no clip`); bad++; return; }
+    const dur = Number(run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', join(OUT, f)]).trim());
+    const ok = dur <= window(i) - 0.3; if (!ok) bad++;
+    console.log(`${b.id}  ${dur.toFixed(2)} s of ${window(i).toFixed(1)} s${ok ? '' : '  ← too long for its beat'}`);
+  });
+  console.log(bad ? `${bad} line(s) need attention` : `all ${BEATS.length} lines fit`);
+  process.exit(bad ? 1 : 0);
+}
 try { run('ffmpeg', ['-version']); } catch { console.error('ffmpeg is required (sudo apt install ffmpeg)'); process.exit(1); }
 const from = arg('--from');
 const voice = process.env.FILM_VOICE ?? 'en_US-libritts-high';
@@ -46,7 +70,7 @@ const credit = from ? (process.env.FILM_VOICE_CREDIT ?? '') : (process.env.FILM_
 const voiceDir = process.env.FILM_VOICE_DIR ?? join(homedir(), '.piper');
 const tmp = mkdtempSync(join(tmpdir(), 'film-voice-'));
 mkdirSync(OUT, { recursive: true });
-for (const f of readdirSync(OUT)) if (/^b\d+-[0-9a-f]{8}\.mp3$/.test(f)) rmSync(join(OUT, f));
+for (const f of readdirSync(OUT)) if (/^[abx]\d+-[0-9a-f]{8}\.mp3$/.test(f)) rmSync(join(OUT, f));
 
 const clips: Record<string, string> = {};
 let total = 0, late = 0;
@@ -67,7 +91,7 @@ BEATS.forEach((b, i) => {
   run('ffmpeg', ['-y', '-loglevel', 'error', '-i', src, '-af', 'silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse,loudnorm=I=-16:TP=-1.5:LRA=11', '-ac', '1', '-ar', '24000', '-c:a', 'libmp3lame', '-b:a', '40k', join(OUT, name)]);
   const dur = Number(run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', join(OUT, name)]).trim());
   total += dur;
-  const fits = dur <= window(i) - 0.25;
+  const fits = dur <= window(i) - 0.3;
   if (!fits) late++;
   console.log(`${b.id}  ${dur.toFixed(2)} s of ${window(i).toFixed(1)} s ${fits ? '' : '  ← longer than its beat: shorten the line in web/src/components/demo-film/script.ts, or speak faster'}`);
   clips[b.id] = name;

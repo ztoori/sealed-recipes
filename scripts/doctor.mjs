@@ -40,7 +40,7 @@ const java = run('java -version 2>&1');
 const jar = existsSync(process.env.TLA2TOOLS ?? resolve(root, 'tools/tla2tools.jar'));
 check('java + tla2tools.jar (npm run verify:tla)', !!java && jar, `${java ? 'java ok' : 'no java'}, ${jar ? 'jar ok' : 'no jar'}`, 'bash scripts/setup-wsl.sh --with-tla');
 const ff = run('ffmpeg -version');
-check('ffmpeg (npm run record)', !!ff, ff ? ff.split('\n')[0] : 'missing', 'bash scripts/setup-wsl.sh --with-media');
+check('ffmpeg (npm run record, record:film, record:x)', !!ff, ff ? ff.split('\n')[0] : 'missing', 'bash scripts/setup-wsl.sh --with-media');
 const crlf = run('git ls-files --eol package.json scripts/demo.mjs');
 check('line endings (LF)', !crlf || !/w\/crlf/.test(crlf), crlf ? 'LF' : 'not a git checkout', 'git config core.autocrlf false && git rm --cached -r . -q && git reset --hard   (re-checkout with LF)');
 

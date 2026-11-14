@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * Records the demo video + screenshots used in the X post and README.
+ * Records the README's screenshots and a screen recording of the hands-on sandbox (the app's own guided story).
+ * The demo film and its cut for X are made by scripts/record-film.mjs instead (docs/media/demo.mp4, demo-x.mp4).
  *   1. SRS_PRICE_PERIOD_S=20 npm run demo   (in another terminal; restart it first so CLNP is not yet listed)
  *   2. npm run pricing-demo                 (real paid runs, so the market-price shot has history to show)
- *   3. node scripts/record-demo.mjs        → docs/media/demo.mp4 (needs ffmpeg) + docs/media/*.png
+ *   3. node scripts/record-demo.mjs        → docs/media/walkthrough.mp4 (needs ffmpeg) + docs/media/*.png
  * Needs Playwright with Chromium: `npx playwright install chromium` if you don't have it, or set
  * SRS_CHROME to an installed Chrome (e.g. SRS_CHROME=/usr/bin/google-chrome).
  */
@@ -24,8 +25,8 @@ mkdirSync(out, { recursive: true });
 // never delete: previous media is moved to archive/media-<timestamp>/
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const archive = resolve(root, 'archive', `media-${stamp}`);
-// only what this script regenerates: the diagrams (srs-*.svg) stay in place
-const previous = readdirSync(out).filter((f) => /\.(png|mp4)$/.test(f));
+// only what this script regenerates: the diagrams (srs-*.svg) and the film's videos (demo.mp4, demo-x.mp4) stay in place
+const previous = readdirSync(out).filter((f) => /\.png$/.test(f) || f === 'walkthrough.mp4');
 if (previous.length) { mkdirSync(archive, { recursive: true }); for (const f of previous) renameSync(resolve(out, f), resolve(archive, f)); console.log(`archived ${previous.length} previous media file(s) to ${archive}`); }
 const tmp = resolve(out, '.video');
 
@@ -92,7 +93,7 @@ const speed = dur > MAX_S ? (dur - HEAD_S - TAIL_S) / (MAX_S - HEAD_S - TAIL_S) 
 // one pass, piecewise timestamps (trim + concat would buffer the whole decoded video in memory)
 const E = (dur - TAIL_S).toFixed(3), S = speed.toFixed(4);
 const vf = speed > 1 ? ['-vf', `setpts='if(lt(T,${HEAD_S}),T,if(lt(T,${E}),${HEAD_S}+(T-${HEAD_S})/${S},${HEAD_S}+(${E}-${HEAD_S})/${S}+(T-${E})))/TB'`] : [];
-const ff = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', raw, ...vf, '-r', '25', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', resolve(out, 'demo.mp4')], { stdio: 'inherit' });
+const ff = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', raw, ...vf, '-r', '25', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', resolve(out, 'walkthrough.mp4')], { stdio: 'inherit' });
 if (ff.status !== 0) console.warn('ffmpeg not available: raw video is at ' + raw);
-else if (speed > 1) console.log(`demo.mp4: ${dur.toFixed(0)} s recorded, the middle sped up ${speed.toFixed(2)}× to fit ${MAX_S} s for X`);
+else if (speed > 1) console.log(`walkthrough.mp4: ${dur.toFixed(0)} s recorded, the middle sped up ${speed.toFixed(2)}× to fit ${MAX_S} s for X`);
 console.log('wrote', readdirSync(out).join(', '));

@@ -216,7 +216,7 @@ const COPY: Record<string, (x: { l: FilmListing; s: FilmScript; n: number; b: nu
   run: ({ n, b }) => ['The sealed recipe runs', `${n} parts from ${b} builder${b > 1 ? 's' : ''}, inside sealed hardware. Which part runs when stays sealed, even here.`],
   result: () => ['Only you can open the result', 'Logs and the result are encrypted to a key your browser made for this run.'],
   settle: ({ b }) => ['Everyone paid in one receipt', `The price splits between ${b > 1 ? `${b} builders` : 'the builder'}, the runner, the protocol and the creator, in a single transaction.`],
-  why: () => ['Why everyone shows up', 'Buyers get a guarantee. Creators sell a method without giving it away. Builders are paid every time.'],
+  why: () => ['Why everyone shows up', 'Users are refunded if a run fails. Creators keep their method secret. Builders and runners are paid every time.'],
 };
 
 function LeftColumn({ t, l, s, builders: b, live, total }: { t: number; l: FilmListing; s: FilmScript; builders: number; live?: Hop; total: number }) {
