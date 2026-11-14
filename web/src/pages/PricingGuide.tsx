@@ -1,4 +1,4 @@
-import { money, currencyName } from '../api';
+import { money, currencyName, usePoll } from '../api';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { demoMs } from '../pace';
 import { nextPrice } from '../../../core/src/pricing';
@@ -86,14 +86,48 @@ function Playground() {
   );
 }
 
-export function PricingGuide() {
+/** on the live site: each recipe's price, band and this period's demand, read from the contract */
+function LiveNow() {
+  const [listings] = usePoll<any[]>('/api/listings', 30000);
+  const [cfg] = usePoll<any>('/api/chain/config', 600000);
   const { go } = useApp();
+  const rows = (listings ?? []).filter((l) => l.onchain);
+  if (!rows.length) return null;
+  const u = (x: unknown) => (Number(x ?? 0) / 1e6).toFixed(2);
+  const mins = cfg?.price_period_ns ? Math.round(Number(cfg.price_period_ns) / 6e10) : null;
+  return (
+    <div className="panel">
+      <header><Icon name="trend" size={16} className="hd-ic" /><h2>On this site, right now</h2><span className="spacer" />{mins && <span className="small muted">a period is {mins >= 60 ? `${+(mins / 60).toFixed(1)} h` : `${mins} min`}</span>}</header>
+      <table className="small"><thead><tr><th>Recipe</th><th className="r">Price now</th><th className="r">Band</th><th className="r">This period</th><th /></tr></thead><tbody>
+        {rows.map((l) => {
+          const c = l.onchain, fixed = !c.price_floor || c.price_floor === c.price_ceiling;
+          return (
+            <tr key={l.ticker}>
+              <td><b>{l.ticker}</b> <span className="muted">{l.name}</span></td>
+              <td className="r"><b>{u(c.price_per_run)}</b> {currencyName()}</td>
+              <td className="r">{fixed ? 'fixed' : `${u(c.price_floor)} to ${u(c.price_ceiling)}`}</td>
+              <td className="r">{fixed ? 'n/a' : `${String(c.period_runs ?? 0)} of ${c.target_runs ?? '?'} runs`}</td>
+              <td className="r"><button className="linkbtn small" onClick={() => go({ page: 'recipes', ticker: l.ticker })}>Open<Icon name="arrow" size={12} /></button></td>
+            </tr>
+          );
+        })}
+      </tbody></table>
+      <p className="small muted body" style={{ margin: 0 }}>Read from the contract. Each recipe’s page shows the same under <b>Price</b>, and its price tag says <b>follows demand</b>. With few buyers on testnet, prices mostly rest on their floor.</p>
+    </div>
+  );
+}
+
+export function PricingGuide() {
+  const { go, mode } = useApp();
+  const live = !!mode && mode.mode !== 'local';
   return (
     <div className="grid">
       <GuideHero kicker="Price & demand" icon="trend" title="Prices that listen." accent="Quotes that hold."
         lede="There is no price list. Each recipe’s price follows its own demand, inside a band its creator sets, and the quote you accept locks the price you saw.">
         <button className="btn primary" onClick={() => go({ page: 'recipes' })}><Icon name="market" size={15} />See live prices</button>
       </GuideHero>
+
+      {live && <LiveNow />}
 
       <GuideSection n={1} icon="scale" title="The rule, in one breath" line="At the end of every period, the contract compares paid runs with the creator’s target.">
         <Tiles items={[
@@ -118,7 +152,7 @@ export function PricingGuide() {
         <Tiles tone="wax" items={[
           { icon: 'compose', title: 'The creator', line: 'Sets the starting price, the floor, the ceiling and the target. Only the creator can change the band, on-chain.' },
           { icon: 'market', title: 'The market', line: 'Paid runs are the only input. Quotes that nobody pays for don’t count.' },
-          { icon: 'vault', title: 'The contract', line: 'Applies the rule when a period ends: an hour on mainnet, two minutes in this demo. Idle periods catch up on the next run.' },
+          { icon: 'vault', title: 'The contract', line: live ? 'Applies the rule when a period ends: an hour on this site, two minutes in the local demo. Idle periods catch up on the next run.' : 'Applies the rule when a period ends: an hour on the live site, two minutes in this demo. Idle periods catch up on the next run.' },
           { icon: 'user', title: 'The buyer', line: 'Sees the price before asking, can cap it with a max price, and gets it locked in a signed quote.' },
         ]} />
       </GuideSection>
@@ -134,10 +168,10 @@ export function PricingGuide() {
 
       <ForAgents rows={[
         ['Listing fields', <><code>price_per_run</code>, <code>pricing.price_floor</code>, <code>pricing.price_ceiling</code>, <code>pricing.target_runs</code> ({currencyName()}, 6 decimals)</>],
-        ['Live price', <><code>GET /api/listings</code> → <code>record.pricePerRun</code>, with this period’s runs and history</>],
+        ['Live price', live ? <><code>GET /api/listings</code> → <code>onchain.price_per_run</code>, with <code>price_floor</code>, <code>price_ceiling</code>, <code>target_runs</code> and <code>period_runs</code></> : <><code>GET /api/listings</code> → <code>record.pricePerRun</code>, with this period’s runs and history</>],
         ['Cap the price', <><code>max_price</code> on a quote request; recipes above it don’t quote</>],
         ['Lock the price', <>the signed quote carries <code>price</code>; the contract checks it against the band and your cap</>],
-        ['Reproduce it', <><code>npm run test:pricing</code>: four buyers in one period lift the price 12.5%; idle periods bring it back</>],
+        ['Reproduce it', <><code>npm run test:pricing</code>{live ? ' (on your machine)' : ''}: four buyers in one period lift the price 12.5%; idle periods bring it back</>],
       ]} />
     </div>
   );

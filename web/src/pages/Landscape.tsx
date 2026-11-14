@@ -12,7 +12,7 @@ const MOVEMENTS: { icon: string; title: string; line: string; items: { icon: str
   {
     icon: 'lock', title: 'Keep the method secret', line: 'Sell what you know without showing it.',
     items: [
-      { icon: 'lock', name: 'Sealed recipes', line: 'Buyers run a method they never see. The marketplace holds only ciphertext.', proof: 'needs a TEE in production' },
+      { icon: 'lock', name: 'Sealed recipes', line: 'Buyers run a method they never see. The marketplace holds only ciphertext.', proof: 'Intel TDX on the live site' },
       { icon: 'link', name: 'Typed, swappable parts', line: 'Parts snap together by type, and any one can be swapped for a peer.', proof: 'SRS-1' },
       { icon: 'clock', name: 'Versions with notice', line: 'Changes wait out an on-chain notice. Every run keeps the version it paid for.', proof: 'model-checked' },
     ],
@@ -53,9 +53,10 @@ const LAYERS: { id: Layer; icon: string; name: string; line: string }[] = [
 ];
 
 const OFFERINGS: { name: string; layer: Layer; status: Status; what: string; shares: string[]; use: string }[] = [
-  { name: 'NEAR Intents', layer: 'rails', status: 'built', what: 'Cross-chain swaps, settled in batches by one verifier contract.', shares: ['infrastructure we use'], use: 'Pays for every run, carries the confidential swaps, and settles atomic bundles.' },
+  { name: 'NEAR Intents', layer: 'rails', status: 'built', what: 'Cross-chain swaps, settled in batches by one verifier contract. Mainnet only.', shares: ['infrastructure we use'], use: 'In the local demo it pays for every run, carries the confidential swaps and settles atomic bundles. It has no testnet, so runs on the live site are paid directly.' },
   { name: 'NEAR AI Cloud', layer: 'ai', status: 'built', what: 'Private models in TEEs, attested on every request. In beta.', shares: ['private model calls'], use: 'The model behind every AI part. Each answer’s signature is checked before it’s used.' },
-  { name: 'Shade Agents', layer: 'execution', status: 'partly', what: 'TEE agents that an on-chain contract admits after checking their attestation.', shares: ['attested runner'], use: 'Runners will register the same way, with no owner approval in the loop.' },
+  { name: 'Phala Cloud (dstack)', layer: 'execution', status: 'built', what: 'Confidential VMs on Intel TDX, with a key service inside the VM and a hardware quote for every attestation.', shares: ['attested execution'], use: 'Hosts the live runner. Its keys never leave the VM, and each buyer’s browser verifies its TDX quote with Intel and checks the image it runs before sealing anything.' },
+  { name: 'Shade Agents', layer: 'execution', status: 'partly', what: 'TEE agents that an on-chain contract admits after checking their attestation.', shares: ['attested runner'], use: 'The live runner uses the same stack (dstack on Intel TDX). Next, runners register the same way, with the contract checking the attestation instead of the owner.' },
   { name: 'Chainlink CRE', layer: 'execution', status: 'path', what: 'Workflows run by a network of nodes on cron, HTTP or chain events. EVM and Solana; confidential mode in private beta.', shares: ['triggers', 'confidential execution', 'agent payments'], use: 'A recipe could run as a confidential CRE workflow while quotes, guarantees and settlement stay here.' },
   { name: 'OutLayer', layer: 'execution', status: 'path', what: 'Attested Rust and WASM in Intel TDX, callable from NEAR contracts.', shares: ['attested execution', 'secrets'], use: 'Run closed-source parts as attested jobs, using its secrets for parts with API keys.' },
   { name: 'IronClaw', layer: 'execution', status: 'path', what: 'NEAR AI’s agent runtime, with a WASM sandbox and cron, event and webhook routines.', shares: ['triggers'], use: 'A buyer’s agent that asks for quotes and runs recipes on a schedule.' },

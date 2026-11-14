@@ -13,7 +13,9 @@ import { RecipeFilm, type FilmListing } from '../components/RecipeFilm';
 const rand = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
 
 export function Trust() {
-  const { go, story } = useApp();
+  const { go, story, mode } = useApp();
+  // the live site (NEAR testnet) and the local demo share this page; a few panels only make sense on one of them
+  const live = !!mode && mode.mode !== 'local';
   const [cat] = usePoll<Catalog>('/api/catalog', 60000);
   const [film, setFilm] = useState('');
   const [att, setAtt] = useState<{ checks: Check[]; a: any; onchain: any } | null>(null);
@@ -22,8 +24,8 @@ export function Trust() {
   const t = listings?.some((l) => l.ticker === pick) ? pick : listings?.find((l) => l.ticker === 'CLNP')?.ticker ?? listings?.[0]?.ticker;
   const [vault] = usePoll<any>(t ? `/api/vault/${t}` : null, 30000, [t]);
   const [chainRecipe] = usePoll<any>(t ? `/api/chain/recipes/${t}` : null, 30000, [t]);
-  const [events] = usePoll<any>('/api/chain/events?last=150', 3000);
-  const [ilog] = usePoll<any[]>('/api/intents/log', 3000);
+  const [events] = usePoll<any>(live ? null : '/api/chain/events?last=150', 3000, [live]);
+  const [ilog] = usePoll<any[]>(live ? null : '/api/intents/log', 3000, [live]);
   const verify = async () => {
     const nonce = rand();
     const { attestation, onchain } = await runnerAttestation(nonce);
@@ -97,10 +99,32 @@ export function Trust() {
             <div className="small muted row" style={{ marginTop: 10 }}>How the code hash is pinned <Tip wide>The owner pins the audited release in AUDITED_CODEHASH and registers it on-chain. Edit a file under runner/src or core/src and restart without re-pinning: this check turns red. In local-dev the code hash is self-reported; inside a TDX CVM it is only meaningful together with a DCAP-verified quote.</Tip></div>
           </div>
         </div>
+        {live ? (
+        <div className="panel">
+          <header><Icon name="globe" size={16} className="hd-ic" /><h2>What outside services see</h2><Tip wide>The runner is the only thing that talks to them, from inside the TEE. NEAR Intents has no testnet, so this site makes no swaps and sends nothing to 1Click; the local demo (npm run demo) shows those requests.</Tip></header>
+          <dl className="kv small body">
+            <dt>FastNEAR, NEAR RPC</dt><dd>The account or contract being checked, as any block explorer lookup would show. Not who asked.</dd>
+            <dt>NEAR AI Cloud</dt><dd>The facts a part sends to its private model, inside the provider’s own TEE. Each answer’s signature is checked before it is used.</dd>
+            <dt>The marketplace</dt><dd>Ciphertext, sizes and timing.</dd>
+            <dt>The chain</dt><dd>Which recipe ran, the price, and hashes.</dd>
+          </dl>
+        </div>
+        ) : (
         <div className="panel">
           <header><Icon name="globe" size={16} className="hd-ic" /><h2>What 1Click sees</h2><Tip>Confidential intents hide the deposit-to-payout link from chain observers. The 1Click service itself still sees each request, including the fresh recipient. Exact request bodies below.</Tip></header>
           <div className="body">{(ilog ?? []).some((l) => l.path === '/v0/quote') ? <pre className="codebox">{JSON.stringify((ilog ?? []).filter((l) => l.path === '/v0/quote').slice(-3).map((l) => l.body), null, 1)}</pre> : <div className="small muted">No swaps quoted yet. Quote SWPR or CLNP to see them.</div>}</div>
         </div>
+        )}
+        {live ? (
+        <div className="panel">
+          <header><Icon name="receipt" size={16} className="hd-ic" /><h2>Contract events</h2></header>
+          <div className="body grid small" style={{ gap: 8 }}>
+            <p className="muted" style={{ margin: 0 }}>Every payment, checkpoint and settlement is a transaction on NEAR testnet, with its events (NEP-297). Read them where nobody here can edit them:</p>
+            <a className="linkbtn" href={`https://testnet.nearblocks.io/address/${mode.contract_id}`} target="_blank" rel="noreferrer">{mode.contract_id} on the explorer<Icon name="arrow" size={12} /></a>
+            <a className="linkbtn" href={`https://testnet.nearblocks.io/address/${mode.runner_id}`} target="_blank" rel="noreferrer">{mode.runner_id}, the runner<Icon name="arrow" size={12} /></a>
+          </div>
+        </div>
+        ) : (
         <div className="panel">
           <header><Icon name="receipt" size={16} className="hd-ic" /><h2>Contract events</h2><span className="spacer" /><span className="small muted">block {events?.height}</span></header>
           <table className="small fixed"><thead><tr><th style={{ width: '38%' }}>Event</th><th>Signer</th><th style={{ width: '22%' }} className="r">Tx</th></tr></thead><tbody>
@@ -109,6 +133,7 @@ export function Trust() {
             ))}
           </tbody></table>
         </div>
+        )}
       </div>
     </div>
   );

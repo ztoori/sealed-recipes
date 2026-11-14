@@ -74,6 +74,7 @@ function RecipeDetail({ l }: { l: Listing }) {
           <div className="hero-buy">
             <div className="bigpx">{tusdc(price(l))}</div>
             <div className="per">tUSDC per run <Tip>{fixed ? 'Fixed by the creator.' : `Follows demand inside ${tusdc(c!.price_floor)}–${tusdc(c!.price_ceiling)} tUSDC. A quote locks it.`} tUSDC is a test token with no value.</Tip></div>
+            {!fixed && <button className="pill sealed" style={{ cursor: 'pointer', marginBottom: 10 }} title={`More paid runs than the target in a period raise the price by up to 12.5%, fewer lower it, always between ${tusdc(c!.price_floor)} and ${tusdc(c!.price_ceiling)} tUSDC. A signed quote locks the price you saw.`} onClick={() => go({ page: 'docs', sub: 'pricing' })}><Icon name="trend" size={12} />Market price · follows demand</button>}
             <button id="get-quote" className="btn primary lg" onClick={() => go({ page: 'quote', ticker: l.ticker })}><Icon name="lock" size={16} />Get a quote</button>
           </div>
         </div>

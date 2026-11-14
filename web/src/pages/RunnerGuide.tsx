@@ -61,9 +61,39 @@ function Leash() {
   );
 }
 
-/** what in this demo is the real thing, and what stands in for a service (moved here from Trust & privacy) */
+/**
+ * What is the real thing and what is not: on the live site, what runs for real and what is not there yet; in the
+ * local demo, what is real code and which services are stand-ins (moved here from Trust & privacy).
+ */
 function Realness() {
   const { mode, go } = useApp();
+  const live = !!mode && mode.mode !== 'local';
+  if (live) {
+    const here = [
+      `the contract: ${mode.contract_id} on NEAR testnet; every payment and settlement is a transaction you can look up`,
+      `the runner: ${mode.runner_id}, in an Intel TDX confidential VM (dstack on Phala Cloud); your browser verifies its quote against Intel’s root and checks the image it runs`,
+      'NEAR AI Cloud private models, each answer’s signature recovered and matched to the attested address',
+      'FastNEAR and NEAR RPC on mainnet, read-only: recipes look at real accounts and contracts',
+      'sealing (X25519 · XSalsa20-Poly1305), signed quotes, ed25519 run reports, escrow and one-receipt settlement',
+    ];
+    const notHere = [
+      'NEAR Intents: it has no testnet, so runs are paid directly in tUSDC, a test token with no value; payment through 1Click and confidential swaps run in the local demo only',
+      'recipes that ask you to sign: the runner here is read-only on mainnet and refuses them',
+      'a reproducible build: the image is checked, but nothing yet proves it was built from the public source',
+      'more than one runner: this one is approved by the contract owner',
+      'publishing from the composer: Compose is a practice composer on simulated services; on testnet a creator publishes with their own key',
+    ];
+    return (
+      <div className="real">
+        <div className="real-col"><b><Icon name="check" size={14} />Real on this site</b>{here.map((r) => <p key={r}>{r}</p>)}</div>
+        <div className="real-col local"><b><Icon name="sliders" size={14} />Not on this site yet</b>{notHere.map((r) => <p key={r}>{r}</p>)}</div>
+        <div className="real-proof">
+          <div><b>Don’t take our word for it</b><span>Trust &amp; privacy checks the runner’s attestation live, in your browser, next to the real ciphertext and on-chain record.</span></div>
+          <button className="btn primary" onClick={() => { go({ page: 'docs', sub: 'trust' }); setTimeout(() => document.getElementById('trust-attestation')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400); }}><Icon name="shieldCheck" size={15} />See the live attestation</button>
+        </div>
+      </div>
+    );
+  }
   const real = [
     'SRS-1 validation, sealing (X25519 · XSalsa20-Poly1305), ed25519 run reports, settlement, guarantee deposits and market pricing, on the same test vectors as the Rust contract',
     'every HTTP call a part makes, in the exact shape FastNEAR, NEAR RPC, 1Click and NEAR AI Cloud expect',
@@ -83,7 +113,8 @@ function Realness() {
 }
 
 export function RunnerGuide() {
-  const { go } = useApp();
+  const { go, mode } = useApp();
+  const live = !!mode && mode.mode !== 'local';
   return (
     <div className="grid">
       <GuideHero kicker="Runner · TEE" icon="cpu" title="It runs where nobody can look." accent="And proves what it ran."
@@ -111,7 +142,7 @@ export function RunnerGuide() {
           { icon: 'unlock', title: 'Open in memory', line: 'Recipe and inputs are decrypted inside the VM, never logged, never written down, and dropped when the run ends.' },
           { icon: 'receipt', title: 'Re-check the quote', line: 'Just before running, it prices the run again. If your wallet changed since the quote, it stops and you’re refunded.' },
           { icon: 'box', title: 'Run each part on its leash', line: 'Parts run in dependency order. Conditions decide which run, fallbacks fill gaps, and each one stays inside its limits.' },
-          { icon: 'wallet', title: 'Ask, never sign', line: 'When a part needs a transaction, the request is sealed to your browser and your wallet signs it. The runner can’t.' },
+          { icon: 'wallet', title: 'Ask, never sign', line: live ? 'When a part needs a transaction, the request is sealed to your browser and your wallet signs it. The runner can’t. On this site the runner is read-only and refuses recipes that ask.' : 'When a part needs a transaction, the request is sealed to your browser and your wallet signs it. The runner can’t.' },
           { icon: 'clock', title: 'Checkpoint as it goes', line: 'Progress is sealed to the runner’s own key and signed. If it restarts, it picks up exactly where it was, and you never sign twice.' },
           { icon: 'check', title: 'Sign one line', line: 'The run ends in a single signed report: outcome, result hash, value delivered, parts used. The contract checks the signature and settles.' },
         ]} />
@@ -124,7 +155,7 @@ export function RunnerGuide() {
       <GuideSection n={5} icon="globe" title="How services are reached" line="Parts never get the open internet. They get a short list, written in their manifest.">
         <Tiles tone="wax" items={[
           { icon: 'database', title: 'FastNEAR', line: 'Public NEAR data: balances, keys, stakes, contract code. Read-only; your secrets never ride along.', tag: 'read-only' },
-          { icon: 'zap', title: '1Click and the solver relay', line: 'Prices, quotes and swaps through NEAR Intents, including confidential and all-or-nothing bundles.', tag: 'NEAR Intents' },
+          { icon: 'zap', title: '1Click and the solver relay', line: 'Prices, quotes and swaps through NEAR Intents, including confidential and all-or-nothing bundles.', tag: live ? 'local demo only' : 'NEAR Intents' },
           { icon: 'sparkles', title: 'NEAR AI Cloud', line: 'Private models in their own TEEs. Each answer’s signature and the GPU’s attestation are checked before a verdict is used.', tag: 'TEE to TEE' },
           { icon: 'wallet', title: 'Your wallet', line: 'Not a service the runner calls: it asks, you approve. Exactly these transfers, nothing else.', tag: 'you decide' },
         ]} />
@@ -139,10 +170,15 @@ export function RunnerGuide() {
         ]} />
       </GuideSection>
 
-      <GuideSection n={7} icon="flag" title="Here, and in production" line="The same code, two homes.">
+      <GuideSection n={7} icon="flag" title={live ? 'Here, and on your machine' : 'Here, and in production'} line="The same code, two homes.">
         <div className="homes">
+          {live ? <>
+          <div><b><Icon name="cpu" size={15} />This site</b><p>The runner is {mode.runner_id}, a container in an Intel TDX confidential VM (dstack on Phala Cloud). Its keys come from the VM’s key service and never leave it. Before sealing anything, your browser verifies its hardware quote against Intel’s root (DCAP) and checks which image it runs.</p></div>
+          <div><b><Icon name="code" size={15} />The local demo</b><p><code>npm run demo</code> runs the same runner code as a local process: real keys, real sealing, signed quotes and reports, enforced limits. There’s no hardware there, so the hardware quote shows as skipped, never as passed.</p></div>
+          </> : <>
           <div><b><Icon name="code" size={15} />This demo</b><p>The runner is a local process: real keys, real sealing, signed quotes and reports, enforced limits. There’s no hardware here, so the hardware quote shows as skipped, never as passed.</p></div>
-          <div><b><Icon name="cpu" size={15} />Production</b><p>The same container in a dstack Intel TDX VM. Keys come from the VM’s key service, and Intel’s DCAP verification checks the hardware quote.</p></div>
+          <div><b><Icon name="cpu" size={15} />The live site</b><p>The same container in an Intel TDX confidential VM (dstack on Phala Cloud) at sealedrecipes.xyz. Keys come from the VM’s key service, and each buyer’s browser checks the hardware quote with Intel’s DCAP verification.</p></div>
+          </>}
           <div><b><Icon name="layers" size={15} />Other backends</b><p>Anything that can keep the keys in attested hardware and sign the same three messages can run recipes. Chainlink CRE and OutLayer are designed paths.</p></div>
         </div>
         <Realness />

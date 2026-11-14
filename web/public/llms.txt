@@ -1,0 +1,44 @@
+# Sealed Recipes
+
+> A marketplace on NEAR where an expert's workflow (a "recipe") runs on a user's data inside sealed hardware. The user never sees the method, the creator never sees the data, and one on-chain settlement pays everyone who contributed. Paid per run. Built for the NEAR Hackathon, November 2026.
+
+Source, tests and full documentation: https://github.com/ztoori/sealed-recipes (MIT). Start with AGENTS.md there if you are an AI agent.
+
+## Why it exists
+
+- New apps, features and agents arrive faster than anyone can read their rules. Most people skip the reading and learn the hard way.
+- A few people do the reading and turn it into a workflow across many tools and documents: a recipe. It is their edge, and it is hard to sell: paywalls, copyright and licences all leak, and one copy is enough.
+- Here the recipe is sealed to an attested runner. It is sold one run at a time and never handed over.
+
+## Who it is for
+
+- Users (people or AI agents): pick a recipe, get a signed quote, pay per run. A failed run is refunded by the contract.
+- Creators: compose recipes from parts without code, seal them, earn on every run.
+- Builders: write parts (code, agents, model calls, data sources) to the open spec SRS-1, earn a fee each time a part is used.
+- Runners: run recipes inside confidential hardware (Intel TDX), earn a fee on every run.
+
+## What is live
+
+- Site: https://sealedrecipes.xyz (NEAR testnet, test token tUSDC, no login). Film: https://sealedrecipes.xyz/#/demo
+- Contract: market.sealedrecipes.testnet. Payment token: tusdc.sealedrecipes.testnet. Runner: tee.sealedrecipes.testnet (Intel TDX, dstack on Phala Cloud).
+- Live recipes: CHECK (contract check before you sign), SAFE3 (wallet scam scan), AUDIT3 (account security audit). They read public NEAR mainnet data, read-only.
+- Not live: mainnet, wallet connect, NEAR Intents payments (Intents has no testnet; the local demo exercises that path against a mock), more than one runner, a reproducible runner build.
+
+## HTTP API of the live site (JSON)
+
+- GET /api/mode: network, contract, payment token, runner
+- GET /api/listings: recipes with price, risk, parts, form fields and the on-chain track record
+- GET /api/catalog: the parts (SRS-1 manifests: ports, capabilities, fees, disclosure, limits)
+- GET /runner/attestation?nonce=HEX: the runner's TDX quote and keys; GET /api/tee/collateral: Intel-signed collateral to verify it
+- POST /api/quotes: { recipe_id, sealed_job, ... } returns a quote signed by the runner, from a sealed dry run
+- POST /api/runs/prepare, then pay with ft_transfer_call from your own key, then POST /api/runs/:id/paid, then GET /api/runs/:id/events
+- POST /api/faucet: { account_id } funds a guest key with test tokens (rate limited)
+- GET /healthz
+
+A complete client is scripts/agent-buyer.ts in the repository: `npm run agent -- --live` verifies the runner, collects signed quotes, picks one by a policy, pays, and checks the runner's signature and the settlement.
+
+## Pages
+
+- /#/recipes: the listings. /#/quote/CHECK: get a quote and run. /#/wallet: guest account.
+- /#/compose/recipe and /#/compose/part: the practice composer (simulated services).
+- /#/docs/spec: SRS-1. /#/docs/trust: every check, and what each party can see. /#/docs/runner: how the runner works.

@@ -33,6 +33,17 @@ Facts we could not confirm from a primary source are marked *unverified*.
   bundling them into the runner image; use its secrets for parts that need API keys.
 - **Status.** Integration path (not built).
 
+### Phala Cloud (dstack)
+- **What it is.** Confidential VMs on Intel TDX, run with dstack: a container gets its keys from a key service inside
+  the VM, and `/attestation` returns a TDX quote that binds those keys to the caller's nonce.
+- **Overlap.** None: it is where the runner runs.
+- **How it is used.** The live runner (`tee.sealedrecipes.testnet`) is this repository's `runner/Dockerfile` in a
+  Phala Cloud CVM, started from `runner/docker-compose.yml` with the image pinned by digest. It was registered on the
+  contract only after Intel DCAP verification of its quote (`scripts/testnet/45-tee-runner.sh`). Each buyer's browser
+  repeats the check before sealing anything: the quote against Intel's root (`web/src/tdx.ts`), then the compose hash
+  measured into RTMR3 against the pinned compose file (`web/src/compose.ts`).
+- **Status.** Built and live on NEAR testnet. Not yet: a reproducible build of the image, and more than one runner.
+
 ### Shade Agents (NEAR)
 - **What it is.** A framework for agents that run in TEEs (dstack; Phala Cloud by default) with an agent contract that
   registers agents after checking attestation, approved measurements and PPIDs, enforces guardrails, and gives
@@ -41,8 +52,8 @@ Facts we could not confirm from a primary source are marked *unverified*.
 - **Integration path.** Replace the owner-approved `add_runner` with the Shade agent contract's on-chain attestation
   check, so any operator running the audited runner image can register. Use Chain Signatures for parts that act on
   other chains.
-- **Status.** Partly: the runner is designed for dstack/TDX and clients verify its attestation; on-chain attestation
-  and Chain Signatures are not built.
+- **Status.** Partly: the live runner runs on the same stack (dstack on Intel TDX, Phala Cloud) and clients verify
+  its attestation; on-chain attestation and Chain Signatures are not built.
 
 ### NEAR AI Cloud, IronClaw and the Confidential GPU Marketplace
 - **What they are.** NEAR AI Cloud runs models in TEEs (Intel TDX + NVIDIA GPU TEE) with per-request attestation; it
