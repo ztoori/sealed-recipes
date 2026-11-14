@@ -5,7 +5,7 @@
  *   1. SRS_PRICE_PERIOD_S=20 npm run demo   (in another terminal; restart it first so CLNP is not yet listed)
  *   2. npm run pricing-demo                 (real paid runs, so the market-price shot has history to show)
  *   3. node scripts/record-demo.mjs        → docs/media/walkthrough.mp4 (needs ffmpeg) + docs/media/*.png
- * Needs Playwright with Chromium: `npx playwright install chromium` if you don't have it, or set
+ * Needs Playwright with Chromium: `bash scripts/setup.sh --with-media` if you don't have it, or set
  * SRS_CHROME to an installed Chrome (e.g. SRS_CHROME=/usr/bin/google-chrome).
  */
 import { createRequire } from 'node:module';
@@ -19,7 +19,7 @@ const out = resolve(root, 'docs/media');
 const BASE = process.env.SRS_URL ?? 'http://127.0.0.1:8080';
 let chromium;
 try { ({ chromium } = await import('playwright')); } catch {
-  try { const g = execSync('npm root -g').toString().trim(); ({ chromium } = createRequire(g + '/')('playwright')); } catch { console.error('Playwright not found: npm i -D playwright && npx playwright install chromium'); process.exit(1); }
+  try { const g = execSync('npm root -g').toString().trim(); ({ chromium } = createRequire(g + '/')('playwright')); } catch { console.error('Playwright not found: bash scripts/setup.sh --with-media'); process.exit(1); }
 }
 mkdirSync(out, { recursive: true });
 // never delete: previous media is moved to archive/media-<timestamp>/

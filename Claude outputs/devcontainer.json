@@ -1,0 +1,23 @@
+// Dev container: a ready environment with nothing to install on your machine. Works the same on Windows, macOS and Linux.
+//   GitHub:  Code -> Codespaces -> Create codespace on main
+//   VS Code: install "Dev Containers", then "Reopen in Container" (needs Docker)
+// It runs `bash scripts/setup.sh --all` once when the container is created (Node 22, npm packages, Z3, Rust, cargo-near,
+// Java + TLA+); the base image allows sudo without a password, so nothing prompts. Then: npm test, npm run demo
+// (port 8080 opens in your browser), npm run verify, npm run test:rust.
+//
+// Tested (2026-11-14): not yet. Written against the published base image; the setup script it runs was tested as
+// listed at the top of scripts/setup.sh. Confirm by opening a codespace and running `npm run doctor`.
+{
+  "name": "Sealed Recipes",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "postCreateCommand": "bash scripts/setup.sh --all",
+  "forwardPorts": [8080, 8787],
+  "portsAttributes": {
+    "8080": { "label": "demo (marketplace + app)", "onAutoForward": "openBrowser" },
+    "8787": { "label": "runner", "onAutoForward": "silent" }
+  },
+  "hostRequirements": { "cpus": 2, "memory": "4gb" },
+  "customizations": {
+    "vscode": { "extensions": ["rust-lang.rust-analyzer"] }
+  }
+}

@@ -2,10 +2,10 @@
 
 This is the hands-on tour of `npm run demo`: the whole product on your machine, with local stand-ins for every outside service (what is real and what is a stand-in: [README](../README.md#what-is-real-and-what-is-local)). The live site at https://sealedrecipes.xyz runs the same code against NEAR testnet with three recipes; its tickers differ (CHECK, SAFE3, AUDIT3 there; CHEK, SAFE, AUDT here).
 
-Requirements: Linux, macOS or WSL, and Node.js 20.6 or newer (22 LTS recommended). Rust is only needed for the contract tests. On Windows, build in WSL ([SETUP-WSL.md](SETUP-WSL.md)).
+Requirements: Linux, macOS or WSL, and Node.js 20.6 or newer (22 LTS recommended). Nothing else is needed for this tour, and no sudo. On Windows, build in WSL ([SETUP-WSL.md](SETUP-WSL.md)).
 
 ```bash
-npm install
+npm ci
 npm run demo            # starts runner :8787 + marketplace :8080, seeds the recipes, opens the browser
 ```
 

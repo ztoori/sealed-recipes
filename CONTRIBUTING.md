@@ -6,10 +6,12 @@ Thanks for looking. The quickest way to be useful is to run it and tell us where
 
 ```bash
 git clone https://github.com/ztoori/sealed-recipes.git && cd sealed-recipes
-npm install            # Node.js 20.6+; Linux, macOS or WSL
+npm ci                 # Node.js 20.6+; Linux, macOS or WSL. No sudo
 npm run doctor         # says what is installed and what each script needs
 npm run demo           # the app at http://127.0.0.1:8080, on local stand-ins for every outside service
 ```
+
+For the proofs, the Rust contract and TLA+: `bash scripts/setup.sh --all` (Linux, macOS or WSL; one run; sudo only for missing system packages, listed first), or open the repo in a dev container / Codespace. [AGENTS.md](AGENTS.md#setup) shows what it installs and where.
 
 [AGENTS.md](AGENTS.md) lists every script with what it proves and what it should print.
 

@@ -10,15 +10,39 @@ Keywords: NEAR, TEE, Intel TDX, dstack, Phala Cloud, remote attestation, DCAP, N
 
 ## Setup
 
+**Quickest, nothing to install: open it in a dev container.** On GitHub, **Code → Codespaces → Create codespace**, or in VS Code with Docker, **Reopen in Container**. It runs the setup script below for you (`.devcontainer/devcontainer.json`), and then every command on this page works.
+
+**On your machine you need Node.js 20.6 or newer** (22 recommended) on Linux, macOS or WSL. That is all the five-minute checks and the demo need: no keys, no `.env`, no sudo.
+
 ```bash
 git clone https://github.com/ztoori/sealed-recipes.git && cd sealed-recipes
-npm install          # Node.js 20.6 or newer (22 recommended). Linux, macOS or WSL. No keys, no .env.
-npm run doctor       # optional: lists what is installed and what each script needs
+npm ci
+npm run doctor       # optional: shows what is installed and what each script needs
 ```
 
-Nothing below needs a key, an account or the network unless its row says so. There is no data to seed by hand: `npm run demo` and every `test:*` script start their own runner and marketplace and seed the sample recipes (`scripts/seed.ts`). State lives in `.data/` (gitignored); delete it to start clean.
+Check `node -v` first. Ubuntu's own `apt install nodejs` gives Node 18, which is too old. The setup script below installs Node 22 for you.
 
-Optional toolchains: Rust (`npm run test:rust`), Python with `z3-solver` (`npm run verify`), Java with `tla2tools.jar` (`npm run verify:tla`), ffmpeg and Playwright (`npm run record:film`). On Ubuntu or WSL, `bash scripts/setup-wsl.sh --all` installs all of them ([docs/SETUP-WSL.md](docs/SETUP-WSL.md)). The step-by-step tour of the app is [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).
+**Everything else (Z3 proofs, Rust contract, TLA+ models): one command, run once.**
+
+```bash
+bash scripts/setup.sh --all      # without --all: Node 22, npm packages, Python + Z3 only
+bash scripts/setup.sh --check    # just list missing system packages and the command that installs them
+```
+
+It works on Debian/Ubuntu and WSL (apt), Fedora/RHEL (dnf), Arch (pacman), openSUSE (zypper) and macOS (Homebrew). On other systems it lists what is missing so you can install it yourself. Which of these have actually been tested is written at the top of `scripts/setup.sh`. Then open a new terminal so `node` and `cargo` are on your PATH. What it installs, and where:
+
+| What | Where | sudo |
+|---|---|---|
+| System packages, only those missing: curl, git, Python with venv; with `--all` also a C compiler, pkg-config, OpenSSL and libudev headers, unzip, Java | system | **Linux: yes, once, at the start. macOS: no (Homebrew)** |
+| Node 22 (nvm) | `~/.nvm` | no |
+| npm packages | `node_modules/` | no |
+| Python + `z3-solver` | `.venv/` in the project | no |
+| Rust, wasm target, cargo-near | `~/.cargo` | no |
+| `tla2tools.jar` | `tools/` | no |
+
+The system-package step is the only part that can use sudo. The script lists the missing packages before it asks for your password, and if nothing is missing it never calls sudo. If your account can't use sudo, it prints the single install command for an administrator to run and stops before changing anything. Run it again afterwards. Running it again is always safe: each step skips what is already installed. Windows: use WSL ([docs/SETUP-WSL.md](docs/SETUP-WSL.md)) or the dev container.
+
+You don't seed any data by hand: `npm run demo` and every `test:*` script start their own runner and marketplace and load the sample recipes (`scripts/seed.ts`). State lives in `.data/` (gitignored); delete it to start clean. Nothing below needs a key, an account or the network unless its row says so. The step-by-step tour of the app is [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).
 
 ## Verify in five minutes
 
@@ -48,12 +72,12 @@ Run these in order. Each exits non-zero on failure.
 | The same agent on the live site | `npm run agent:live` (internet) | attestation verified, three signed quotes, the cheapest within policy is paid on NEAR testnet, links to the payment and settlement |
 | Attack: drain the creator's deposit | terminal 1: `npm run demo`; terminal 2: `npm run story`, then `npm run attack:drain` | the runner aborts, the buyer is refunded, the deposit is untouched |
 | The live runner is Intel TDX running the audited code | `RUNNER_URL=https://sealedrecipes.xyz/runner npx tsx scripts/verify-quote.ts` (internet) | DCAP verification passes; keys and code hash match the contract |
-| Money logic proved | `pip install z3-solver && npm run verify` | 66 of 66 theorems as expected |
-| Protocol models checked | `npm run verify:tla` (Java, about 10 min) | three models hold; their unsafe variants fail as designed |
-| Contract | `npm run test:rust` (Rust) | 114 tests pass |
+| Money logic proved | `npm run verify` (Python + Z3: `bash scripts/setup.sh`) | 66 of 66 theorems as expected |
+| Protocol models checked | `npm run verify:tla` (Java: `setup.sh --all`; about 10 min) | three models hold; their unsafe variants fail as designed |
+| Contract | `npm run test:rust` (Rust: `setup.sh --all`) | 114 tests pass |
 | Contract wasm | `npm run build:wasm` (cargo-near) | `contracts/sealed-recipes/target/near/` |
 | Real outside services | `npm run live-check` (internet; `NEAR_AI_API_KEY` for the AI part) | real 1Click dry quotes, FastNEAR and RPC reads, a verified NEAR AI Cloud completion |
-| The film | `npm run build && npm run record:film` and `npm run record:x` (ffmpeg, Playwright) | `docs/media/demo.mp4` and `docs/media/demo-x.mp4` |
+| The film (maintainers) | `bash scripts/setup.sh --with-media`, then `npm run build && npm run record:film` and `npm run record:x` | `docs/media/demo.mp4` and `docs/media/demo-x.mp4` |
 
 `npm run agent` and `npm run attack:drain` expect a running demo whose story has been played once (`npm run story` plays it from the terminal), because they buy the recipe the story publishes. Run the attack first: it puts the wallet back when it is done, while the agent really sweeps that wallet, so an attack after the agent finds nothing to quote (`no quote`). To start over, stop the demo, delete `.data/` and start it again.
 

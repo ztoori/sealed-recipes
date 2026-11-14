@@ -15,11 +15,11 @@ let coreFail = false;
 const check = (name, ok, detail, fix, core = false) => { rows.push({ name, ok, detail, fix }); if (!ok && core) coreFail = true; };
 
 const isWsl = existsSync('/proc/version') && /microsoft/i.test(readFileSync('/proc/version', 'utf8'));
-check('platform', process.platform === 'linux', `${process.platform}${isWsl ? ' (WSL)' : ''}`, 'Run in WSL: wsl, then cd to the project', true);
+check('platform', process.platform !== 'win32', `${process.platform}${isWsl ? ' (WSL)' : ''}`, 'Run in WSL: wsl, then cd to the project', true);
 check('project location', !/^\/mnt\/[a-z]\//.test(root), root, `Copy into the WSL filesystem: git clone "${root}" ~/sealed-recipes`);
 
 const major = Number(process.versions.node.split('.')[0]);
-check('node >= 20.6', major > 20 || (major === 20 && Number(process.versions.node.split('.')[1]) >= 6), process.versions.node, 'bash scripts/setup-wsl.sh (installs Node 22 with nvm)', true);
+check('node >= 20.6', major > 20 || (major === 20 && Number(process.versions.node.split('.')[1]) >= 6), process.versions.node, 'bash scripts/setup.sh (installs Node 22 with nvm)', true);
 const nm = existsSync(resolve(root, 'node_modules'));
 check('npm packages', nm, nm ? 'installed' : 'missing', 'npm ci', true);
 if (nm) {
@@ -29,18 +29,18 @@ if (nm) {
 }
 const py = existsSync(resolve(root, '.venv/bin/python')) ? '.venv/bin/python' : 'python3';
 const z3 = run(`${py} -c "import z3; print(z3.get_version_string())"`);
-check('python + z3 (npm run verify)', !!z3, z3 ? `${py}, z3 ${z3}` : `${py}: z3 not importable`, 'bash scripts/setup-wsl.sh');
+check('python + z3 (npm run verify)', !!z3, z3 ? `${py}, z3 ${z3}` : `${py}: z3 not importable`, 'bash scripts/setup.sh');
 const cargo = run('cargo --version') ?? (existsSync(`${process.env.HOME}/.cargo/bin/cargo`) ? 'installed, not on PATH' : null);
-check('rust (npm run test:rust)', !!cargo && !/not on PATH/.test(cargo), cargo ?? 'missing', cargo ? 'source ~/.cargo/env' : 'bash scripts/setup-wsl.sh --with-rust');
+check('rust (npm run test:rust)', !!cargo && !/not on PATH/.test(cargo), cargo ?? 'missing', cargo ? 'source ~/.cargo/env' : 'bash scripts/setup.sh --with-rust');
 const wasm = run('rustup target list --installed');
-check('wasm32 target (npm run build:wasm)', !!wasm && wasm.includes('wasm32-unknown-unknown'), wasm ? (wasm.includes('wasm32-unknown-unknown') ? 'installed' : 'not installed') : 'no rustup', 'bash scripts/setup-wsl.sh --with-wasm');
+check('wasm32 target (npm run build:wasm)', !!wasm && wasm.includes('wasm32-unknown-unknown'), wasm ? (wasm.includes('wasm32-unknown-unknown') ? 'installed' : 'not installed') : 'no rustup', 'bash scripts/setup.sh --with-wasm');
 const near = run('cargo near --version');
-check('cargo-near (npm run build:wasm)', !!near, near ?? 'missing', 'bash scripts/setup-wsl.sh --with-wasm');
+check('cargo-near (npm run build:wasm)', !!near, near ?? 'missing', 'bash scripts/setup.sh --with-wasm');
 const java = run('java -version 2>&1');
 const jar = existsSync(process.env.TLA2TOOLS ?? resolve(root, 'tools/tla2tools.jar'));
-check('java + tla2tools.jar (npm run verify:tla)', !!java && jar, `${java ? 'java ok' : 'no java'}, ${jar ? 'jar ok' : 'no jar'}`, 'bash scripts/setup-wsl.sh --with-tla');
+check('java + tla2tools.jar (npm run verify:tla)', !!java && jar, `${java ? 'java ok' : 'no java'}, ${jar ? 'jar ok' : 'no jar'}`, 'bash scripts/setup.sh --with-tla');
 const ff = run('ffmpeg -version');
-check('ffmpeg (npm run record, record:film, record:x)', !!ff, ff ? ff.split('\n')[0] : 'missing', 'bash scripts/setup-wsl.sh --with-media');
+check('ffmpeg (npm run record, record:film, record:x)', !!ff, ff ? ff.split('\n')[0] : 'missing', 'bash scripts/setup.sh --with-media');
 const crlf = run('git ls-files --eol package.json scripts/demo.mjs');
 check('line endings (LF)', !crlf || !/w\/crlf/.test(crlf), crlf ? 'LF' : 'not a git checkout', 'git config core.autocrlf false && git rm --cached -r . -q && git reset --hard   (re-checkout with LF)');
 

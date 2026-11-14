@@ -15,7 +15,7 @@
  * Options: --cut full|x   --out FILE   --fps 30   --width 1280 (height follows, 16:9)   --stills 3,12.5,40 (PNG
  * frames at those film seconds into docs/media/stills/, no video)   --no-audio
  *
- * Needs ffmpeg, and Playwright with Chromium (`npx playwright install chromium`), or an installed Chrome:
+ * Needs ffmpeg and Playwright with Chromium (`bash scripts/setup.sh --with-media`), or an installed Chrome:
  * SRS_CHROME=/usr/bin/google-chrome. Nothing here needs the network, a server or a key: prices and names in the
  * recording are the film's built-in sample (DemoFilm.tsx, FALLBACK), not a live read.
  */
@@ -38,10 +38,10 @@ const stills = arg('--stills');
 const withAudio = !process.argv.includes('--no-audio');
 
 if (!existsSync(join(dist, 'live.html'))) { console.error('web/dist is missing: run `npm run build` first'); process.exit(1); }
-if (spawnSync('ffmpeg', ['-version']).status !== 0) { console.error('ffmpeg is required (sudo apt install ffmpeg)'); process.exit(1); }
+if (spawnSync('ffmpeg', ['-version']).status !== 0) { console.error('ffmpeg is required: bash scripts/setup.sh --with-media'); process.exit(1); }
 let chromium;
 try { ({ chromium } = await import('playwright')); } catch {
-  try { const g = execSync('npm root -g').toString().trim(); ({ chromium } = createRequire(g + '/')('playwright')); } catch { console.error('Playwright not found: npm i -D playwright && npx playwright install chromium'); process.exit(1); }
+  try { const g = execSync('npm root -g').toString().trim(); ({ chromium } = createRequire(g + '/')('playwright')); } catch { console.error('Playwright not found: bash scripts/setup.sh --with-media'); process.exit(1); }
 }
 
 // the built site, served from this process; anything else (the API) answers 404, so the film uses its sample data

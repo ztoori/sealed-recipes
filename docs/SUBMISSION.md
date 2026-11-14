@@ -13,7 +13,7 @@ Projects are screened first by Claude Code and Codex, which check that the repo 
   git remote add origin https://github.com/ztoori/sealed-recipes.git
   git push -u origin main --tags
   ```
-- [ ] On a clean machine: `npm install && npm run test:e2e` ends with `✔ story complete`; `npm test` (106 tests), `npm run test:rust` (114 tests), `npm run verify` and `npm run test:recipes` pass.
+- [ ] On a clean machine: `bash scripts/setup.sh --all` (or `npm ci` for the TypeScript checks alone), then `npm run test:e2e` ends with `✔ story complete`; `npm test` (106 tests), `npm run test:rust` (114 tests), `npm run verify` and `npm run test:recipes` pass.
 - [x] Deploy the contract: live on NEAR testnet at `market.sealedrecipes.testnet`, with the live page at https://sealedrecipes.xyz (steps in `scripts/testnet/README.md`). Mainnet stays undeployed by decision (no real funds), so NEAR Intents is used for real dry quotes only. The README's top and **Status** link the contract and both sites.
 - [ ] `main` is the default branch and must hold the testnet work: fast-forward it to `live` and push (`git push origin live:main`) before submitting, and again after any later `live-N` tag.
 - [x] Demo videos, recorded from the film with narration, effects and captions: `docs/media/demo.mp4` (the full film, 2:57) and `docs/media/demo-x.mp4` (the X cut, 2:15, inside X's 140 s limit). Re-make them with `npm run build && npm run record:film && npm run record:x` after any change to the film.

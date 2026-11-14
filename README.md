@@ -11,7 +11,7 @@ Sealed Recipes is a marketplace on NEAR where an expert's workflow (a *recipe*) 
 |---|---|
 | **Live (NEAR testnet)** | https://sealedrecipes.xyz · contract [`market.sealedrecipes.testnet`](https://testnet.nearblocks.io/address/market.sealedrecipes.testnet) |
 | **Film (2:57)** | https://sealedrecipes.xyz/#/demo · file: [docs/media/demo.mp4](docs/media/demo.mp4) · X cut (2:15): [docs/media/demo-x.mp4](docs/media/demo-x.mp4) |
-| **Run it locally** | `npm install && npm run test:e2e` (Node 20.6+, no keys, no network) |
+| **Run it locally** | `npm ci && npm run test:e2e` (Node 20.6+, no keys, no network, no sudo) |
 | **For AI agents and reviewers** | [AGENTS.md](AGENTS.md): every feature with the command that proves it · [llms.txt](web/public/llms.txt) |
 | **Spec** | [SRS-1](docs/SRS-1.md), the open spec for parts and recipes |
 | **Hackathon** | [NEAR Hackathon](https://nearhackathon.com), Nov 1–14, 2026. Tracks: **Privacy & Private AI**, **AI Security & Defense** ([why](#hackathon-tracks)) |
@@ -69,11 +69,11 @@ What is true today, and what is not: users and the runner are live on testnet. C
 
 **1. In a browser, no install.** Open https://sealedrecipes.xyz/#/quote/CHECK, type a contract (say `wrap.near`), press **Get a quote**. You should see **runner verified**, **Intel TDX · verified in this browser** and **image matches the pinned compose**, then a signed price of about 0.12 tUSDC (a test token). Continue as a guest, pay, and read the sealed result; every step links to the explorer.
 
-**2. On your machine, no keys, no network** (Node.js 20.6+ on Linux, macOS or WSL):
+**2. On your machine, no keys, no network, no sudo** (Node.js 20.6+ on Linux, macOS or WSL; check `node -v`, since Ubuntu's apt Node 18 is too old):
 
 ```bash
 git clone https://github.com/ztoori/sealed-recipes.git && cd sealed-recipes
-npm install
+npm ci
 npm run test:e2e    # boots a runner and a marketplace, runs the whole story in the terminal, exits non-zero on any failure
 ```
 
@@ -85,7 +85,7 @@ delivered $28.0249 vs promised $27.8147 → compensation from the guarantee depo
 ✔ story complete
 ```
 
-`npm run demo` opens the same thing as an app at http://127.0.0.1:8080 (press **Play demo**). [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) is the step-by-step tour; on Windows use WSL ([docs/SETUP-WSL.md](docs/SETUP-WSL.md)).
+`npm run demo` opens the same thing as an app at http://127.0.0.1:8080 (press **Play demo**). [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) is the step-by-step tour; on Windows use WSL ([docs/SETUP-WSL.md](docs/SETUP-WSL.md)). For the proofs and the contract tests too, `bash scripts/setup.sh --all` installs everything in one run on Linux, macOS or WSL; it uses sudo only for missing system packages and says so first ([AGENTS.md](AGENTS.md#setup)). Or skip installing: open the repo in a GitHub Codespace, which runs that script for you.
 
 **3. Check any claim.** Each row is one command; none needs a key. [AGENTS.md](AGENTS.md) has the full list with expected output.
 
@@ -99,8 +99,8 @@ delivered $28.0249 vs promised $27.8147 → compensation from the guarantee depo
 | An agent buys on its own: quotes, policy, payment, verification | in the same two terminals, after the attack: `npm run agent` | Node |
 | The same agent on the live site, with real testnet transactions | `npm run agent:live` | Node, internet |
 | The live runner really is Intel TDX, running the audited code | `RUNNER_URL=https://sealedrecipes.xyz/runner npx tsx scripts/verify-quote.ts` | Node, internet |
-| Money logic is proved, not only tested (66 theorems) | `pip install z3-solver && npm run verify` | Python |
-| The contract passes the same vectors (114 tests) | `npm run test:rust` | Rust |
+| Money logic is proved, not only tested (66 theorems) | `npm run verify` | Python + Z3 (`bash scripts/setup.sh`) |
+| The contract passes the same vectors (114 tests) | `npm run test:rust` | Rust (`bash scripts/setup.sh --all`) |
 
 ## How one run plays out
 
@@ -305,8 +305,8 @@ The proofs found three real bugs, all fixed:
 What is *not* proven is listed plainly in the verification README. That covers the compiled Rust itself (Kani is the next step), and the UI, server and runner, which are tested, not proven.
 
 ```bash
-npm run verify          # Z3 proofs + conformance freshness (~5 s; pip install z3-solver)
-npm run verify:tla      # also the TLC model check (~10 min; Java + tla2tools.jar)
+npm run verify          # Z3 proofs + conformance freshness (~5 s; Z3 from `bash scripts/setup.sh`)
+npm run verify:tla      # also the TLC model check (~10 min; Java + tla2tools.jar from `setup.sh --all`)
 ```
 
 ## Tests

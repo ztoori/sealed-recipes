@@ -13,7 +13,8 @@ Contract v5 removed revenue shares, dividends and the share auction (see the mai
 | The proved models match the shipped code | Conformance vectors | 400 settlement, 200 deposit and 300 pricing cases, replayed by the Rust contract and the TypeScript mirror |
 
 ```bash
-pip install z3-solver
+bash scripts/setup.sh   # once: Z3 in a project virtualenv (.venv); add --all for Java + tla2tools.jar
+                           # without the script: python3 -m venv .venv && .venv/bin/pip install z3-solver
 npm run verify        # Z3 proofs + conformance freshness (~5 s)
 npm run verify:tla    # also TLC on all three models (~10 min; Java 11+, TLA2TOOLS=/path/to/tla2tools.jar)
 ```

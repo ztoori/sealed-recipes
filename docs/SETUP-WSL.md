@@ -8,12 +8,12 @@ On Windows, build and run everything inside WSL (Ubuntu), not in PowerShell. The
    # add --depth 1 for just the latest version; the full history (and the tags) stays on GitHub
    cd ~/sealed-recipes
    ```
-2. **Install the toolchain** with one script. It is safe to re-run, uses `sudo` only for apt packages, and installs Node with nvm and Z3 in a project virtualenv (`.venv`).
+2. **Install the toolchain** with one script, run once. It uses `sudo` for one thing only: installing missing apt packages, at the very start, after listing them. If nothing is missing it never asks. If your account can't use sudo, it prints the one command for an administrator and stops before changing anything. Everything else installs without sudo: Node with nvm (`~/.nvm`), Rust (`~/.cargo`), Z3 in a project virtualenv (`.venv`).
    ```bash
-   bash scripts/setup-wsl.sh             # Node 22, npm packages, Python + Z3
-   bash scripts/setup-wsl.sh --all       # + Rust, wasm target + cargo-near, Java + tla2tools.jar, ffmpeg + Playwright
+   bash scripts/setup.sh             # Node 22, npm packages, Python + Z3
+   bash scripts/setup.sh --all       # + Rust, wasm target + cargo-near, Java + tla2tools.jar
    ```
-   Options: `--with-rust` (contract tests), `--with-wasm` (contract build), `--with-tla` (TLC model check), `--with-media` (re-record the video).
+   Then open a new terminal so `node` and `cargo` are on your PATH. Single options: `--with-rust` (contract tests), `--with-wasm` (contract build), `--with-tla` (TLC model check). Maintainers re-recording the video add `--with-media` (ffmpeg, Playwright Chromium).
 3. **Check, then build and run**:
    ```bash
    npm run doctor          # what is installed, what each npm script needs, how to fix what's missing
