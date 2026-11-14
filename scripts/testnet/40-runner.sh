@@ -13,8 +13,8 @@ if [ "${LOCAL_DEV_RUNNER:-}" != 1 ]; then
   exit 1
 fi
 : "${RUNNER_FEE:=30000}"   # 0.03 tUSDC per run to the runner
-: "${LIVE_DIR:=/opt/srs-live}"
-: "${RUNNER_KEYS_PATH:=/var/lib/srs-live/runner-keys.json}"
+: "${LIVE_DIR:?set LIVE_DIR to the live checkout}"
+: "${RUNNER_KEYS_PATH:?set RUNNER_KEYS_PATH to the runner key file}"
 id=$(sudo -u srs bash -c "cd '$LIVE_DIR' && RUNNER_KEYS_PATH='$RUNNER_KEYS_PATH' node --import tsx scripts/testnet/runner-identity.ts")
 echo "runner identity: $id"
 args=$(node -e 'const r=JSON.parse(process.argv[1]); console.log(JSON.stringify({ id: process.argv[2], signing_pk: r.signing_pk, enc_pk_hex: r.enc_pk_hex, codehash: r.codehash, fee_per_run: process.argv[3] }))' "$id" "$RUNNER_ID" "$RUNNER_FEE")

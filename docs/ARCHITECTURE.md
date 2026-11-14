@@ -45,7 +45,7 @@ sequenceDiagram
   B->>I: signed deposits
   R->>I: poll /v0/status → SUCCESS
   R->>K: report_run(…, ed25519 signature)
-  K->>K: verify signature, split: protocol, runner, part authors, creator; reserve → guarantee deposit; shortfall → buyer
+  K->>K: verify signature, split: protocol, runner, part authors, creator, reserve → guarantee deposit, shortfall → buyer
 ```
 
 ## Part admission (SRS-1 §11)

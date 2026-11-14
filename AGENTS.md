@@ -62,7 +62,7 @@ Run these in order. Each exits non-zero on failure.
 - Site: https://sealedrecipes.xyz. Plain-text summary with the HTTP API: https://sealedrecipes.xyz/llms.txt (source: `web/public/llms.txt`).
 - Contract: `market.sealedrecipes.testnet`. Token: `tusdc.sealedrecipes.testnet` (test token, no value). Runner: `tee.sealedrecipes.testnet`.
 - Read the chain yourself: `near view market.sealedrecipes.testnet get_recipe '{"recipe_id":"CHECK"}' --networkId testnet`, or the same through `GET https://sealedrecipes.xyz/api/chain/recipes/CHECK`.
-- Deploying your own: [scripts/testnet/README.md](scripts/testnet/README.md) (ordered scripts `00-tools.sh` to `50-run.ts`; accounts in `scripts/testnet/config.sh`; server settings in `deploy/live.env.example`).
+- Deploying your own: [scripts/testnet/README.md](scripts/testnet/README.md) (ordered scripts `00-tools.sh` to `50-run.ts`; accounts in `scripts/testnet/config.sh`; server settings at the top of `server/src/live.ts`).
 
 ## Where things live
 

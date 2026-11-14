@@ -13,11 +13,11 @@ How the public demo sandbox is served, and how every process limits its calls to
 
 **Pre-compiled.** `npm run build` also bundles the marketplace, the runner and the seeding script into plain JavaScript (`scripts/build-node.mjs`, `*.bundle.mjs` next to each entry, gitignored); the gateway uses them when they are newer than the sources and falls back to TypeScript through tsx otherwise. Measured with 10 sandboxes starting at once: ready in 3.6 s instead of 5.9 s, 584 MB instead of 753 MB. `npm run demo` and the tests still run the TypeScript.
 
-**Capacity.** Measured on a 2-CPU, 4 GB machine: 20 browsing visitors at once used about 830 MB in total (API p99 under 30 ms, no errors); 10 visitors running the full story at the same moment all passed. A sandbox's processes show about 100 MB RSS, but much of it is shared code, so each extra visitor costs about 40–45 MB of real memory (pre-compiled), plus one shared runner (~140 MB). Start-up is CPU-bound: when many visitors arrive in the same second, raise `SANDBOX_SPARE`.
+**Capacity.** Each extra visitor costs about 40–45 MB of real memory (pre-compiled), plus one shared runner (~140 MB). Start-up is CPU-bound: when many visitors arrive in the same second, raise `SANDBOX_SPARE`.
 
 **Traffic and performance.** `curl -s http://127.0.0.1:8080/gateway/metrics` (on the server only; it answers 404 through the tunnel) shows requests, latency percentiles, visitors, boot times and the memory and swap of every process; the gateway logs a one-line summary every minute (`journalctl -u srs-demo`). `npm run loadtest -- --visitors 20 --mode browse` (or `--mode story`) simulates visitors and prints what they experienced next to the server's peak memory.
 
-`deploy/srs-demo.service` runs it under systemd from a read-only checkout; `deploy/cloudflared-config.example.yml` shows the tunnel side.
+Run it under systemd from a read-only checkout, as an unprivileged user, with `GATEWAY_BUILD=0` and `npm run build` as the deploy step, behind a reverse proxy such as Cloudflare Tunnel.
 
 None of this makes the demo wallet a real wallet. Real signatures and a real chain are on the live page, below.
 

@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Icon } from '../icons';
 import { BrandMark, Seal } from '../ui';
-import { BREATH, CAMERA, CUTS, LATE_SHIFT, RATE, SPOTS, type CutId, type Key } from './demo-film/script';
+import { BREATH, CAMERA, CUTS, LATE_SHIFT, SPOTS, type CutId, type Key } from './demo-film/script';
 import { FilmAudio, FilmVoice, renderEffects } from './demo-film/audio';
 import { SpeedControl } from './SpeedControl';
 import { useSpeed } from '../pace';
@@ -94,7 +94,8 @@ export function DemoFilm({ data = FALLBACK, cut = 'full', bare = false, onTry, o
   const voice = useMemo(() => new FilmVoice(voiceBase), [voiceBase]);
   const [speed] = useSpeed('demofilm');
   const speedRef = useRef(speed); speedRef.current = speed;
-  useEffect(() => { voice.setRate(RATE * speed); }, [speed, voice]);
+  const tNow = useRef(0); tNow.current = t;
+  useEffect(() => { const b = CUTS[cut].beatAt(tNow.current); voice.setRate(CUTS[cut].voice(b ? b.beat.at : tNow.current) * speed); }, [speed, voice, cut]);
   /** a breath before a line (BREATH): when it ends, in performance.now() milliseconds */
   const breath = useRef<{ id: string; until: number } | null>(null);
   useEffect(() => () => audio.dispose(), [audio]);
@@ -118,7 +119,7 @@ export function DemoFilm({ data = FALLBACK, cut = 'full', bare = false, onTry, o
     const tick = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000); last = now;
       setT((x) => {
-        const n = x + dt * RATE * speedRef.current;
+        const n = x + dt * CUTS[cut].rate(x) * speedRef.current;
         // the next line waits until the narrator has finished this one, then for its breath, if it has one
         const next = BEATS.find((b) => b.at > x);
         if (next && n >= next.at - 0.15) {
@@ -137,7 +138,7 @@ export function DemoFilm({ data = FALLBACK, cut = 'full', bare = false, onTry, o
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [playing]);
+  }, [playing, cut]);
   // sound follows the picture: effects when a beat starts, the score's mood per chapter, the narrator per beat
   const chapter = CHAPTERS.find((c) => t >= c.a && t < c.b) ?? CHAPTERS[CHAPTERS.length - 1];
   const now = beatAt(t);
@@ -150,7 +151,8 @@ export function DemoFilm({ data = FALLBACK, cut = 'full', bare = false, onTry, o
   const beatId = now?.beat.id;
   useEffect(() => {
     if (!playing || !now) { voice.pause(); return; }
-    voice.play(now.beat.id, (t - now.beat.at) / RATE, RATE * speedRef.current);
+    const vr = CUTS[cut].voice(now.beat.at);
+    voice.play(now.beat.id, (CUTS[cut].real(t) - CUTS[cut].real(now.beat.at)) * vr, vr * speedRef.current);
     voice.warm(BEATS.slice(now.i + 1, now.i + 3).map((b) => b.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [beatId, playing, seekN]);
@@ -160,7 +162,7 @@ export function DemoFilm({ data = FALLBACK, cut = 'full', bare = false, onTry, o
   // what the recorder needs to lay the sound under the picture: the lines, their clips, and the effects
   useEffect(() => {
     const w = window as unknown as { __demoFilm?: unknown };
-    w.__demoFilm = { cut, end: END, rate: RATE, beats: BEATS, voice: () => voice.load().then(() => voice.files()), effects: (seconds: number) => renderEffects(BEATS.filter((b) => b.cue).map((b) => ({ name: b.cue!, at: b.at / RATE })), seconds) };
+    w.__demoFilm = { cut, end: END, pace: CUTS[cut].pace, beats: BEATS, voice: () => voice.load().then(() => voice.files()), effects: (seconds: number) => renderEffects(BEATS.filter((b) => b.cue).map((b) => ({ name: b.cue!, at: CUTS[cut].real(b.at) })), seconds) };
     return () => { delete w.__demoFilm; };
   }, [cut, END, BEATS, voice]);
 
@@ -198,7 +200,7 @@ export function DemoFilm({ data = FALLBACK, cut = 'full', bare = false, onTry, o
         {!bare && !playing && !ended && t < 0.05 && (
           <button className="df-start" onClick={toggle} aria-label="Play the demo film">
             <span className="df-start-ic"><Icon name="play" size={28} fill /></span>
-            <b>Watch the demo</b><span>{clock(END / RATE)} · sound on</span>
+            <b>Watch the demo</b><span>{clock(CUTS[cut].real(END))} · sound on</span>
           </button>
         )}
         {!bare && !playing && !ended && t >= 0.05 && <button className="film-bigplay" aria-label="Play" onClick={toggle}><Icon name="play" size={26} /></button>}
@@ -223,7 +225,7 @@ export function DemoFilm({ data = FALLBACK, cut = 'full', bare = false, onTry, o
             </div>
           ))}
         </div>
-        <span className="film-time">{clock(t / RATE)} / {clock(END / RATE)}</span>
+        <span className="film-time">{clock(CUTS[cut].real(t))} / {clock(CUTS[cut].real(END))}</span>
         <SpeedControl kind="demofilm" />
         <button className={'btn ghost sm icon-only' + (cc ? ' on' : '')} onClick={() => setCc((x) => !x)} aria-pressed={cc} aria-label="Captions" title="Captions"><span className="df-cc">CC</span></button>
         <button className="btn ghost sm icon-only" onClick={() => setMuted((m) => !m)} aria-pressed={muted} aria-label={muted ? 'Sound on' : 'Mute'} title={muted ? 'Sound on' : 'Mute'}><Speaker off={muted} /></button>

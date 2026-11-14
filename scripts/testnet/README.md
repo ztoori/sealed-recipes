@@ -26,12 +26,11 @@ Only the faucet account can mint, at most 10,000 tUSDC per call, and only to acc
 
 ## Live services (after step 30)
 
-The live marketplace (`server/src/live.ts`, port 8081) runs as `srs` from a
-separate checkout, `/opt/srs-live`, so the demo in `/opt/srs-demo` stays on its tag. Settings: `/etc/srs/live.env`
-(see `deploy/live.env.example`); secrets: `/etc/srs/secrets.env` (`RUNNER_TOKEN` only: `NEAR_AI_API_KEY` and
-`ONECLICK_API_KEY` belong to the runner, as CVM encrypted secrets, and the unit unsets them if an older secrets file
-still has them); relayer key: `/etc/srs/relayer-fc.json`, a function-call key for `report_run` and `checkpoint_run` only. Unit:
-`deploy/srs-live-server.service`. The runner is the TDX one below (the earlier local-dev runner on this machine,
+The live marketplace (`server/src/live.ts`) runs from its own checkout, separate from the demo's, as an unprivileged
+user under a hardened systemd unit, listening on loopback behind a reverse proxy. Its settings are listed at the top of
+`server/src/live.ts`; keep them in an environment file outside the checkout, readable only by that user. Its only
+secret is `RUNNER_TOKEN` (`NEAR_AI_API_KEY` and `ONECLICK_API_KEY` belong to the runner, as CVM encrypted secrets);
+the relayer signs with a function-call key for `report_run` and `checkpoint_run` only. The runner is the TDX one below (the earlier local-dev runner on this machine,
 `runner.sealedrecipes.testnet`, is retired and deactivated on the contract); it refuses recipes that ask the buyer to
 sign (`SRS_READ_ONLY=1`), and its parts read real mainnet data. Its port is public through the Phala gateway, because
 the marketplace runs outside Phala: `/attestation` is meant to be public, and the job endpoints need `RUNNER_TOKEN`
@@ -45,18 +44,18 @@ a time limit.
 The live runner is the same code as the local-dev build, run in a TDX confidential VM with `TEE_MODE=dstack`: its keys come from the TEE's key service (stable for the CVM app across
 upgrades), and `/attestation` carries a TDX quote whose REPORTDATA binds those keys to the caller's nonce.
 
-1. Build and push the image (from the tag the VPS runs; x86): `docker build --platform linux/amd64 -f runner/Dockerfile -t ghcr.io/<you>/srs-runner:live-N .`
+1. Build and push the image (from the tag the live server runs; x86): `docker build --platform linux/amd64 -f runner/Dockerfile -t ghcr.io/<you>/srs-runner:live-N .`
    then `docker push …` and note the digest (`docker inspect --format '{{index .RepoDigests 0}}' …`). Make the package public.
 2. Put the digest in `runner/docker-compose.yml` (`image: …@sha256:…`). The compose file is measured into the quote.
 3. Phala Cloud → Create CVM → docker-compose → paste `runner/docker-compose.yml`; Encrypted Secrets: `RUNNER_TOKEN`
-   (`openssl rand -hex 32`, the same value as in `/etc/srs/secrets.env`), `NEAR_AI_API_KEY`, `ONECLICK_API_KEY` (may be empty). The CVM's
+   (`openssl rand -hex 32`, the same value the live server has), `NEAR_AI_API_KEY`, `ONECLICK_API_KEY` (may be empty). The CVM's
    Network tab shows the public URL for port 8787: that is `RUNNER_URL`.
    Turn **Public logs** off (and public system info): container logs are readable outside the TEE when it is on, so
    anything the runner ever printed would be public. `45-tee-runner.sh` refuses to register a CVM whose measured
    app-compose has `public_logs` on.
 4. `RUNNER_URL=… ./45-tee-runner.sh`: tUSDC storage for `tee.$ROOT_ACCOUNT`, Intel DCAP check of the quote, code hash
    against `AUDITED_CODEHASH`, then `add_runner` as `tee.$ROOT_ACCOUNT`.
-5. `/etc/srs/live.env`: `RUNNER_ID=tee.sealedrecipes.testnet`, `RUNNER_URL=…` (no trailing path), optionally
+5. The live server's settings: `RUNNER_ID=tee.sealedrecipes.testnet`, `RUNNER_URL=…` (no trailing path), optionally
    `SRS_RUNNER_TEE=Intel TDX (dstack, Phala Cloud)` (otherwise the label comes from the runner's attestation);
    restart `srs-live-server`.
 6. Recipes are sealed to one runner's key, so publish the recipes again for the TEE runner under new tickers

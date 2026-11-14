@@ -50,7 +50,7 @@ const index = resolve(root, 'web/dist/index.html');
 const built = existsSync(index) ? statSync(index).mtimeMs : 0;
 const sources = Math.max(...['web/src', 'core/src', 'standard', 'seed'].map((d) => newest(resolve(root, d))), statSync(resolve(root, 'web/index.html')).mtimeMs);
 if (sources > built && env.GATEWAY_BUILD === '0') {
-  // hosted with a read-only checkout (deploy/srs-demo.service): the deploy step runs `npm run build`
+  // hosted with a read-only checkout: the deploy step runs `npm run build`
   log(built ? 'WARNING web/dist is older than its sources; run `npm run build` in the checkout' : 'web/dist is missing; run `npm run build` in the checkout');
   if (!built) process.exit(1);
 } else if (sources > built) {

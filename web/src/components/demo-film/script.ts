@@ -93,6 +93,14 @@ export const LATE_SHIFT = 5;
  */
 export const RATE = 1.15;
 /**
+ * Each cut's opening (the full cut's "Too much", "The edge", "The market"; the X cut's "The story") packs its lines closer than the rest of the film, so
+ * at RATE they ran back to back with no room between them. Its pictures play slower (OPEN_RATE) and its narrator a
+ * touch slower (OPEN_VOICE: those clips came out of the speech engine a little quicker than the later ones), which
+ * leaves about as much air between its lines as the rest of the film has.
+ */
+export const OPEN_RATE = 0.9;
+export const OPEN_VOICE = 1.05;
+/**
  * A breath before these lines, in real seconds, after the previous line has been spoken in full. Every line also
  * waits for the narrator to finish the one before it (DemoFilm.tsx), so a line never talks over the next.
  */
@@ -133,6 +141,15 @@ export interface Cut {
   shift: number;
   /** the opening's picture clock at film time t (see INTRO_MAP) */
   intro: (t: number) => number;
+  /** film seconds per real second at film time t (at 1×) */
+  rate: (t: number) => number;
+  /** how fast the narrator speaks a line that starts at film time t (clip seconds per real second, at 1×) */
+  voice: (t: number) => number;
+  /** real seconds (at 1×) from the start to film time t, and back */
+  real: (t: number) => number;
+  film: (r: number) => number;
+  /** [from, to, rate, voice] in film seconds: the film's pace, piece by piece (for the recorder) */
+  pace: [number, number, number, number][];
   /** the beat being spoken at t, and when the next one starts */
   beatAt: (t: number) => { beat: Beat; i: number; end: number } | null;
 }
@@ -140,8 +157,14 @@ function cut(id: CutId): Cut {
   const o = OPENING[id], shift = o.len - BOX;
   const beats = [...o.beats, ...LATER_BEATS.map((b) => ({ ...b, at: +(b.at + shift).toFixed(2) }))];
   const end = LATER_END + shift;
+  const pace: [number, number, number, number][] = [[0, o.len, OPEN_RATE, OPEN_VOICE], [o.len, end, RATE, RATE]];
+  const piece = (t: number) => pace.find((p) => t < p[1]) ?? pace[pace.length - 1];
+  const real = (t: number) => { let r = 0; for (const [a, b, k] of pace) { if (t <= a) break; r += (Math.min(t, b) - a) / k; } return r; };
+  const film = (r: number) => { for (const [a, b, k] of pace) { const d = (b - a) / k; if (r <= d) return a + r * k; r -= d; } return end; };
   return {
-    id, shift, end, beats,
+    id, shift, end, beats, pace, real, film,
+    rate: (t) => piece(t)[2],
+    voice: (t) => piece(t)[3],
     chapters: [...o.chapters, ...LATER_CHAPTERS.map((c) => ({ ...c, a: c.a + shift, b: c.b + shift }))],
     intro: id === 'full' ? (t) => t : (t) => {
       const s = INTRO_MAP.find((m) => t < m[1]) ?? INTRO_MAP[INTRO_MAP.length - 1];

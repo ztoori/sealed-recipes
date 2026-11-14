@@ -5,7 +5,7 @@
  * Simulates many visitors at once, each in their own sandbox, and reports what they experienced plus the
  * gateway's own metrics (memory, swap, latency) when run on the same machine.
  *
- *   --url http://127.0.0.1:8080   gateway address (a public https URL works too; see the per-IP note below)
+ *   --url http://127.0.0.1:8080   gateway address: this machine only (loopback), never a public site
  *   --visitors 20                 visitors at once
  *   --ramp 10                     seconds over which visitors arrive
  *   --duration 60                 seconds each browsing visitor stays (browse mode)
@@ -13,9 +13,7 @@
  *                                 story: each visitor plays the full CLI story in their sandbox (compose, seal,
  *                                 publish, quote, pay, run, settle): the heaviest realistic load
  *
- * Locally each visitor sends its own cf-connecting-ip, so the per-address sandbox limit (SANDBOX_PER_IP) counts them
- * separately. Through Cloudflare the real address is used: from one machine you can create only SANDBOX_PER_IP
- * sandboxes per 10 minutes unless you raise it while testing.
+ * Each simulated visitor gets its own sandbox, as a separate visitor would.
  */
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
@@ -24,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
 const URL_ = arg('url', 'http://127.0.0.1:8080').replace(/\/$/, '');
+if (!/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(URL_)) { console.error('[loadtest] --url must be a gateway on this machine (http://127.0.0.1:PORT)'); process.exit(2); }
 const VISITORS = Number(arg('visitors', 20));
 const RAMP_S = Number(arg('ramp', 10));
 const DURATION_S = Number(arg('duration', 60));

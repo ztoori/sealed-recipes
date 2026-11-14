@@ -218,12 +218,6 @@ export function Quote({ ticker }: { ticker: string }) {
                     ) : (
                       <input id={'f-' + f.id} value={values[f.id] ?? ''} placeholder={f.placeholder} inputMode={f.type === 'usd' || f.type === 'percent' ? 'decimal' : undefined} onChange={(e) => edit(f.id, e.target.value)} />
                     )}
-                    {/^(near\.account|address\.near)$/.test(f.type) && f.generator !== 'fresh-implicit' && (
-                      <div className="small muted" id={'f-' + f.id + '-privacy'}>
-                        <Icon name="lock" size={11} /> Encrypted in your browser: only the sealed runner can read it. We don't log or store it, and it never goes on-chain.
-                        Like any block explorer, the runner looks up this account's public data from NEAR data providers (FastNEAR, NEAR RPC), which see that lookup.
-                      </div>
-                    )}
                   </div>
                 ))}
                 <div className="field"><label htmlFor="maxp">Max price per run<Tip>Optional. If the recipe's price is above it, it isn't asked to quote, and the contract refuses to charge more.</Tip></label>

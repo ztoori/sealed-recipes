@@ -60,15 +60,19 @@ const page = await browser.newPage({ viewport: { width, height }, deviceScaleFac
 await page.goto(`${base}/?record=1&cut=${cut}#/demo`);
 await page.waitForFunction(() => !!window.__demoFilm);
 await page.evaluate(() => document.fonts.ready);
-const film = await page.evaluate(() => { const f = window.__demoFilm; return { end: f.end, rate: f.rate, beats: f.beats }; });
-const seconds = film.end / film.rate;
+const film = await page.evaluate(() => { const f = window.__demoFilm; return { end: f.end, pace: f.pace, beats: f.beats }; });
+// the film's pace, piece by piece ([from, to, rate, voice] in film seconds; see script.ts): film time ↔ real time
+const piece = (t) => film.pace.find((p) => t < p[1]) ?? film.pace[film.pace.length - 1];
+const real = (t) => { let r = 0; for (const [a, b, k] of film.pace) { if (t <= a) break; r += (Math.min(t, b) - a) / k; } return r; };
+const filmAt = (r) => { for (const [a, b, k] of film.pace) { const d = (b - a) / k; if (r <= d) return a + r * k; r -= d; } return film.end; };
+const seconds = real(film.end);
 
 /** show the film at `t` film seconds: the picture is a function of the clock; CSS animations follow the same clock */
 const show = (t) => page.evaluate(async ([t, real]) => {
   window.dispatchEvent(new CustomEvent('demo-film-seek', { detail: t }));
   for (const a of document.getAnimations()) if (a instanceof CSSAnimation) { a.pause(); a.currentTime = real * 1000; }
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-}, [t, t / film.rate]);
+}, [t, real(t)]);
 
 if (stills) {
   const dir = resolve(root, 'docs/media/stills'); mkdirSync(dir, { recursive: true });
@@ -90,9 +94,10 @@ if (withAudio) {
     const file = join(dist, 'assets/film', f);
     const len = Number(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]).stdout.toString().trim());
     const next = film.beats[film.beats.indexOf(b) + 1]?.at ?? film.end;
-    if (b.at + len > next) console.warn(`${b.id} is still being spoken when the next line starts (${len.toFixed(2)} s in a ${(next - b.at).toFixed(1)} s beat): shorten it, or move the next line`);
+    const vr = piece(b.at)[3];
+    if (real(b.at) + len / vr > real(next)) console.warn(`${b.id} is still being spoken when the next line starts (${(len / vr).toFixed(2)} s in a ${(real(next) - real(b.at)).toFixed(1)} s beat): shorten it, or move the next line`);
     inputs.push('-i', file);
-    filters.push(`[${n}:a]atempo=${film.rate},adelay=${Math.round((b.at / film.rate) * 1000)}:all=1[v${n}]`); mix.push(`[v${n}]`); n++;
+    filters.push(`[${n}:a]atempo=${vr},adelay=${Math.round(real(b.at) * 1000)}:all=1[v${n}]`); mix.push(`[v${n}]`); n++;
   }
   filters.push(`${mix.join('')}amix=inputs=${mix.length}:normalize=0,alimiter=limit=0.95,apad=whole_dur=${seconds.toFixed(3)},pan=stereo|c0=c0|c1=c0[a]`);
 }
@@ -106,7 +111,7 @@ const done = new Promise((r) => ff.on('close', r));
 const frames = Math.ceil(seconds * fps);
 const t0 = Date.now();
 for (let i = 0; i < frames; i++) {
-  await show(Math.min(film.end, (i / fps) * film.rate));
+  await show(Math.min(film.end, filmAt(i / fps)));
   const jpg = await page.screenshot({ type: 'jpeg', quality: 95 });
   if (!ff.stdin.write(jpg)) await new Promise((r) => ff.stdin.once('drain', r));
   if (i % (fps * 10) === 0) process.stdout.write(`\r${cut}: ${Math.round((i / frames) * 100)}%  (${Math.round((Date.now() - t0) / 1000)} s)   `);

@@ -26,10 +26,11 @@ import { CUTS, type Beat } from '../web/src/components/demo-film/script.js';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const OUT = join(root, 'web/public/assets/film');
 const arg = (k: string) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : undefined; };
-// every line of both cuts (the full film and the X cut share most of them), each with the shortest time it gets
+// every line of both cuts (the full film and the X cut share most of them), each with the shortest time it gets,
+// measured in seconds of its clip: the real time until the next line, times how fast the narrator plays it there
 const slots = new Map<string, { beat: Beat; window: number }>();
 for (const c of Object.values(CUTS)) c.beats.forEach((b, i) => {
-  const w = (c.beats[i + 1]?.at ?? c.end) - b.at, had = slots.get(b.id);
+  const w = (c.real(c.beats[i + 1]?.at ?? c.end) - c.real(b.at)) * c.voice(b.at), had = slots.get(b.id);
   if (had && had.beat.text !== b.text) throw new Error(`${b.id} has two different lines`);
   slots.set(b.id, { beat: b, window: Math.min(w, had?.window ?? Infinity) });
 });

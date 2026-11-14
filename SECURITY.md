@@ -18,7 +18,7 @@ Please report privately through GitHub: **Security › Report a vulnerability** 
 The limits of this build are written down, so you don't have to rediscover them:
 
 - [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md): who is trusted for what.
-- README, [What the sealing protects, and what it doesn't](README.md#what-the-sealing-protects-and-what-it-doesnt) and [Limitations and next steps](README.md#limitations-and-next-steps): one runner and one runner key, no reproducible build, Intel TDX side channels, open-tier parts in a Node permission-model sandbox, wallet recipes that accept any public account.
+- README, [What the sealing protects, and what it doesn't](README.md#what-the-sealing-protects-and-what-it-doesnt) and [Status](README.md#status): one runner and one runner key, no reproducible build, Intel TDX side channels.
 
 ## How the code is checked
 

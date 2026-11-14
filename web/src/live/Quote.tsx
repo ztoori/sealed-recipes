@@ -175,14 +175,8 @@ export function Quote({ ticker, runId }: { ticker: string; runId?: string }) {
                     <div className="field" key={f.id}>
                       <label htmlFor={'lf-' + f.id}>{f.label}{f.type === 'near.account' && <Tip>Any public NEAR mainnet account, e.g. from a block explorer. The recipe only reads it.</Tip>}</label>
                       {f.options ? <select id={'lf-' + f.id} value={values[f.id] ?? ''} onChange={(e) => { setValues({ ...values, [f.id]: e.target.value }); if (phase.name === 'quoted') setPhase({ name: 'form' }); }}>{f.options.map((o) => <option key={o}>{o}</option>)}</select>
-                        : <input id={'lf-' + f.id} value={values[f.id] ?? ''} placeholder={f.placeholder} autoComplete="off" spellCheck={false} aria-invalid={bad.includes(f.id)} aria-describedby={'lf-' + f.id + '-privacy'} onChange={(e) => { setValues({ ...values, [f.id]: e.target.value.toLowerCase() }); if (phase.name === 'quoted') setPhase({ name: 'form' }); }} />}
+                        : <input id={'lf-' + f.id} value={values[f.id] ?? ''} placeholder={f.placeholder} autoComplete="off" spellCheck={false} aria-invalid={bad.includes(f.id)} onChange={(e) => { setValues({ ...values, [f.id]: e.target.value.toLowerCase() }); if (phase.name === 'quoted') setPhase({ name: 'form' }); }} />}
                       {bad.includes(f.id) && <div className="small" style={{ color: 'var(--loss)' }}>That doesn't look like a NEAR account id.</div>}
-                      {/^(near\.account|address\.near)$/.test(f.type) && (
-                        <div className="small muted" id={'lf-' + f.id + '-privacy'}>
-                          <Icon name="lock" size={11} /> Encrypted in your browser: only the sealed runner can read it, and it never goes on-chain. The marketplace never logs it; it keeps only the encrypted copy, to resume your run if the runner restarts, and deletes it two weeks after the run ends.
-                          Like any block explorer, the runner looks up this account's public data from NEAR data providers (FastNEAR, NEAR RPC), which see that lookup.
-                        </div>
-                      )}
                     </div>
                   ))}
                 </fieldset>

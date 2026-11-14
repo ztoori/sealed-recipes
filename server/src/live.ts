@@ -16,6 +16,7 @@
  *      SRS_RETIRED_LISTINGS (comma-separated tickers superseded on this runner, e.g. SAFE2; listings of other runners are
  *      retired without being named)  SRS_RUNNER_TEE (label; default: from the runner's attestation)
  *      FAUCET_NEAR (0.2)  FAUCET_TUSDC (5)  FAUCET_PER_IP_DAY (3)  FAUCET_PER_DAY (30)
+ *      SRS_REQUESTS_PER_MINUTE (600)  SRS_ATTESTATIONS_PER_MINUTE (30): per-visitor request limits
  */
 import express from 'express';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
@@ -256,6 +257,36 @@ app.disable('x-powered-by'); // no framework banner in responses
 app.use((_, res, next) => { res.set('strict-transport-security', 'max-age=15552000'); next(); });
 app.set('trust proxy', 'loopback');
 mountDemoProxy(app); // /demo: the guided demo, before the body parser
+/**
+ * Per-visitor request limits, keyed on the address Cloudflare reports (behind the tunnel every request comes from
+ * 127.0.0.1). Generous: someone browsing the site, polling listings and quoting, paying and running recipes stays far
+ * below them. They keep one client from tying up this server, the RPC or the runner:
+ *   - every request (SRS_REQUESTS_PER_MINUTE, default 600 a minute);
+ *   - runner attestations (SRS_ATTESTATIONS_PER_MINUTE, default 30 a minute): each one makes the TDX runner produce a
+ *     fresh hardware quote, and a quote page asks for one.
+ * The quote, run-ticket and faucet limits below come on top of these. /demo has its own limits (the demo gateway).
+ */
+const REQUESTS_PER_MINUTE = Number(env.SRS_REQUESTS_PER_MINUTE ?? 600);
+const ATTESTATIONS_PER_MINUTE = Number(env.SRS_ATTESTATIONS_PER_MINUTE ?? 30);
+type Window = { t: number; n: number };
+const requestWin = new Map<string, Window>(), attestWin = new Map<string, Window>();
+/** a one-minute window per visitor: true once this request goes over `perMinute` */
+function overLimit(log: Map<string, Window>, key: string, perMinute: number): boolean {
+  const now = Date.now(), w = log.get(key);
+  if (!w || now - w.t >= 60_000) { log.set(key, { t: now, n: 1 }); return false; }
+  return ++w.n > perMinute;
+}
+app.use((req, res, next) => {
+  const key = req.get('cf-connecting-ip') ?? req.ip ?? 'local';
+  const attest = /^\/(?:api\/)?runner\/attestation$/.test(req.path);
+  if (overLimit(requestWin, key, REQUESTS_PER_MINUTE) || (attest && overLimit(attestWin, key, ATTESTATIONS_PER_MINUTE))) {
+    res.set('retry-after', '60').status(429).json({ error: 'too many requests from this address in the last minute; please wait a minute and try again' });
+    return;
+  }
+  next();
+});
+// forget windows that have ended, so the maps do not grow without bound
+setInterval(() => { const now = Date.now(); for (const log of [requestWin, attestWin]) for (const [k, w] of log) if (now - w.t >= 60_000) log.delete(k); }, 60_000).unref();
 app.use(express.json({ limit: '512kb' })); // recipes and inputs are a few KB sealed; the cap keeps one request from filling memory or disk
 class BadRequest extends Error {}
 const guard = (fn: (req: express.Request, res: express.Response) => unknown) => async (req: express.Request, res: express.Response) => {

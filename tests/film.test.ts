@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { CUTS, RATE } from '../web/src/components/demo-film/script.js';
+import { CUTS } from '../web/src/components/demo-film/script.js';
 
 const FILM = fileURLToPath(new URL('../web/public/assets/film/', import.meta.url));
 
@@ -24,8 +24,9 @@ test('film: both cuts have ordered lines inside ordered, gapless chapters', () =
 test('film: the two cuts tell the same story from "The box" on, and the X cut fits an X post (140 s)', () => {
   const later = (id: 'full' | 'x') => CUTS[id].beats.filter((b) => b.id.startsWith('b')).map((b) => [b.id, b.text, +(b.at - CUTS[id].shift).toFixed(2)]);
   assert.deepEqual(later('x'), later('full'));
-  assert.ok(CUTS.x.end / RATE <= 138, `the X cut runs ${(CUTS.x.end / RATE).toFixed(1)} s`);
-  assert.ok(CUTS.full.end / RATE < 180, 'the full film stays under three minutes');
+  assert.ok(CUTS.x.real(CUTS.x.end) <= 138, `the X cut runs ${CUTS.x.real(CUTS.x.end).toFixed(1)} s`);
+  assert.ok(CUTS.full.real(CUTS.full.end) < 180, `the full film stays under three minutes (${CUTS.full.real(CUTS.full.end).toFixed(1)} s)`);
+  for (const c of Object.values(CUTS)) for (const t of [0, 10, 56.2, 57, 100, c.end]) assert.ok(Math.abs(c.film(c.real(t)) - t) < 1e-9, `${c.id}: real time and film time map back at ${t}`);
   // the X cut's opening shows the full opening's pictures, in order, and reaches their end
   let last = -1; for (let t = 0; t <= 18; t += 0.1) { const v = CUTS.x.intro(t); assert.ok(v >= last); last = v; }
   assert.ok(last > 55);
