@@ -18,12 +18,24 @@ export const CHAPTERS = [
   { id: 'pay', label: 'Pay', a: 63, b: 73 },
   { id: 'run', label: 'Run', a: 73, b: 90 },
   { id: 'paid', label: 'Result', a: 90, b: 106 },
-  { id: 'proof', label: 'Proof', a: 106, b: 117 },
-  { id: 'agents', label: 'Agents', a: 117, b: 148 },
-  { id: 'end', label: 'Your turn', a: 148, b: 157 },
+  { id: 'proof', label: 'Proof', a: 106, b: 112 },
+  { id: 'agents', label: 'Agents', a: 112, b: 143 },
+  { id: 'end', label: 'Your turn', a: 143, b: 152 },
 ] as const;
 export type ChapterId = (typeof CHAPTERS)[number]['id'];
-export const END = 157;
+export const END = 152;
+/** the agents and closing scenes were drawn on a timeline 5 s later; they read the clock shifted by this much */
+export const LATE_SHIFT = 5;
+/**
+ * Film seconds per real second at 1× (the viewer's speed control multiplies it). The narration plays at the same rate,
+ * so voice and picture stay together at any speed.
+ */
+export const RATE = 1.15;
+/**
+ * A breath before these lines, in real seconds, after the previous line has been spoken in full. Every line also
+ * waits for the narrator to finish the one before it (DemoFilm.tsx), so a line never talks over the next.
+ */
+export const BREATH: Record<string, number> = { b13: 0.9, b27: 1.2 };
 
 export const BEATS: Beat[] = [
   { id: 'b01', at: 0.4, text: 'You’ve got a wallet worth protecting.', cue: 'heartbeat' },
@@ -47,14 +59,12 @@ export const BEATS: Beat[] = [
   { id: 'b19', at: 96.4, text: 'And one receipt pays everyone: builders, runner, creator.', cue: 'register' },
   { id: 'b20', at: 101.6, text: 'Every cent accounted for, on-chain.' },
   { id: 'b21', at: 106.4, text: 'Don’t take our word for it. Every claim checks out, live.', cue: 'success' },
-  { id: 'b22', at: 112.2, text: 'But here’s what you didn’t see coming…', cue: 'drop' },
-  { id: 'b23', at: 117.2, text: 'The buyer doesn’t have to be a person.', cue: 'glitch' },
-  { id: 'b24', at: 121.4, text: 'An AI agent reads the listings, checks the hardware, and seals its inputs.', cue: 'type' },
-  { id: 'b25', at: 128.4, text: 'It asks three recipes for signed quotes. Its own rules pick one.', cue: 'ticks' },
-  { id: 'b26', at: 135.4, text: 'It pays, and checks every signature before it trusts the answer.', cue: 'coin' },
-  { id: 'b27', at: 142.6, text: 'No account manager. No API key. No trust needed.' },
-  { id: 'b28', at: 148.2, text: 'Your data stays yours. Their method stays theirs. Everyone gets paid.', cue: 'resolve' },
-  { id: 'b29', at: 153.6, text: 'Try a recipe, live on NEAR testnet.' },
+  { id: 'b22', at: 112.2, text: 'AI agents can also read the listings, check the hardware, and seal their inputs.', cue: 'glitch' },
+  { id: 'b23', at: 123.4, text: 'This one asks three recipes for signed quotes. Its own rules pick one.', cue: 'ticks' },
+  { id: 'b24', at: 130.4, text: 'It pays, and checks every signature before it trusts the answer.', cue: 'coin' },
+  { id: 'b25', at: 137.0, text: 'No account to create: your own key pays, and nothing moves without its owner’s signature.' },
+  { id: 'b26', at: 143.2, text: 'Your data stays yours. Their method stays theirs. And every contributor gets paid: the recipe creator and the part builders.', cue: 'resolve' },
+  { id: 'b27', at: 148.6, text: 'Try a recipe, live on NEAR testnet.' },
 ];
 /** the beat being spoken at t, and how far into it */
 export const beatAt = (t: number) => { let i = -1; for (let k = 0; k < BEATS.length; k++) if (t >= BEATS[k].at) i = k; return i < 0 ? null : { beat: BEATS[i], i, end: BEATS[i + 1]?.at ?? END }; };

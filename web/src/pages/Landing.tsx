@@ -136,7 +136,7 @@ export function Landing() {
       <section className="lp-end" id="lp-s-end">
         <Seal ticker="CLNP" kind="swap.receipts" size={72} className="lp-end-seal" />
         <h2>See the whole loop in ninety seconds.</h2>
-        <p>A creator seals a recipe, a buyer runs it, and everyone gets paid in a single receipt.</p>
+        <p>A creator seals a recipe, a buyer runs it, and every contributor gets paid in a single receipt.</p>
         <div className="lp-cta">
           <button className="btn ghost lg" onClick={() => story.start()}><Icon name="play" size={14} fill />Watch the demo</button>
           <button className="btn primary lg" onClick={() => go({ page: 'recipes' })}>Proceed to recipes<Icon name="arrow" size={16} /></button>

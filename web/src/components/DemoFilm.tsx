@@ -2,7 +2,8 @@
  * The guided demo, as a film: a code-rendered motion piece that walks through the whole product (the problem, the
  * sealed box, picking a recipe, sealing, quoting, paying, the sealed run, the result and the payout, the proof, and
  * how AI agents buy), with a camera that glides across mock screens of the app, spotlights with short labels,
- * captions for every spoken line, a score made in the browser (demo-film/audio.ts) and optional narration.
+ * captions for every spoken line, sound effects made in the browser (demo-film/audio.ts) and optional narration.
+ * The picture waits for the narrator: a line never starts while the one before it is still being spoken.
  *
  * It is the same technique as the recipe films on Trust & privacy (RecipeFilm.tsx): one 960 × 540 stage, scaled
  * to fit, driven by a clock; every frame is drawn from the screenplay in demo-film/script.ts. Nothing inside the
@@ -11,8 +12,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Icon } from '../icons';
 import { BrandMark, Seal } from '../ui';
-import { BEATS, CAMERA, CHAPTERS, END, SPOTS, beatAt, type ChapterId, type Key } from './demo-film/script';
+import { BEATS, BREATH, CAMERA, CHAPTERS, END, LATE_SHIFT, RATE, SPOTS, beatAt, type Key } from './demo-film/script';
 import { FilmAudio, FilmVoice } from './demo-film/audio';
+import { SpeedControl } from './SpeedControl';
+import { useSpeed } from '../pace';
 
 const W = 960, H = 540;
 const clamp = (x: number) => Math.max(0, Math.min(1, x));
@@ -65,7 +68,7 @@ export const FALLBACK: FilmData = {
 };
 const usd = (n: number, dp = 2) => n.toFixed(dp);
 
-export function DemoFilm({ data = FALLBACK, onTry, onBrowse, voiceBase = './assets/film/' }: { data?: FilmData; onTry: (ticker: string) => void; onBrowse: () => void; voiceBase?: string }) {
+export function DemoFilm({ data = FALLBACK, onTry, onBrowse, onSpec, voiceBase = './assets/film/' }: { data?: FilmData; onTry: (ticker: string) => void; onBrowse: () => void; onSpec: () => void; voiceBase?: string }) {
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [scale, setScale] = useState(1);
@@ -77,7 +80,12 @@ export function DemoFilm({ data = FALLBACK, onTry, onBrowse, voiceBase = './asse
   const root = useRef<HTMLDivElement>(null);
   const reduce = useMemo(() => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches, []);
   const audio = useMemo(() => new FilmAudio(), []);
-  const voice = useMemo(() => new FilmVoice(voiceBase, (on) => audio.duck(on)), [voiceBase, audio]);
+  const voice = useMemo(() => new FilmVoice(voiceBase), [voiceBase]);
+  const [speed] = useSpeed('demofilm');
+  const speedRef = useRef(speed); speedRef.current = speed;
+  useEffect(() => { voice.setRate(RATE * speed); }, [speed, voice]);
+  /** a breath before a line (BREATH): when it ends, in performance.now() milliseconds */
+  const breath = useRef<{ id: string; until: number } | null>(null);
   useEffect(() => () => audio.dispose(), [audio]);
   const [credit, setCredit] = useState('');
   useEffect(() => { void voice.load().then(() => setCredit(voice.available ? voice.credit : '')); }, [voice]);
@@ -98,7 +106,22 @@ export function DemoFilm({ data = FALLBACK, onTry, onBrowse, voiceBase = './asse
     let raf = 0, last = performance.now();
     const tick = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000); last = now;
-      setT((x) => { const n = x + dt; if (n >= END) { setPlaying(false); return END; } return n; });
+      setT((x) => {
+        const n = x + dt * RATE * speedRef.current;
+        // the next line waits until the narrator has finished this one, then for its breath, if it has one
+        const next = BEATS.find((b) => b.at > x);
+        if (next && n >= next.at - 0.15) {
+          const hold = next.at - 0.15;
+          if (voice.speaking) return Math.max(x, hold);
+          const gap = BREATH[next.id];
+          if (gap) {
+            if (breath.current?.id !== next.id) { breath.current = { id: next.id, until: now + (gap * 1000) / speedRef.current }; return Math.max(x, hold); }
+            if (now < breath.current.until) return Math.max(x, hold);
+          }
+        }
+        if (n >= END) { setPlaying(false); return END; }
+        return n;
+      });
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -113,11 +136,10 @@ export function DemoFilm({ data = FALLBACK, onTry, onBrowse, voiceBase = './asse
     if (!playing || t < p || t - p > 0.5) return;
     for (const b of BEATS) if (b.cue && p < b.at && t >= b.at) audio.cue(b.cue);
   }, [t, playing, audio]);
-  useEffect(() => { audio.setMood(chapter.id as ChapterId); }, [chapter.id, audio]);
   const beatId = now?.beat.id;
   useEffect(() => {
     if (!playing || !now) { voice.pause(); return; }
-    voice.play(now.beat.id, t - now.beat.at, 1);
+    voice.play(now.beat.id, (t - now.beat.at) / RATE, RATE * speedRef.current);
     voice.warm(BEATS.slice(now.i + 1, now.i + 3).map((b) => b.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [beatId, playing, seekN]);
@@ -125,8 +147,8 @@ export function DemoFilm({ data = FALLBACK, onTry, onBrowse, voiceBase = './asse
   // screenshots and tests can seek: window.dispatchEvent(new CustomEvent('demo-film-seek', { detail: 42 }))
   useEffect(() => { const on = (e: Event) => { setT(clamp(Number((e as CustomEvent).detail) / END) * END); setSeekN((n) => n + 1); }; addEventListener('demo-film-seek', on); return () => removeEventListener('demo-film-seek', on); }, []);
 
-  const toggle = () => { if (t >= END) { setT(0); setSeekN((n) => n + 1); } setPlaying((p) => !p); };
-  const seek = (x: number) => { setT(Math.max(0, Math.min(END, x))); setSeekN((n) => n + 1); };
+  const toggle = () => { if (t >= END) { breath.current = null; setT(0); setSeekN((n) => n + 1); } setPlaying((p) => !p); };
+  const seek = (x: number) => { breath.current = null; setT(Math.max(0, Math.min(END, x))); setSeekN((n) => n + 1); };
   const fullscreen = () => {
     if (document.fullscreenElement) { void document.exitFullscreen(); return; }
     void root.current?.requestFullscreen?.().then(() => (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.('landscape').catch(() => {})).catch(() => {});
@@ -156,7 +178,7 @@ export function DemoFilm({ data = FALLBACK, onTry, onBrowse, voiceBase = './asse
         {!playing && !ended && t < 0.05 && (
           <button className="df-start" onClick={toggle} aria-label="Play the demo film">
             <span className="df-start-ic"><Icon name="play" size={28} fill /></span>
-            <b>Watch the demo</b><span>2½ minutes · sound on</span>
+            <b>Watch the demo</b><span>about 2½ minutes · sound on</span>
           </button>
         )}
         {!playing && !ended && t >= 0.05 && <button className="film-bigplay" aria-label="Play" onClick={toggle}><Icon name="play" size={26} /></button>}
@@ -164,6 +186,7 @@ export function DemoFilm({ data = FALLBACK, onTry, onBrowse, voiceBase = './asse
           <div className="df-endcard">
             <button className="btn primary lg" onClick={() => onTry('CHECK')}><Icon name="receipt" size={16} />Try CHECK live</button>
             <button className="btn ghost" onClick={onBrowse}><Icon name="market" size={15} />See all recipes</button>
+            <button className="btn ghost" onClick={onSpec}><Icon name="docs" size={15} />Read the SRS-1 spec</button>
             <button className="btn ghost" onClick={toggle}><Icon name="refresh" size={14} />Watch again</button>
           </div>
         )}
@@ -180,7 +203,8 @@ export function DemoFilm({ data = FALLBACK, onTry, onBrowse, voiceBase = './asse
             </div>
           ))}
         </div>
-        <span className="film-time">{clock(t)} / {clock(END)}</span>
+        <span className="film-time">{clock(t / RATE)} / {clock(END / RATE)}</span>
+        <SpeedControl kind="demofilm" />
         <button className={'btn ghost sm icon-only' + (cc ? ' on' : '')} onClick={() => setCc((x) => !x)} aria-pressed={cc} aria-label="Captions" title="Captions"><span className="df-cc">CC</span></button>
         <button className="btn ghost sm icon-only" onClick={() => setMuted((m) => !m)} aria-pressed={muted} aria-label={muted ? 'Sound on' : 'Mute'} title={muted ? 'Sound on' : 'Mute'}><Speaker off={muted} /></button>
         <button className="btn ghost sm icon-only" onClick={fullscreen} aria-label={full ? 'Exit full screen' : 'Full screen'} title={full ? 'Exit full screen' : 'Full screen'}><Icon name={full ? 'shrink' : 'expand'} size={14} /></button>
@@ -202,7 +226,8 @@ function Speaker({ off }: { off: boolean }) {
 /** the spoken line, as a caption */
 function Caption({ t }: { t: number }) {
   const n = beatAt(t); if (!n) return null;
-  const o = Math.min(prog(t, n.beat.at, 0.35), 1 - prog(t, n.end - 0.3, 0.3));
+  // stays up while the line is spoken (the film holds just before the next line), then gives way quickly
+  const o = Math.min(prog(t, n.beat.at, 0.35), 1 - prog(t, n.end - 0.1, 0.1));
   return <div className="df-caption" key={n.beat.id} style={rise(o, 8)}>{n.beat.text}</div>;
 }
 
@@ -270,7 +295,7 @@ function ActBox({ t }: { t: number }) {
 function Win({ at, w, h, url, children }: { at: { x: number; y: number }; w: number; h: number; url: string; children: ReactNode }) {
   return (
     <div className="df-win" style={{ left: at.x, top: at.y, width: w, height: h }}>
-      <div className="df-bar"><i /><i /><i /><span className="df-url"><Icon name="lock" size={10} />app.sealedrecipes.xyz/{url}</span></div>
+      <div className="df-bar"><i /><i /><i /><span className="df-url"><Icon name="lock" size={10} />sealedrecipes.xyz/{url}</span></div>
       <div className="df-page">{children}</div>
     </div>
   );
@@ -308,7 +333,7 @@ function ScreenRecipes({ t, d }: { t: number; d: FilmData }) {
         <div key={r.ticker} className={'df-row' + (i === 0 && t > 38.8 ? ' hot' : '')} style={{ top: 122 + i * 86 }}>
           <Seal ticker={r.ticker} kind={r.kind} size={44} />
           <div className="df-row-t"><b>{r.ticker}</b><span>{r.name}</span></div>
-          <div className="df-chips"><span className="ok">{r.risk} risk</span><span>{r.runs} runs on-chain</span><span className="lockchip"><Icon name="lock" size={10} />method sealed</span></div>
+          <div className="df-chips"><span className="ok">{r.risk} risk</span><span>{r.runs} runs on-chain</span><span className="lockchip"><Icon name="lock" size={10} />method sealed</span>{i > 0 && <span className="ownchip" title="Skipped for the hackathon: on mainnet, wallet recipes will ask the account's owner to sign first (README, Limitations)"><Icon name="key" size={10} />mainnet: owner signs first</span>}</div>
           <div className="df-price">{usd(r.price)}<small>tUSDC / run</small></div>
         </div>
       ))}
@@ -418,7 +443,8 @@ function ScreenResult({ t, d }: { t: number; d: FilmData }) {
   const total = segs.reduce((a, b) => a + b.v, 0) || 1;
   const grow = clamp((t - 97.0) / 1.8);
   let acc = 0;
-  const lines = ['Source code: verified (NEP-330)', '2 full-access keys can replace the code', 'Widely used token contract'];
+  // what CHECK finds on wrap.near (mainnet, checked 2026-11-13): the wNEAR token, no access keys, no NEP-330 source link
+  const lines = ['Contract: Wrapped NEAR token (wNEAR)', 'No access keys: nobody can change the code', 'No published source link (NEP-330)'];
   return (
     <Win at={WX.S} w={900} h={500} url={`#/quote/${d.recipes[0].ticker}`}>
       <AppTop active="Recipes" />
@@ -464,9 +490,8 @@ function Spotlight({ t, cam }: { t: number; cam: { x: number; y: number; z: numb
 // ================================================================ 08 · proof (106 – 117)
 
 function ActProof({ t }: { t: number }) {
-  const o = span(t, 106.0, 117.4, 0.5);
+  const o = span(t, 106.0, 112.4, 0.5);
   if (o <= 0) return null;
-  const dark = prog(t, 112.0, 0.8);
   const cards = [
     { icon: 'cpu', h: 'The hardware', p: 'Intel TDX quote, checked against Intel’s keys in your own browser' },
     { icon: 'code', h: 'The code', p: 'The runner proves it runs the audited release, hash on-chain' },
@@ -474,7 +499,7 @@ function ActProof({ t }: { t: number }) {
   ];
   return (
     <div className="df-act" style={vis(o)}>
-      <div className="df-proof" style={{ opacity: 1 - 0.85 * dark, transform: `scale(${(1 - 0.06 * dark).toFixed(3)})` }}>
+      <div className="df-proof">
         {cards.map((c, i) => (
           <div key={c.h} className="df-pcard" style={rise(prog(t, 106.6 + i * 0.6, 0.5), 16)}>
             <span className="ic"><Icon name={c.icon} size={20} /></span>
@@ -483,14 +508,14 @@ function ActProof({ t }: { t: number }) {
           </div>
         ))}
       </div>
-      <div className="df-drop" style={{ opacity: dark }} />
     </div>
   );
 }
 
 // ================================================================ 09 · agents (117 – 148)
 
-function ActAgents({ t, d }: { t: number; d: FilmData }) {
+function ActAgents({ t: now, d }: { t: number; d: FilmData }) {
+  const t = now + LATE_SHIFT; // drawn on a timeline 5 s later (script.ts, LATE_SHIFT)
   const o = span(t, 117.0, 148.4, 0.5);
   if (o <= 0) return null;
   const title = span(t, 117.2, 121.2, 0.4);
@@ -499,7 +524,7 @@ function ActAgents({ t, d }: { t: number; d: FilmData }) {
   const [a, b, c] = d.recipes;
   const lines: { at: number; s: string; k?: 'cmd' | 'ok' | 'pick' | 'dim' }[] = [
     { at: 121.6, s: '$ npm run agent -- --live --wallet v2.ref-finance.near', k: 'cmd' },
-    { at: 123.0, s: 'marketplace app.sealedrecipes.xyz (live, NEAR testnet)', k: 'dim' },
+    { at: 123.0, s: 'marketplace sealedrecipes.xyz (live, NEAR testnet)', k: 'dim' },
     { at: 124.0, s: 'runner attestation verified: 7 checks (Intel TDX)', k: 'ok' },
     { at: 125.2, s: 'inputs sealed in this process → runner key 41c8…7770', k: 'dim' },
     { at: 128.8, s: `quote ${a.ticker.padEnd(6)} ${usd(a.price)} tUSDC  signature ✔` },
@@ -511,7 +536,7 @@ function ActAgents({ t, d }: { t: number; d: FilmData }) {
     { at: 138.0, s: '✔ output hash matches the sealed result', k: 'ok' },
     { at: 138.8, s: '✔ settled on-chain · 4 payees', k: 'ok' },
   ];
-  const nos = ['No account manager', 'No API key', 'No trust needed'];
+  const nos = ['No account to create', 'No API key', 'Only owners move funds'];
   return (
     <div className="df-act" style={vis(o)}>
       <div className="df-agent-title" style={{ ...vis(title), transform: `scale(${(1.08 - 0.08 * prog(t, 117.2, 1.2)).toFixed(3)})` }}>
@@ -540,22 +565,24 @@ function ActAgents({ t, d }: { t: number; d: FilmData }) {
           </div>
         </div>
       </div>
-      <div className="df-nos">{nos.map((n, i) => <span key={n} style={pop(span(t, 142.8 + i * 0.7, 148.2, 0.35))}><Icon name="x" size={13} />{n}</span>)}</div>
+      <div className="df-nos">{nos.map((n, i) => <span key={n} style={pop(span(t, 142.8 + i * 0.7, 148.2, 0.35))}><Icon name={i === 2 ? 'check' : 'x'} size={13} />{n}</span>)}</div>
     </div>
   );
 }
 
 // ================================================================ 10 · your turn (148 – 157)
 
-function ActEnd({ t }: { t: number }) {
+function ActEnd({ t: now }: { t: number }) {
+  const t = now + LATE_SHIFT;
   const o = prog(t, 148.0, 0.7);
   if (o <= 0) return null;
-  const lines = ['Your data stays yours.', 'Their method stays theirs.', 'Everyone gets paid.'];
+  const lines = ['Your data stays yours.', 'Their method stays theirs.', 'Every contributor gets paid.'];
   return (
     <div className="df-act df-end" style={vis(o)}>
       <div className="df-end-mark" style={pop(prog(t, 148.2, 0.7))}><BrandMark size={74} /></div>
       {lines.map((l, i) => <div key={l} className="df-end-line" style={rise(prog(t, 148.6 + i * 1.3, 0.6), 12)}>{l}</div>)}
-      <div className="df-end-try" style={rise(prog(t, 153.8, 0.6), 10)}>Try a recipe, live on NEAR testnet<span>app.sealedrecipes.xyz</span></div>
+      <div className="df-end-who" style={rise(prog(t, 151.6, 0.6), 8)}>the recipe creator · the part builders</div>
+      <div className="df-end-try" style={rise(prog(t, 153.8, 0.6), 10)}>Try a recipe, live on NEAR testnet<span>sealedrecipes.xyz</span></div>
     </div>
   );
 }

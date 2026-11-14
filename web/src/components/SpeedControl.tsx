@@ -1,7 +1,7 @@
 import { SPEEDS, useSpeed } from '../pace';
 
 /** Slower or faster: a small segmented control, remembered per kind of playback. */
-export function SpeedControl({ kind, label = 'Speed' }: { kind: 'film' | 'demo'; label?: string }) {
+export function SpeedControl({ kind, label = 'Speed' }: { kind: 'film' | 'demo' | 'demofilm'; label?: string }) {
   const [speed, setSpeed] = useSpeed(kind);
   return (
     <div className="speed" role="radiogroup" aria-label={`${label}: ${speed}×`}>

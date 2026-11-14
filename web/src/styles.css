@@ -1312,14 +1312,15 @@ button.acting { color: inherit; font: inherit; text-align: left; }
 .df-h span { font-size: 13px; color: var(--muted); }
 .df-row { position: absolute; left: 30px; width: 840px; height: 76px; display: flex; align-items: center; gap: 14px; padding: 0 16px; border-radius: 12px; background: var(--bg-2); border: 1px solid var(--line); }
 .df-row.hot { background: #17213a; border-color: rgba(240,180,76,.5); }
-.df-row-t { display: grid; gap: 2px; min-width: 260px; }
+.df-row-t { display: grid; gap: 2px; min-width: 230px; }
 .df-row-t b { font-family: ui-monospace, monospace; letter-spacing: .05em; font-size: 14px; }
 .df-row-t span { font-size: 13px; color: var(--ink-2); }
-.df-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.df-chips { display: flex; gap: 6px; flex-wrap: wrap; max-width: 420px; }
 .df-chips span { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--ink-2); display: inline-flex; align-items: center; gap: 5px; }
 .df-chips .ok { color: var(--gain); border-color: rgba(60,203,154,.4); }
 .df-chips .lockchip { color: var(--wax-2); border-color: rgba(240,180,76,.4); }
-.df-price { margin-left: auto; text-align: right; font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; display: grid; }
+.df-chips .ownchip { color: var(--muted); border-style: dashed; }
+.df-price { margin-left: auto; text-align: right; font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; display: grid; white-space: nowrap; flex: none; }
 .df-price small { font-size: 11px; color: var(--muted); font-weight: 500; }
 .df-foot { position: absolute; left: 36px; bottom: 20px; font-size: 12px; color: var(--muted); }
 .df-field { position: absolute; width: 410px; display: grid; gap: 7px; }
@@ -1404,7 +1405,7 @@ button.acting { color: inherit; font: inherit; text-align: left; }
 .df-agent-title .ic { width: 70px; height: 70px; border-radius: 20px; display: grid; place-items: center; background: rgba(169,139,255,.14); color: #c9b8ff; border: 1px solid rgba(169,139,255,.45); box-shadow: 0 0 40px rgba(169,139,255,.3); }
 .df-agent-title b { font-family: var(--serif); font-weight: 500; font-size: 46px; }
 .df-agent-title > span:last-child { font-size: 16px; color: var(--ink-2); }
-.df-agents { position: absolute; left: 34px; right: 34px; top: 58px; bottom: 122px; display: grid; grid-template-columns: 1.15fr 1fr; gap: 16px; transform-origin: 50% 50%; }
+.df-agents { position: absolute; left: 34px; right: 34px; top: 54px; bottom: 150px; display: grid; grid-template-columns: 1.15fr 1fr; gap: 16px; transform-origin: 50% 50%; }
 .df-term { border-radius: 14px; background: #060a12; border: 1px solid #2a3654; overflow: hidden; display: grid; grid-template-rows: 30px 1fr; }
 .df-term-bar { display: flex; align-items: center; gap: 6px; padding: 0 12px; background: #0d1424; border-bottom: 1px solid #1d2740; }
 .df-term-bar i { width: 9px; height: 9px; border-radius: 50%; background: #2c3a5a; }
@@ -1428,13 +1429,14 @@ button.acting { color: inherit; font: inherit; text-align: left; }
 .df-table code { color: var(--wax-2); }
 .df-verify { border-radius: 14px; background: rgba(60,203,154,.07); border: 1px solid rgba(60,203,154,.35); padding: 12px 14px; display: grid; gap: 7px; font-size: 13px; }
 .df-verify div { display: flex; align-items: center; gap: 8px; }
-.df-nos { position: absolute; left: 0; right: 0; bottom: 76px; display: flex; justify-content: center; gap: 10px; }
+.df-nos { position: absolute; left: 0; right: 0; bottom: 104px; display: flex; justify-content: center; gap: 10px; }
 .df-nos span { display: inline-flex; align-items: center; gap: 7px; font-size: 15px; font-weight: 650; padding: 8px 16px; border-radius: 999px; background: rgba(8,12,22,.92); border: 1px solid rgba(169,139,255,.55); color: #e6dcff; box-shadow: 0 10px 30px -10px rgba(0,0,0,.8); }
 
 /* 10 · your turn */
 .df-end { display: grid; place-content: center; justify-items: center; gap: 6px; text-align: center; padding-bottom: 70px; }
 .df-end-mark { margin-bottom: 14px; filter: drop-shadow(0 10px 30px rgba(240,180,76,.4)); }
 .df-end-line { font-family: var(--serif); font-weight: 500; font-size: 36px; line-height: 1.2; }
+.df-end-who { font-size: 14px; letter-spacing: .04em; color: var(--ink-2); margin-top: 2px; }
 .df-end-try { margin-top: 18px; font-size: 16px; color: var(--wax-2); display: grid; gap: 4px; }
 .df-end-try span { font-size: 13px; color: var(--muted); }
 

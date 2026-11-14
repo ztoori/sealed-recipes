@@ -5,9 +5,9 @@
 import { useEffect, useReducer } from 'react';
 
 export const SPEEDS = [0.5, 0.75, 1, 1.5, 2] as const;
-type Kind = 'film' | 'demo';
+type Kind = 'film' | 'demo' | 'demofilm';
 const read = (k: Kind) => { try { const v = Number(localStorage.getItem('srs-speed-' + k)); return (SPEEDS as readonly number[]).includes(v) ? v : 1; } catch { return 1; } };
-const store: Record<Kind, number> = { film: read('film'), demo: read('demo') };
+const store: Record<Kind, number> = { film: read('film'), demo: read('demo'), demofilm: read('demofilm') };
 const subs = new Set<() => void>();
 
 export const getSpeed = (k: Kind) => store[k];

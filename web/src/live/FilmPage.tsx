@@ -32,7 +32,7 @@ export function FilmPage() {
         <span className="spacer" />
         <button className="btn ghost sm" onClick={() => go({ page: 'recipes' })}>Skip to the recipes<Icon name="arrow" size={13} /></button>
       </div>
-      <DemoFilm data={data} onTry={(t) => go({ page: 'quote', ticker: t })} onBrowse={() => go({ page: 'recipes' })} />
+      <DemoFilm data={data} onTry={(t) => go({ page: 'quote', ticker: t })} onBrowse={() => go({ page: 'recipes' })} onSpec={() => go({ page: 'docs', sub: 'spec' })} />
     </div>
   );
 }

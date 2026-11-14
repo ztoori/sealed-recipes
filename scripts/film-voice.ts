@@ -9,7 +9,7 @@
  *
  * Piper: pip install piper-tts && mkdir -p ~/.piper && cd ~/.piper && python3 -m piper.download_voices en_US-libritts-high
  *        The default voice, en_US-libritts-high, is trained on LibriTTS (CC BY 4.0), so the film credits it on its page
- *        and the README credits it too. It has many speakers: FILM_SPEAKER picks one (default 0). Another Piper voice:
+ *        and the README credits it too. It has 904 speakers: FILM_SPEAKER picks one by number (default 856, LibriTTS speaker p7665). Another Piper voice:
  *        FILM_VOICE=… FILM_VOICE_CREDIT='…' (check its MODEL_CARD for the dataset's licence and credit it).
  * Needs ffmpeg. Each clip is mono MP3 at 40 kb/s, normalised, with the silence trimmed: about 400 KB in all.
  * File names carry a hash of the line, so a changed line gets a new file and browsers never play a stale one.
@@ -38,10 +38,10 @@ const run = (cmd: string, args: string[]) => execFileSync(cmd, args, { stdio: ['
 try { run('ffmpeg', ['-version']); } catch { console.error('ffmpeg is required (sudo apt install ffmpeg)'); process.exit(1); }
 const from = arg('--from');
 const voice = process.env.FILM_VOICE ?? 'en_US-libritts-high';
-const speaker = process.env.FILM_SPEAKER ?? '0';
+const speaker = process.env.FILM_SPEAKER ?? '856';
 /** shown under the film when the narration is on (CC BY asks for credit where the work is used) */
 const credit = from ? (process.env.FILM_VOICE_CREDIT ?? '') : (process.env.FILM_VOICE_CREDIT ?? (voice === 'en_US-libritts-high'
-  ? 'Narration: Piper voice en_US-libritts-high, trained on LibriTTS (Zen et al., 2019), CC BY 4.0'
+  ? `Narration: Piper voice en_US-libritts-high${speaker === '856' ? ' (speaker p7665)' : ` (speaker ${speaker})`}, trained on LibriTTS (Zen et al., 2019), CC BY 4.0`
   : `Narration: Piper voice ${voice}`));
 const voiceDir = process.env.FILM_VOICE_DIR ?? join(homedir(), '.piper');
 const tmp = mkdtempSync(join(tmpdir(), 'film-voice-'));
