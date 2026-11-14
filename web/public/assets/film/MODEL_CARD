@@ -1,16 +1,15 @@
-# Model card for bryce (medium)
+# Model card for libritts (high)
 
 * Language: en_US (English, United States)
-* Speakers: 1
-* Quality: medium
+* Speakers: 904
+* Quality: high
 * Samplerate: 22,050Hz
 
 ## Dataset
 
-* License: public domain
+* URL: http://www.openslr.org/60/
+* License: CC BY 4.0
 
 ## Training
 
-See: https://brycebeattie.com/files/tts/
-
-US English male voice. Single Speaker. Finetuned for an additional 1000 epochs from an unreleased voice which had 2500 epochs. This is my voice, I only recorded about 750 samples.
+Trained from scratch on train-clean-360.
