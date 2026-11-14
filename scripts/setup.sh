@@ -16,15 +16,18 @@
 # Supported: Debian/Ubuntu and WSL (apt), Fedora/RHEL (dnf), Arch (pacman), openSUSE (zypper), macOS (Homebrew).
 # Elsewhere it lists what is missing so you can install it yourself. Native Windows: use WSL or the dev container.
 #
-# Tested (2026-11-14):
-#   Ubuntu 24.04 x86_64, root (cloud sandbox): system-package step with a real apt install, and --check.
-#   Ubuntu 22.04 x86_64, account without sudo: --check, and the "ask an administrator" stop.
-#   WSL2 Ubuntu: the steps after the system-package step are unchanged from the previous apt-only script, which
-#     ran there through Node, npm, Z3 and Rust.
-#   Fedora, Arch, openSUSE, macOS: package-manager detection and package names checked only with a simulated
-#     /etc/os-release, uname and package-manager stubs (SETUP_OS_RELEASE / SETUP_UNAME). Not yet run on a real machine.
-#   The steps after the system-package step (nvm, npm ci, venv, rustup, cargo-near) were not rerun in these sandboxes:
-#     they can't reach nodejs.org or sh.rustup.rs.
+# Tested (2026-11-14), in sandboxes that can't reach nodejs.org or sh.rustup.rs:
+#   Ubuntu 24.04 x86_64, root: --check; system-package step with a real apt install; nvm install. Stopped at the
+#     Node download (blocked there).
+#   Ubuntu 24.04 x86_64, account without sudo: the "ask an administrator" stop.
+#   Ubuntu 22.04 x86_64, account without sudo: --check; the "ask an administrator" stop; "all present, no sudo needed";
+#     nvm install and npm ci. The Python venv step could not run on that sandbox's mounted folder (works in /tmp).
+#   WSL2 Ubuntu: the steps after the system-package step are unchanged from the previous apt-only script, which ran
+#     there through Node, npm, Z3 and Rust.
+#   Fedora/Rocky (dnf), Arch (pacman), openSUSE (zypper), macOS (Homebrew), unknown distros: detection and package
+#     names checked only with a simulated /etc/os-release and uname (SETUP_OS_RELEASE / SETUP_UNAME) and a restricted
+#     PATH. Not yet run on a real machine of those kinds.
+#   Not run anywhere yet with this script: rustup, cargo-near, the TLA+ download, --with-media.
 set -euo pipefail
 
 NODE_MAJOR=22
@@ -168,7 +171,10 @@ export NVM_DIR="$HOME/.nvm"
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | PROFILE=/dev/null bash; fi
 # shellcheck disable=SC1091
 set +u; . "$NVM_DIR/nvm.sh"
-nvm install "$NODE_MAJOR" >/dev/null && nvm alias default "$NODE_MAJOR" >/dev/null && nvm use "$NODE_MAJOR" >/dev/null
+# (a failed command in the middle of an && chain doesn't stop a set -e script, so check it explicitly)
+nvm install "$NODE_MAJOR" >/dev/null || { echo "Could not install Node $NODE_MAJOR with nvm (no access to nodejs.org?)."; exit 1; }
+nvm alias default "$NODE_MAJOR" >/dev/null
+nvm use "$NODE_MAJOR" >/dev/null
 set -u
 echo "node $(node -v), npm $(npm -v)"
 # load nvm in new shells. On WSL this also matters because Windows' PATH is appended: without nvm loaded, a new

@@ -12,7 +12,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const run = (cmd) => { try { return execSync(cmd, { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return null; } };
 const rows = [];
 let coreFail = false;
-const check = (name, ok, detail, fix, core = false) => { rows.push({ name, ok, detail, fix }); if (!ok && core) coreFail = true; };
+// maintainer: only needed to re-record docs/media; shown as optional, not as a failure
+const check = (name, ok, detail, fix, core = false, maintainer = false) => { rows.push({ name, ok, detail, fix, maintainer }); if (!ok && core) coreFail = true; };
 
 const isWsl = existsSync('/proc/version') && /microsoft/i.test(readFileSync('/proc/version', 'utf8'));
 check('platform', process.platform !== 'win32', `${process.platform}${isWsl ? ' (WSL)' : ''}`, 'Run in WSL: wsl, then cd to the project', true);
@@ -40,11 +41,15 @@ const java = run('java -version 2>&1');
 const jar = existsSync(process.env.TLA2TOOLS ?? resolve(root, 'tools/tla2tools.jar'));
 check('java + tla2tools.jar (npm run verify:tla)', !!java && jar, `${java ? 'java ok' : 'no java'}, ${jar ? 'jar ok' : 'no jar'}`, 'bash scripts/setup.sh --with-tla');
 const ff = run('ffmpeg -version');
-check('ffmpeg (npm run record, record:film, record:x)', !!ff, ff ? ff.split('\n')[0] : 'missing', 'bash scripts/setup.sh --with-media');
+check('ffmpeg (maintainers: npm run record:film)', !!ff, ff ? ff.split('\n')[0] : 'not installed (optional: only for re-recording the videos)', 'bash scripts/setup.sh --with-media', false, true);
 const crlf = run('git ls-files --eol package.json scripts/demo.mjs');
 check('line endings (LF)', !crlf || !/w\/crlf/.test(crlf), crlf ? 'LF' : 'not a git checkout', 'git config core.autocrlf false && git rm --cached -r . -q && git reset --hard   (re-checkout with LF)');
 
 const w = Math.max(...rows.map((r) => r.name.length));
-for (const r of rows) console.log(`${r.ok ? '✔' : '✘'} ${r.name.padEnd(w)}  ${r.detail}${r.ok ? '' : `\n  ${' '.repeat(w)}  fix: ${r.fix}`}`);
+for (const r of rows) {
+  const mark = r.ok ? '✔' : r.maintainer ? '–' : '✘';
+  const hint = r.ok ? '' : `\n  ${' '.repeat(w)}  ${r.maintainer ? 'if needed' : 'fix'}: ${r.fix}`;
+  console.log(`${mark} ${r.name.padEnd(w)}  ${r.detail}${hint}`);
+}
 console.log(coreFail ? '\nCore requirements missing: npm test / demo will not run yet.' : '\nCore requirements met: npm test, npm run demo. Optional items above enable the other scripts.');
 process.exit(coreFail ? 1 : 0);

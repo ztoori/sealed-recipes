@@ -3,17 +3,21 @@
 //   VS Code: install "Dev Containers", then "Reopen in Container" (needs Docker)
 // It runs `bash scripts/setup.sh --all` once when the container is created (Node 22, npm packages, Z3, Rust, cargo-near,
 // Java + TLA+); the base image allows sudo without a password, so nothing prompts. Then: npm test, npm run demo
-// (port 8080 opens in your browser), npm run verify, npm run test:rust.
+// (then open port 8080 from the Ports tab), npm run verify, npm run test:rust.
 //
-// Tested (2026-11-14): not yet. Written against the published base image; the setup script it runs was tested as
-// listed at the top of scripts/setup.sh. Confirm by opening a codespace and running `npm run doctor`.
+// Tested (2026-11-14) on GitHub Codespaces (2 cores): the container built and `setup.sh --all` finished without prompts
+// (Node 22.23.5, Z3 5.4.1, Rust 1.100.0, cargo-near 0.23.0, OpenJDK 17); `npm run doctor` all green except ffmpeg
+// (maintainers only). npm test, test:e2e, verify, test:rust and demo passed. Not yet tested: VS Code with local Docker.
+//
+// Port 8080 only notifies, it doesn't open a browser: the test scripts (npm run test:e2e and others) start and stop a
+// server on 8080, and a page opened automatically would load after it has gone and show no recipes.
 {
   "name": "Sealed Recipes",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "postCreateCommand": "bash scripts/setup.sh --all",
   "forwardPorts": [8080, 8787],
   "portsAttributes": {
-    "8080": { "label": "demo (marketplace + app)", "onAutoForward": "openBrowser" },
+    "8080": { "label": "demo (marketplace + app)", "onAutoForward": "notify" },
     "8787": { "label": "runner", "onAutoForward": "silent" }
   },
   "hostRequirements": { "cpus": 2, "memory": "4gb" },
