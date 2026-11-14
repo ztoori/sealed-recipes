@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 /**
- * Where this app is mounted: '' at the site root, '/demo' when the live site serves the guided demo under /demo.
+ * Where this app is mounted: '' at the site root (localhost, demo.sealedrecipes.xyz), '/demo' when a live site
+ * serves the demo under /demo (no SRS_DEMO_URL set).
  * Every request to the server goes through withBase, so the same build works in both places.
  *
  * The live site also shows the demo's practice composer inside its own pages, talking to the demo backend under /demo
@@ -9,6 +10,11 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
  * direct calls made by the composer's components use the scoped base set while that page is open (setScopedBase).
  */
 export const BASE = new URL('.', location.href).pathname.replace(/\/$/, '');
+/**
+ * The live site, when this is the hosted demo: '/' under /demo on the live site, the same domain without `demo.` on the
+ * demo's own address (demo.sealedrecipes.xyz → sealedrecipes.xyz), null when run locally (`npm run demo`).
+ */
+export const LIVE_SITE: string | null = BASE === '/demo' ? '/' : /^demo\./.test(location.hostname) ? `${location.protocol}//${location.hostname.replace(/^demo\./, '')}/` : null;
 let scoped: string | null = null;
 export const setScopedBase = (b: string | null) => { scoped = b; };
 export const ApiBase = createContext<string | null>(null);

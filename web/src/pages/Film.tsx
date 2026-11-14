@@ -1,5 +1,5 @@
 /**
- * The guided demo in the local demo (`npm run demo`, and the sandbox at sealedrecipes.xyz/demo): the same film as the
+ * The guided demo in the local demo (`npm run demo`, and the sandbox at demo.sealedrecipes.xyz): the same film as the
  * live site (components/FilmPage.tsx, DemoFilm.tsx), with the same narration, score, captions and speed control. The
  * film shows the live testnet recipes; its end card and links open this demo's own pages. Under it, the hands-on tour
  * (App.tsx, story-machine.ts) drives this app through the same loop for real, on this machine.

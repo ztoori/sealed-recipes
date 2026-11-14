@@ -190,7 +190,7 @@ npm run test:pricing    # SAFE with 15-second periods: 4 buyers pay in one perio
 
 ## The sample recipes
 
-Eleven sample recipes for common crypto problems, each a sealed workflow of public parts (26 in the catalog). They exist to exercise the platform (composing, sealing, quoting, running and settling); Compose › Recipe builds new ones from the same parts. All eleven are in `seed/recipes/` and run in the local demo (`npm run demo`, and the sandbox at sealedrecipes.xyz/demo). Three are live on testnet, where the runner is read-only on mainnet: **CHECK** (the CHEK recipe), **SAFE3** (SAFE) and **AUDIT3** (AUDT). The others move funds or ask the buyer to sign, so they stay in the demo until there is a mainnet deployment. Earlier testnet listings of the same three (CHEK, SAFE, AUDT, AUDIT, SAFE2, AUDIT2) stay on-chain, since the contract has no delisting, but the site no longer shows, quotes or sells them.
+Eleven sample recipes for common crypto problems, each a sealed workflow of public parts (26 in the catalog). They exist to exercise the platform (composing, sealing, quoting, running and settling); Compose › Recipe builds new ones from the same parts. All eleven are in `seed/recipes/` and run in the local demo (`npm run demo`, and the sandbox at demo.sealedrecipes.xyz). Three are live on testnet, where the runner is read-only on mainnet: **CHECK** (the CHEK recipe), **SAFE3** (SAFE) and **AUDIT3** (AUDT). The others move funds or ask the buyer to sign, so they stay in the demo until there is a mainnet deployment. Earlier testnet listings of the same three (CHEK, SAFE, AUDT, AUDIT, SAFE2, AUDIT2) stay on-chain, since the contract has no delisting, but the site no longer shows, quotes or sells them.
 
 | Recipe | What it does | Parts |
 |---|---|---|
@@ -341,7 +341,7 @@ Sealed Recipes protects a workflow **by default, without filing anything**. The 
 
 ## What is real, and what is local
 
-These are kept separate so nothing here needs to be taken on faith. The table is about `npm run demo` (and the hands-on sandbox at sealedrecipes.xyz/demo). The live page at sealedrecipes.xyz uses the production path for the contract (NEAR testnet), NEAR AI Cloud, FastNEAR and NEAR RPC (mainnet, read-only), and the same runner code in an Intel TDX confidential VM (`TEE_MODE=dstack`).
+These are kept separate so nothing here needs to be taken on faith. The table is about `npm run demo` (and the hands-on sandbox at demo.sealedrecipes.xyz). The live page at sealedrecipes.xyz uses the production path for the contract (NEAR testnet), NEAR AI Cloud, FastNEAR and NEAR RPC (mainnet, read-only), and the same runner code in an Intel TDX confidential VM (`TEE_MODE=dstack`).
 
 | Component | In `npm run demo` | Production path (in this repo) |
 |---|---|---|

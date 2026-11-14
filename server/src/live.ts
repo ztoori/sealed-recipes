@@ -17,6 +17,8 @@
  *      retired without being named)  SRS_RUNNER_TEE (label; default: from the runner's attestation)
  *      FAUCET_NEAR (0.2)  FAUCET_TUSDC (5)  FAUCET_PER_IP_DAY (3)  FAUCET_PER_DAY (30)
  *      SRS_REQUESTS_PER_MINUTE (600)  SRS_ATTESTATIONS_PER_MINUTE (30): per-visitor request limits
+ *      SRS_DEMO_GATEWAY (http://127.0.0.1:8080; empty: no /demo)  SRS_DEMO_URL (the demo's own address, e.g.
+ *      https://demo.sealedrecipes.xyz: navigations to /demo go there; server/src/demo-proxy.ts)
  */
 import express from 'express';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
@@ -264,7 +266,7 @@ mountDemoProxy(app); // /demo: the guided demo, before the body parser
  *   - every request (SRS_REQUESTS_PER_MINUTE, default 600 a minute);
  *   - runner attestations (SRS_ATTESTATIONS_PER_MINUTE, default 30 a minute): each one makes the TDX runner produce a
  *     fresh hardware quote, and a quote page asks for one.
- * The quote, run-ticket and faucet limits below come on top of these. /demo has its own limits (the demo gateway).
+ * The quote, run-ticket and faucet limits below come on top of these. /demo (the demo backend) has its own limits (the demo gateway).
  */
 const REQUESTS_PER_MINUTE = Number(env.SRS_REQUESTS_PER_MINUTE ?? 600);
 const ATTESTATIONS_PER_MINUTE = Number(env.SRS_ATTESTATIONS_PER_MINUTE ?? 30);

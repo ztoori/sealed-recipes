@@ -3,13 +3,13 @@
  * Navigation mirrors the guided demo's (web/src/route.ts), as a hash, so every page has its own link:
  *   #/  (landing)   #/demo (the guided demo film)   #/recipes[/TICKER]   #/quote/TICKER[/RUN_ID]   #/wallet   #/compose/...   #/docs/SUB
  * Landing, Docs and Compose are the demo's pages shown in this shell (DemoPages.tsx); the guided story is the demo
- * itself, which this same site serves under /demo (simulated services).
+ * itself, at its own address (demo.sealedrecipes.xyz; simulated services). /demo/ redirects there (server/src/demo-proxy.ts).
  */
 import { createContext, useContext } from 'react';
 import type { Guest } from './guest';
 import { parseRoute, routeHash, type DocsSub } from '../route';
 
-/** the guided demo, served by this site under /demo (server/src/demo-proxy.ts) */
+/** the demo: a navigation to /demo/… is redirected to its own address (SRS_DEMO_URL; server/src/demo-proxy.ts) */
 export const DEMO = '/demo/';
 export const EXPLORER = 'https://testnet.nearblocks.io';
 export const txUrl = (h: string) => `${EXPLORER}/txns/${h}`;
