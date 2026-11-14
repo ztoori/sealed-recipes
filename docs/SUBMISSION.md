@@ -15,7 +15,7 @@ Projects are screened first by Claude Code and Codex, which check that the repo 
   ```
   The tag `baseline-2026-10-31` marks the first build, written after the hackathon was announced; the rules count code written since the announcement. `git diff baseline-2026-10-31..main` shows everything built during the window.
 - [ ] On a clean machine: `npm install && npm run test:e2e` ends with `✔ story complete`; `npm test` (102 tests), `npm run test:rust` (114 tests), `npm run verify` and `npm run test:recipes` pass.
-- [x] Deploy the contract: live on NEAR testnet at `market.sealedrecipes.testnet`, with the live page at https://app.sealedrecipes.xyz (steps in `scripts/testnet/README.md`). Mainnet stays undeployed by decision (no real funds), so NEAR Intents is used for real dry quotes only. The README's top and **Status** link the contract and both sites.
+- [x] Deploy the contract: live on NEAR testnet at `market.sealedrecipes.testnet`, with the live page at https://sealedrecipes.xyz (steps in `scripts/testnet/README.md`). Mainnet stays undeployed by decision (no real funds), so NEAR Intents is used for real dry quotes only. The README's top and **Status** link the contract and both sites.
 - [ ] `main` is the default branch and must hold the testnet work: fast-forward it to `live` and push (`git push origin live:main`) before submitting, and again after any later `live-N` tag.
 - [ ] Optional: record a voice-over for `docs/media/demo.mp4` with the script in §5. The video has on-screen captions, so it also works silent.
 - [ ] Post the demo on X (§3).
@@ -37,7 +37,7 @@ Projects are screened first by Claude Code and Codex, which check that the repo 
 | Repository link | https://github.com/ztoori/sealed-recipes |
 | Demo post link | *your X post URL* |
 | What did you build? (1998 / 2000 characters) | see below |
-| Website | https://app.sealedrecipes.xyz (live on NEAR testnet; the guided demo film is at https://app.sealedrecipes.xyz/#/demo, and the hands-on sandbox under /demo) |
+| Website | https://sealedrecipes.xyz (live on NEAR testnet; the guided demo film is at https://sealedrecipes.xyz/#/demo, and the hands-on sandbox under /demo) |
 
 Why these tracks:
 
@@ -59,7 +59,7 @@ Sealed Recipes is a platform to compose and run sealed workflows on NEAR, paid p
 - Prices follow demand inside a creator-set band (EIP-1559 rule, proved with Z3). No shares, tokens or trading.
 11 sample recipes (wallet cleanup, exits, app keys, staking, contract checks, account audits, position caps) show what it runs.
 
-Status: live on NEAR testnet (market.sealedrecipes.testnet, app.sealedrecipes.xyz): no login, sealed quotes, guest payments signed in the browser, real NEAR AI Cloud on real mainnet data, settled on-chain. Runner in Intel TDX (Phala), DCAP-verified in the browser; Intents in the guided demo only. 114 Rust tests, Z3/TLA+ proofs.
+Status: live on NEAR testnet (market.sealedrecipes.testnet, sealedrecipes.xyz): no login, sealed quotes, guest payments signed in the browser, real NEAR AI Cloud on real mainnet data, settled on-chain. Runner in Intel TDX (Phala), DCAP-verified in the browser; Intents in the guided demo only. 114 Rust tests, Z3/TLA+ proofs.
 ```
 
 The text above is within the form's 2000-character limit; recount if you edit it.

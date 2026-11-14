@@ -2,7 +2,7 @@
 // RTMR3 event digests, RTMR3 replay against the quote, compose hash = sha256(app-compose.json), and the measured
 // docker-compose against runner/docker-compose.yml. RTMR3 is read from the quote here; the live page takes it from the
 // quote after Intel's signature chain verified it (scripts/verify-quote.ts does that check).
-//   curl -s "https://app.sealedrecipes.xyz/runner/attestation?nonce=$(openssl rand -hex 16)" > att.json
+//   curl -s "https://sealedrecipes.xyz/runner/attestation?nonce=$(openssl rand -hex 16)" > att.json
 //   npx tsx scripts/verify-compose.ts att.json
 import { readFileSync } from 'node:fs';
 import { checkCompose } from '../web/src/compose.js';

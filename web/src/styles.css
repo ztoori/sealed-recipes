@@ -1231,7 +1231,7 @@ pre.code.diff .del { background: rgba(242, 104, 124, 0.12); color: #ffb3c0; }
 .caption.done button.ghost { background: none; color: var(--ink-2); border-color: var(--line-2); }
 .caption.done .cap-actions { flex-wrap: wrap; }
 
-/* live page (app.sealedrecipes.xyz): the practice composer's banner, and links styled as the demo's buttons */
+/* live page (sealedrecipes.xyz): the practice composer's banner, and links styled as the demo's buttons */
 .purpose-line.practice { border-color: rgba(240, 180, 76, .4); background: linear-gradient(90deg, rgba(240, 180, 76, .08), transparent 70%); margin-bottom: 14px; }
 .purpose-line.practice > .ic { color: var(--wax); }
 .nav a { display: flex; align-items: center; gap: 7px; color: var(--muted); padding: 7px 13px; border-radius: 9px; font-weight: 550; text-decoration: none; transition: color .15s, background .15s; }

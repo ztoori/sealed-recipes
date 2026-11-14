@@ -4,7 +4,7 @@
  *
  *   npm run agent                     against the local demo (`npm run demo` running): pays through the 1Click mock,
  *                                     approves the deposits its policy allows, checks delivery against the signed promise
- *   npm run agent -- --live           against the live marketplace on NEAR testnet (https://app.sealedrecipes.xyz):
+ *   npm run agent -- --live           against the live marketplace on NEAR testnet (https://sealedrecipes.xyz):
  *                                     its own guest key, funded once by the testnet faucet, signs ft_transfer_call to the
  *                                     contract; real runner, real NEAR AI Cloud, real mainnet data (read-only)
  *
@@ -17,7 +17,7 @@
  *   --target    one account for every field (sets both of the above)
  *   --inputs    JSON for any other form field, e.g. '{"wallet":"aurora"}'
  *   --account   pay from a named testnet account (its near-cli key in ~/.near-credentials/testnet/) instead of the guest
- *   SRS_URL     another marketplace (default https://app.sealedrecipes.xyz); SRS_AGENT_KEY  where the guest key is kept
+ *   SRS_URL     another marketplace (default https://sealedrecipes.xyz); SRS_AGENT_KEY  where the guest key is kept
  *               (default .data/agent-guest.json, git-ignored, so later runs reuse the account the faucet funded)
  * Live spends testnet NEAR gas and test tUSDC only.
  */
@@ -35,7 +35,7 @@ const VALUE_FLAGS = new Set(['--target', '--contract', '--wallet', '--inputs', '
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 const positional = argv.filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(argv[i - 1]));
 const LIVE = argv.includes('--live');
-if (LIVE) process.env.SRS_URL ??= 'https://app.sealedrecipes.xyz'; // read by lib/client.ts when it loads, so set it first
+if (LIVE) process.env.SRS_URL ??= 'https://sealedrecipes.xyz'; // read by lib/client.ts when it loads, so set it first
 
 const { api, BASE, freshImplicitAccount, verifiedRunner, requestQuotes, pickQuote, signedQuote } = await import('./lib/client.js');
 

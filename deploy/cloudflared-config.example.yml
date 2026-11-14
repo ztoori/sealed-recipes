@@ -4,13 +4,14 @@
 tunnel: <TUNNEL-ID>
 credentials-file: /etc/cloudflared/<TUNNEL-ID>.json
 ingress:
+  # the live marketplace on NEAR testnet (server/src/live.ts): real contract, guest accounts, test tokens. It also serves
+  # the guided demo film (/#/demo) and forwards /demo/ to the demo gateway (the hands-on sandbox, port 8080)
   - hostname: sealedrecipes.xyz
-    service: http://127.0.0.1:8080
+    service: http://127.0.0.1:8081
   - hostname: www.sealedrecipes.xyz
-    service: http://127.0.0.1:8080
-  - hostname: demo.sealedrecipes.xyz
-    service: http://127.0.0.1:8080
-  # the live marketplace on NEAR testnet (server/src/live.ts): real contract, guest accounts, test tokens
+    service: http://127.0.0.1:8081
+  # the earlier address: keep it serving until the runner's compose uses sealedrecipes.xyz, then redirect it in
+  # Cloudflare (Rules > Redirect Rules) to https://sealedrecipes.xyz, keeping the path
   - hostname: app.sealedrecipes.xyz
     service: http://127.0.0.1:8081
   - service: http_status:404
